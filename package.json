@@ -1,0 +1,122 @@
+{
+  "name": "restful-toolkit",
+  "displayName": "RestfulToolkit",
+  "description": "VS Code extension for searching and navigating RESTful API endpoints in Java/Kotlin Spring and JAX-RS projects",
+  "version": "1.0.0",
+  "publisher": "tedburner",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "java",
+    "kotlin",
+    "spring",
+    "jax-rs",
+    "rest",
+    "restful",
+    "api",
+    "endpoints",
+    "search"
+  ],
+  "activationEvents": [
+    "onLanguage:java",
+    "onLanguage:kotlin",
+    "workspaceContains:**/*.java",
+    "workspaceContains:**/*.kt"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "restfulToolkit.searchEndpoints",
+        "title": "Search REST Endpoints",
+        "category": "RestfulToolkit"
+      },
+      {
+        "command": "restfulToolkit.refreshEndpoints",
+        "title": "Refresh Endpoints",
+        "category": "RestfulToolkit"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "restfulToolkit.searchEndpoints",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "restfulToolkit.searchEndpoints",
+        "key": "ctrl+\\",
+        "mac": "cmd+\\",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "RestfulToolkit",
+      "properties": {
+        "restfulToolkit.scanPaths": {
+          "type": "array",
+          "default": [
+            "src/main/java/**/*.java",
+            "src/main/kotlin/**/*.kt"
+          ],
+          "description": "Glob patterns for scanning Java/Kotlin files"
+        },
+        "restfulToolkit.excludePaths": {
+          "type": "array",
+          "default": [
+            "src/test/**",
+            "**/target/**",
+            "**/build/**"
+          ],
+          "description": "Glob patterns to exclude from scanning"
+        },
+        "restfulToolkit.maxResults": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum number of search results to display"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^6.4.1",
+    "@typescript-eslint/parser": "^6.4.1",
+    "@vscode/test-electron": "^2.3.4",
+    "eslint": "^8.47.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.5",
+    "ts-loader": "^9.4.4",
+    "typescript": "^5.1.6",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tedburner/RestfulToolkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tedburner/RestfulToolkit/issues"
+  },
+  "homepage": "https://github.com/tedburner/RestfulToolkit#readme",
+  "license": "MIT"
+}
