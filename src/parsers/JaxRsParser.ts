@@ -13,14 +13,13 @@ export class JaxRsParser {
         const match = content.match(pattern);
 
         if (match) {
-            this.logger.info(`Found class-level path for ${className}: ${match[1]}`);
             return match[1].replace(/\s+/g, '');
         }
 
         return null;
     }
 
-    parseMethodAnnotations(content: string, className: string, classPath: string | null): RestEndpoint[] {
+    parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
         const methodPattern = /(?:public|private|protected)?\s+\w+\s+(\w+)\s*\([^)]*\)\s*\{[^}]*\}/g;
@@ -40,6 +39,7 @@ export class JaxRsParser {
                 classPath || '',
                 className,
                 methodName,
+                filePath,
                 this.getLineNumber(content, methodStartIndex)
             );
 
@@ -54,6 +54,7 @@ export class JaxRsParser {
         classPath: string,
         className: string,
         methodName: string,
+        filePath: string,
         line: number
     ): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
@@ -76,6 +77,7 @@ export class JaxRsParser {
                     this.combinePath(classPath, methodPath),
                     className,
                     methodName,
+                    filePath,
                     line
                 ));
             }
@@ -134,6 +136,7 @@ export class JaxRsParser {
         path: string,
         className: string,
         methodName: string,
+        filePath: string,
         line: number
     ): RestEndpoint {
         return {
@@ -141,7 +144,7 @@ export class JaxRsParser {
             path,
             className,
             methodName,
-            file: '',
+            file: filePath,
             line,
             framework: 'JAX-RS'
         };

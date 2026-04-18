@@ -4,28 +4,36 @@ import { FileScanner } from './scanner/FileScanner';
 import { FileWatcher } from './utils/FileWatcher';
 import { Logger } from './utils/Logger';
 import { SearchUI } from './ui/SearchUI';
+import { ConfigManager } from './config/ConfigManager';
 
 let cache: EndpointCache;
 let scanner: FileScanner;
 let watcher: FileWatcher;
 let logger: Logger;
 let searchUI: SearchUI;
+let configManager: ConfigManager;
 
 export async function activate(context: vscode.ExtensionContext) {
     logger = Logger.getInstance();
     logger.info('RestfulToolkit extension is now active!');
+
+    // 初始化配置管理器
+    configManager = ConfigManager.getInstance();
+
+    // 设置工作区文件夹（用于加载项目配置）
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+        const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath;
+        configManager.setWorkspaceFolder(workspaceFolder);
+    }
 
     cache = new EndpointCache();
     scanner = new FileScanner(cache);
     watcher = new FileWatcher();
     searchUI = new SearchUI(cache);
 
-    const scanPatterns = vscode.workspace
-        .getConfiguration('restfulToolkit')
-        .get<string[]>('scanPaths', [
-            'src/main/java/**/*.java',
-            'src/main/kotlin/**/*.kt'
-        ]);
+    // 使用 ConfigManager 获取配置
+    const config = configManager.getScanConfig();
+    const scanPatterns = config.scanPaths;
 
     watcher.setOnCreate(async (uri) => {
         await scanner.scanFileDebounced(uri);
@@ -71,8 +79,22 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    // 新增：创建项目配置文件命令
+    const createConfigCommand = vscode.commands.registerCommand(
+        'restfulToolkit.createProjectConfig',
+        () => {
+            if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+                const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath;
+                configManager.createProjectConfigTemplate(workspaceFolder);
+            } else {
+                vscode.window.showWarningMessage('No workspace folder opened');
+            }
+        }
+    );
+
     context.subscriptions.push(searchCommand);
     context.subscriptions.push(refreshCommand);
+    context.subscriptions.push(createConfigCommand);
     context.subscriptions.push(scanner);
     context.subscriptions.push(watcher);
     context.subscriptions.push(logger);

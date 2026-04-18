@@ -5,7 +5,7 @@ const path = require('path');
 /**@type {import('webpack').Configuration}*/
 const config = {
   target: 'node',
-  mode: 'none',
+  mode: 'production',
 
   entry: './src/extension.ts',
   output: {
@@ -27,11 +27,23 @@ const config = {
         exclude: /node_modules/,
         use: [
           {
-            loader: 'ts-loader'
+            loader: 'ts-loader',
+            options: {
+              compilerOptions: {
+                module: 'commonjs'
+              }
+            }
           }
         ]
       }
     ]
+  },
+  optimization: {
+    minimize: true
+  },
+  node: {
+    __dirname: false,
+    __filename: false
   }
 };
 module.exports = config;

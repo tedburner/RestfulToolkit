@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 /* eslint-disable @typescript-eslint/naming-convention */
 export enum LogLevel {
+    DEBUG = 'DEBUG',
     INFO = 'INFO',
     WARNING = 'WARNING',
     ERROR = 'ERROR'
@@ -25,6 +26,10 @@ export class Logger {
 
     info(message: string): void {
         this.log(LogLevel.INFO, message);
+    }
+
+    debug(message: string): void {
+        this.log(LogLevel.DEBUG, message);
     }
 
     warning(message: string): void {

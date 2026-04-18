@@ -19,7 +19,6 @@ export class SpringMvcParser {
             if (match) {
                 if (match[1].includes(',')) {
                     const paths = match[1].split(',').map(p => p.trim().replace(/"/g, '').replace(/'/g, ''));
-                    this.logger.warning(`Class ${className} has multiple paths: ${paths.join(', ')}. Using first path.`);
                     return paths[0].replace(/\s+/g, '');
                 }
                 return match[1].replace(/\s+/g, '').replace(/"/g, '').replace(/'/g, '');
@@ -29,33 +28,98 @@ export class SpringMvcParser {
         return null;
     }
 
-    parseMethodAnnotations(content: string, className: string, classPath: string | null): RestEndpoint[] {
+    parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
-        const methodPattern = /(?:public|private|protected)?\s+\w+\s+(\w+)\s*\([^)]*\)\s*\{[^}]*\}/g;
-        let methodMatch;
+        // 新方法：直接查找 REST 注解，然后提取方法和注解
+        const mappingAnnotations = [
+            '@GetMapping', '@PostMapping', '@PutMapping', '@DeleteMapping', '@PatchMapping', '@RequestMapping'
+        ];
 
-        while ((methodMatch = methodPattern.exec(content)) !== null) {
-            const methodName = methodMatch[1];
-            const methodStartIndex = methodMatch.index;
+        for (const annotationName of mappingAnnotations) {
+            const annotationPattern = new RegExp(`${annotationName}\\s*\\([^)]*\\)`, 'g');
+            let annotationMatch;
 
-            const annotationBlock = this.getAnnotationBlock(content, methodStartIndex);
-            if (!annotationBlock) {
-                continue;
+            while ((annotationMatch = annotationPattern.exec(content)) !== null) {
+                const annotationText = annotationMatch[0];
+                const annotationIndex = annotationMatch.index;
+
+                // 从注解位置向前提取完整注解块（可能有多行）
+                const annotationBlock = this.extractAnnotationBlockBackward(content, annotationIndex);
+                if (!annotationBlock) {
+                    continue;
+                }
+
+                // 从注解位置向后查找方法名
+                const methodName = this.findMethodNameForward(content, annotationIndex + annotationText.length);
+                if (!methodName) {
+                    continue;
+                }
+
+                const line = this.getLineNumber(content, annotationIndex);
+                const methodEndpoints = this.parseAnnotationsBlock(
+                    annotationBlock,
+                    classPath || '',
+                    className,
+                    methodName,
+                    filePath,
+                    line
+                );
+
+                endpoints.push(...methodEndpoints);
             }
-
-            const methodEndpoints = this.parseAnnotationsBlock(
-                annotationBlock,
-                classPath || '',
-                className,
-                methodName,
-                this.getLineNumber(content, methodStartIndex)
-            );
-
-            endpoints.push(...methodEndpoints);
         }
 
         return endpoints;
+    }
+
+    private extractAnnotationBlockBackward(content: string, startIndex: number): string | null {
+        // 从注解位置向前查找所有相关注解
+        let blockStart = startIndex;
+        let lines = content.substring(0, startIndex).split('\n');
+        let currentLineIndex = lines.length - 1;
+
+        // 从当前行开始向前查找，找到所有连续的注解行
+        let annotationLines: string[] = [];
+
+        // 首先添加当前注解所在行到结束位置的文本
+        let currentLineEnd = content.indexOf('\n', startIndex);
+        if (currentLineEnd === -1) {
+            currentLineEnd = content.length;
+        }
+        annotationLines.unshift(content.substring(startIndex, currentLineEnd));
+
+        // 向前查找更多注解
+        for (let i = currentLineIndex; i >= 0; i--) {
+            const line = lines[i].trim();
+
+            // 空行或非注解行则停止
+            if (line === '' || (!line.startsWith('@') && !line.startsWith('//') && !line.startsWith('/*'))) {
+                break;
+            }
+
+            // 只添加注解行
+            if (line.startsWith('@')) {
+                annotationLines.unshift(line);
+            }
+        }
+
+        return annotationLines.join('\n');
+    }
+
+    private findMethodNameForward(content: string, startIndex: number): string | null {
+        // 从注解后面查找第一个方法名
+        // 匹配模式: public/private/protected? return-type methodName(
+        const searchArea = content.substring(startIndex, startIndex + 500); // 搜索接下来的500字符
+
+        const methodPattern = /(?:public|private|protected)?\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:\w+(?:<[^>]+>)?\s+)+(\w+)\s*\(/;
+        const match = searchArea.match(methodPattern);
+
+        if (match && match[1]) {
+            return match[1];
+        }
+
+        return null;
     }
 
     private getAnnotationBlock(content: string, methodIndex: number): string | null {
@@ -90,6 +154,7 @@ export class SpringMvcParser {
         classPath: string,
         className: string,
         methodName: string,
+        filePath: string,
         line: number
     ): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
@@ -119,6 +184,7 @@ export class SpringMvcParser {
                             this.combinePath(classPath, path),
                             className,
                             methodName,
+                            filePath,
                             line
                         ));
                     }
@@ -128,6 +194,7 @@ export class SpringMvcParser {
                         this.combinePath(classPath, pathValue.replace(/"/g, '').replace(/'/g, '').replace(/\s+/g, '')),
                         className,
                         methodName,
+                        filePath,
                         line
                     ));
                 }
@@ -139,7 +206,7 @@ export class SpringMvcParser {
 
         for (const match of requestMappingMatches) {
             const annotation = match[0];
-            const endpointsFromRequestMapping = this.parseRequestMapping(annotation, classPath, className, methodName, line);
+            const endpointsFromRequestMapping = this.parseRequestMapping(annotation, classPath, className, methodName, filePath, line);
             endpoints.push(...endpointsFromRequestMapping);
         }
 
@@ -151,15 +218,21 @@ export class SpringMvcParser {
         classPath: string,
         className: string,
         methodName: string,
+        filePath: string,
         line: number
     ): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
-        const pathMatch = annotation.match(/(?:path\s*=\s*|value\s*=\s*)"([^"]+)"/);
+        // 支持多种格式：
+        // 1. @RequestMapping("/path") - 简写
+        // 2. @RequestMapping(value = "/path") - 显式 value
+        // 3. @RequestMapping(path = "/path") - 显式 path
+        // 4. @RequestMapping(value = "/path", method = RequestMethod.GET) - 带方法
+
+        const pathMatch = annotation.match(/(?:path\s*=\s*|value\s*=\s*)?"([^"]+)"/);
         const methodMatch = annotation.match(/method\s*=\s*RequestMethod\.(\w+)/);
 
         if (!pathMatch) {
-            this.logger.warning(`Could not extract path from @RequestMapping: ${annotation}`);
             return endpoints;
         }
 
@@ -167,26 +240,25 @@ export class SpringMvcParser {
         let method: HttpMethod = 'GET';
 
         if (methodMatch) {
-            const methodName = methodMatch[1].toUpperCase();
-            if (['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].includes(methodName)) {
-                method = methodName as HttpMethod;
-            } else {
-                this.logger.warning(`Unknown RequestMethod: ${methodName}`);
+            const methodNameUpper = methodMatch[1].toUpperCase();
+            if (['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].includes(methodNameUpper)) {
+                method = methodNameUpper as HttpMethod;
             }
         }
 
-        if (annotation.includes(',')) {
-            const pathsPart = annotation.match(/(?:path\s*=\s*|value\s*=\s*)\{([^}]+)\}/);
+        // 处理多路径情况
+        if (annotation.includes(',') && annotation.match(/(?:path\s*=\s*|value\s*=\s*)?\{([^}]+)\}/)) {
+            const pathsPart = annotation.match(/(?:path\s*=\s*|value\s*=\s*)?\{([^}]+)\}/);
             if (pathsPart) {
                 const paths = pathsPart[1].split(',').map(p => p.trim().replace(/"/g, '').replace(/'/g, '').replace(/\s+/g, ''));
                 for (const p of paths) {
-                    endpoints.push(this.createEndpoint(method, this.combinePath(classPath, p), className, methodName, line));
+                    endpoints.push(this.createEndpoint(method, this.combinePath(classPath, p), className, methodName, filePath, line));
                 }
                 return endpoints;
             }
         }
 
-        endpoints.push(this.createEndpoint(method, this.combinePath(classPath, path), className, methodName, line));
+        endpoints.push(this.createEndpoint(method, this.combinePath(classPath, path), className, methodName, filePath, line));
         return endpoints;
     }
 
@@ -206,6 +278,7 @@ export class SpringMvcParser {
         path: string,
         className: string,
         methodName: string,
+        filePath: string,
         line: number
     ): RestEndpoint {
         return {
@@ -213,7 +286,7 @@ export class SpringMvcParser {
             path,
             className,
             methodName,
-            file: '',
+            file: filePath,
             line,
             framework: 'Spring'
         };

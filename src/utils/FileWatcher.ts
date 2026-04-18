@@ -31,21 +31,45 @@ export class FileWatcher {
             const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
             watcher.onDidCreate(uri => {
-                this.logger.info(`File created: ${uri.fsPath}`);
+                const filePath = uri.fsPath;
+
+                // 过滤异常文件路径（.git 后缀等）
+                if (filePath.endsWith('.git') || filePath.includes('.git/') || filePath.includes('\\.git\\')) {
+                    this.logger.warning(`Ignoring abnormal file path: ${filePath}`);
+                    return;
+                }
+
+                this.logger.info(`File created: ${filePath}`);
                 if (this.onCreateHandler) {
                     this.onCreateHandler(uri);
                 }
             });
 
             watcher.onDidChange(uri => {
-                this.logger.info(`File changed: ${uri.fsPath}`);
+                const filePath = uri.fsPath;
+
+                // 过滤异常文件路径
+                if (filePath.endsWith('.git') || filePath.includes('.git/') || filePath.includes('\\.git\\')) {
+                    this.logger.warning(`Ignoring abnormal file path: ${filePath}`);
+                    return;
+                }
+
+                this.logger.info(`File changed: ${filePath}`);
                 if (this.onChangeHandler) {
                     this.onChangeHandler(uri);
                 }
             });
 
             watcher.onDidDelete(uri => {
-                this.logger.info(`File deleted: ${uri.fsPath}`);
+                const filePath = uri.fsPath;
+
+                // 过滤异常文件路径
+                if (filePath.endsWith('.git') || filePath.includes('.git/') || filePath.includes('\\.git\\')) {
+                    this.logger.warning(`Ignoring abnormal file path: ${filePath}`);
+                    return;
+                }
+
+                this.logger.info(`File deleted: ${filePath}`);
                 if (this.onDeleteHandler) {
                     this.onDeleteHandler(uri);
                 }

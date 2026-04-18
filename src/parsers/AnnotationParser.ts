@@ -18,17 +18,14 @@ export class AnnotationParser {
         const endpoints: RestEndpoint[] = [];
 
         try {
-            const isKotlin = filePath.endsWith('.kt');
-            const processedContent = isKotlin ? this.preprocessKotlin(content) : content;
-
             const classPattern = /(class|interface)\s+(\w+)/g;
             let classMatch;
 
-            while ((classMatch = classPattern.exec(processedContent)) !== null) {
+            while ((classMatch = classPattern.exec(content)) !== null) {
                 const className = classMatch[2];
                 const classStartIndex = classMatch.index;
 
-                const classBlock = this.extractClassBlock(processedContent, classStartIndex);
+                const classBlock = this.extractClassBlock(content, classStartIndex);
                 if (!classBlock) {
                     continue;
                 }
@@ -36,24 +33,12 @@ export class AnnotationParser {
                 const springEndpoints = this.parseSpringMvc(classBlock, className, filePath);
                 const jaxRsEndpoints = this.parseJaxRs(classBlock, className, filePath);
 
-                for (const endpoint of springEndpoints) {
-                    endpoint.file = filePath;
-                    endpoints.push(endpoint);
-                }
-
-                for (const endpoint of jaxRsEndpoints) {
-                    endpoint.file = filePath;
-                    endpoints.push(endpoint);
-                }
-            }
-
-            if (endpoints.length > 0) {
-                this.logger.info(`Parsed ${endpoints.length} endpoints from ${filePath}`);
+                endpoints.push(...springEndpoints, ...jaxRsEndpoints);
             }
 
         } catch (error) {
             const err = error as Error;
-            this.logger.error(`Failed to parse file: ${filePath}`, err);
+            this.logger.error(`Parse failed: ${filePath}`, err);
         }
 
         return endpoints;
@@ -62,10 +47,15 @@ export class AnnotationParser {
     private parseSpringMvc(content: string, className: string, filePath: string): RestEndpoint[] {
         try {
             const classPath = this.springMvcParser.parseClassLevelPath(content, className);
-            return this.springMvcParser.parseMethodAnnotations(content, className, classPath);
+            const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath);
+
+            if (classPath && endpoints.length > 0) {
+                this.logger.info(`Class ${className}: @RequestMapping("${classPath}") → ${endpoints.length} endpoints`);
+            }
+
+            return endpoints;
         } catch (error) {
             const err = error as Error;
-            this.logger.warning(`Spring MVC parsing failed for class ${className} in ${filePath}: ${err.message}`);
             return [];
         }
     }
@@ -73,7 +63,7 @@ export class AnnotationParser {
     private parseJaxRs(content: string, className: string, filePath: string): RestEndpoint[] {
         try {
             const classPath = this.jaxRsParser.parseClassLevelPath(content, className);
-            return this.jaxRsParser.parseMethodAnnotations(content, className, classPath);
+            return this.jaxRsParser.parseMethodAnnotations(content, className, classPath, filePath);
         } catch (error) {
             const err = error as Error;
             this.logger.warning(`JAX-RS parsing failed for class ${className} in ${filePath}: ${err.message}`);
@@ -92,11 +82,50 @@ export class AnnotationParser {
     }
 
     private extractClassBlock(content: string, startIndex: number): string | null {
+        // 向前查找，包含类定义前的所有注解
+        let actualStartIndex = startIndex;
+
+        // 从 class/interface 位置向前查找注解
+        for (let i = startIndex - 1; i >= 0; i--) {
+            const char = content[i];
+
+            // 空行或换行后的非注解内容则停止
+            if (char === '\n') {
+                // 检查前一行是否是注解或注释
+                let lineStart = i - 1;
+                while (lineStart >= 0 && content[lineStart] !== '\n') {
+                    lineStart--;
+                }
+                const prevLine = content.substring(lineStart + 1, i).trim();
+
+                // 如果前一行是注解或空行，继续向前查找
+                if (prevLine === '' || prevLine.startsWith('@') || prevLine.startsWith('//') || prevLine.startsWith('/*')) {
+                    actualStartIndex = lineStart + 1;
+                    continue;
+                } else {
+                    // 非注解行，停止向前查找
+                    break;
+                }
+            }
+
+            // 非空白字符且不是换行
+            if (char !== ' ' && char !== '\t' && char !== '\r') {
+                // 如果是注解，继续向前
+                if (char === '@') {
+                    continue;
+                }
+                // 其他字符（如修饰符 public 等），停止
+                if (i < startIndex - 50) {
+                    break;
+                }
+            }
+        }
+
         const braceDepth = { value: 0 };
-        let endIndex = startIndex;
+        let endIndex = actualStartIndex;
         let foundOpenBrace = false;
 
-        for (let i = startIndex; i < content.length; i++) {
+        for (let i = actualStartIndex; i < content.length; i++) {
             const char = content[i];
 
             if (char === '{') {
@@ -115,6 +144,6 @@ export class AnnotationParser {
             return null;
         }
 
-        return content.substring(startIndex, endIndex);
+        return content.substring(actualStartIndex, endIndex);
     }
 }

@@ -16,3 +16,8 @@ docs/**
 CLAUDE.md
 .claude/**
 restful-tool/**
+test-manual.js
+test-standalone.js
+test-project/**
+.git/**
+*.vsix

@@ -29,7 +29,7 @@ suite('JaxRsParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'GET');
         assert.strictEqual(endpoints[0].path, '/users');
@@ -44,7 +44,7 @@ suite('JaxRsParser Test Suite', () => {
                 public User createUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'POST');
         assert.strictEqual(endpoints[0].path, '/create');
@@ -58,7 +58,7 @@ suite('JaxRsParser Test Suite', () => {
                 public User updateUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'PUT');
         assert.strictEqual(endpoints[0].path, '/update');
@@ -72,7 +72,7 @@ suite('JaxRsParser Test Suite', () => {
                 public void deleteUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'DELETE');
         assert.strictEqual(endpoints[0].path, '/delete');
@@ -88,7 +88,7 @@ suite('JaxRsParser Test Suite', () => {
             }
         `;
         const classPath = parser.parseClassLevelPath(content, 'UserController');
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/api/users');
     });
@@ -102,7 +102,7 @@ suite('JaxRsParser Test Suite', () => {
             }
         `;
         const classPath = parser.parseClassLevelPath(content, 'UserController');
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/api');
     });
@@ -115,7 +115,7 @@ suite('JaxRsParser Test Suite', () => {
                 public User getUserById() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/users/{id}');
     });

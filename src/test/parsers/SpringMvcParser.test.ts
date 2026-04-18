@@ -27,7 +27,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'GET');
         assert.strictEqual(endpoints[0].path, '/users');
@@ -42,7 +42,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public User createUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'POST');
         assert.strictEqual(endpoints[0].path, '/create');
@@ -55,7 +55,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public List<User> listUsers() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'GET');
         assert.strictEqual(endpoints[0].path, '/list');
@@ -70,7 +70,7 @@ suite('SpringMvcParser Test Suite', () => {
             }
         `;
         const classPath = parser.parseClassLevelPath(content, 'UserController');
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/api/users');
     });
@@ -82,7 +82,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 2);
         assert.strictEqual(endpoints[0].path, '/users');
         assert.strictEqual(endpoints[1].path, '/list');
@@ -95,7 +95,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public User updateUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'PUT');
         assert.strictEqual(endpoints[0].path, '/update');
@@ -108,7 +108,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public void deleteUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'DELETE');
         assert.strictEqual(endpoints[0].path, '/delete');
@@ -121,7 +121,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public User patchUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'PATCH');
         assert.strictEqual(endpoints[0].path, '/patch');
@@ -134,7 +134,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public User createUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'POST');
         assert.strictEqual(endpoints[0].path, '/create');
@@ -147,8 +147,82 @@ suite('SpringMvcParser Test Suite', () => {
                 public User getUserById() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/users/{id}');
+});
+    test('Should combine class-level and method-level @RequestMapping', () => {
+        const content = `
+            @RestController
+            @RequestMapping("/document/rag")
+            public class DocumentRagController {
+                @PostMapping("/v1/parse")
+                public WebResult uploadParse() {}
+                
+                @RequestMapping("/v1/test")
+                public WebResult test() {}
+            }
+        `;
+        const classPath = parser.parseClassLevelPath(content, 'DocumentRagController');
+        assert.strictEqual(classPath, '/document/rag');
+        
+        const endpoints = parser.parseMethodAnnotations(content, 'DocumentRagController', classPath, 'test.java');
+        assert.strictEqual(endpoints.length, 2);
+        
+        // 检查第一个端点: @PostMapping + class-level
+        assert.strictEqual(endpoints[0].method, 'POST');
+        assert.strictEqual(endpoints[0].path, '/document/rag/v1/parse');
+        assert.strictEqual(endpoints[0].methodName, 'uploadParse');
+        
+        // 检查第二个端点: @RequestMapping (简写) + class-level
+        assert.strictEqual(endpoints[1].method, 'GET');
+        assert.strictEqual(endpoints[1].path, '/document/rag/v1/test');
+        assert.strictEqual(endpoints[1].methodName, 'test');
+    });
+
+    test('Should parse method-level @RequestMapping with shorthand path', () => {
+        const content = `
+            public class SimpleController {
+                @RequestMapping("/simple")
+                public void simpleMethod() {}
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'SimpleController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].method, 'GET');
+        assert.strictEqual(endpoints[0].path, '/simple');
+    });
+
+    test('Should parse method-level @RequestMapping with explicit value', () => {
+        const content = `
+            public class ValueController {
+                @RequestMapping(value = "/explicit")
+                public void explicitMethod() {}
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'ValueController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].method, 'GET');
+        assert.strictEqual(endpoints[0].path, '/explicit');
+    });
+
+    test('Should parse method-level @RequestMapping with method parameter', () => {
+        const content = `
+            public class MethodController {
+                @RequestMapping(value = "/post", method = RequestMethod.POST)
+                public void postMethod() {}
+                
+                @RequestMapping(path = "/put", method = RequestMethod.PUT)
+                public void putMethod() {}
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'MethodController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 2);
+        
+        assert.strictEqual(endpoints[0].method, 'POST');
+        assert.strictEqual(endpoints[0].path, '/post');
+        
+        assert.strictEqual(endpoints[1].method, 'PUT');
+        assert.strictEqual(endpoints[1].path, '/put');
     });
 });
