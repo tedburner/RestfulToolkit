@@ -17,7 +17,7 @@ suite('JaxRsParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content, 'UserController');
+        const classPath = parser.parseClassLevelPath(content);
         assert.strictEqual(classPath, '/api');
     });
 
@@ -87,7 +87,7 @@ suite('JaxRsParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content, 'UserController');
+        const classPath = parser.parseClassLevelPath(content);
         const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/api/users');
@@ -101,7 +101,7 @@ suite('JaxRsParser Test Suite', () => {
                 public List<User> getAllUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content, 'UserController');
+        const classPath = parser.parseClassLevelPath(content);
         const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/api');

@@ -1,14 +1,17 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { AnnotationParser } from '../parsers/AnnotationParser';
 import { EndpointCache } from '../cache/EndpointCache';
 import { Logger } from '../utils/Logger';
 import { ConfigManager } from '../config/ConfigManager';
+import { ScanStateManager } from '../cache/ScanStateManager';
 
 export class FileScanner {
     private annotationParser: AnnotationParser;
     private cache: EndpointCache;
     private logger: Logger;
     private configManager: ConfigManager;
+    private scanStateManager: ScanStateManager;
     private statusBarItem: vscode.StatusBarItem;
     private scanPromise: Promise<void> | null = null;
     private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
@@ -18,6 +21,7 @@ export class FileScanner {
         this.cache = cache;
         this.logger = Logger.getInstance();
         this.configManager = ConfigManager.getInstance();
+        this.scanStateManager = ScanStateManager.getInstance();
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     }
 
@@ -28,7 +32,11 @@ export class FileScanner {
             return;
         }
 
-        this.scanPromise = this.performScan();
+        // 默认使用增量扫描（如果有历史记录）
+        const hasHistory = this.scanStateManager.hasHistory();
+        this.logger.info(`Scan strategy: ${hasHistory ? 'INCREMENTAL (use history)' : 'FULL (no history)'}`);
+
+        this.scanPromise = this.performScan(!hasHistory);
         try {
             await this.scanPromise;
         } finally {
@@ -36,14 +44,19 @@ export class FileScanner {
         }
     }
 
-    private async performScan(): Promise<void> {
+    /**
+     * 执行扫描（支持增量扫描）
+     *
+     * @param forceFullScan 是否强制全量扫描（默认增量）
+     */
+    private async performScan(forceFullScan: boolean = false): Promise<void> {
         const config = this.configManager.getScanConfig();
         const scanPatterns = config.scanPaths;
         const excludePatterns = config.excludePaths;
 
         this.logger.info(`Starting workspace scan with patterns: ${scanPatterns.join(', ')}`);
         this.logger.info(`Exclude patterns: ${excludePatterns.join(', ')}`);
-        this.logger.info(`Exclude pattern string: {${excludePatterns.join(',')}}`);
+        this.logger.info(`Scan mode: ${forceFullScan ? 'FULL' : 'INCREMENTAL'}`);
 
         // 诊断：检查工作区文件夹
         if (vscode.workspace.workspaceFolders) {
@@ -59,10 +72,17 @@ export class FileScanner {
             this.logger.info(`Controller files: ${controllerTest.slice(0, 5).map(f => f.fsPath).join(', ')}`);
         }
 
+        // 增量扫描统计
+        const stats = this.scanStateManager.getStats();
+        if (!forceFullScan && stats.lastScanTime) {
+            this.logger.info(`Previous scan: ${stats.totalFiles} files, ${stats.totalEndpoints} endpoints, last scan: ${new Date(stats.lastScanTime).toLocaleString()}`);
+        }
+
         this.showProgress('正在扫描项目...', 0, 0);
 
         let totalFiles = 0;
         let scannedFiles = 0;
+        let skippedFiles = 0;
         let filesWithEndpoints = 0;
 
         // 统计每个模式找到的文件数
@@ -96,6 +116,19 @@ export class FileScanner {
                     continue;
                 }
 
+                // 增量扫描：检查是否需要扫描
+                if (!forceFullScan && !this.scanStateManager.needsScan(filePath)) {
+                    skippedFiles++;
+                    this.logger.info(`Skipped (unchanged): ${filePath}`);
+                    continue;
+                }
+
+                // 清除旧缓存（如果之前有扫描过）
+                const previousEndpoints = this.cache.getByFile(filePath);
+                if (previousEndpoints.length > 0) {
+                    this.cache.removeByFile(filePath);
+                }
+
                 const endpointCountBefore = this.cache.size();
                 await this.scanFile(file);
                 const endpointCountAfter = this.cache.size();
@@ -106,14 +139,25 @@ export class FileScanner {
                     this.logger.info(`Found ${endpointsFound} endpoints in: ${filePath}`);
                 }
 
+                // 记录扫描结果
+                this.scanStateManager.recordScan(filePath, endpointsFound);
+
                 scannedFiles++;
                 this.showProgress('正在扫描项目...', scannedFiles, totalFiles);
             }
         }
 
+        // 保存扫描状态
+        this.scanStateManager.saveState();
+
         const endpointCount = this.cache.size();
-        this.logger.info(`Scan complete. Scanned ${scannedFiles} files, ${filesWithEndpoints} files with endpoints, total ${endpointCount} endpoints`);
-        this.showProgress(`扫描完成，共找到 ${endpointCount} 个 REST 端点`, totalFiles, totalFiles, true);
+        this.logger.info(`Scan complete. Mode: ${forceFullScan ? 'FULL' : 'INCREMENTAL'}, Scanned ${scannedFiles} files, Skipped ${skippedFiles} files, ${filesWithEndpoints} files with endpoints, total ${endpointCount} endpoints`);
+
+        const message = skippedFiles > 0
+            ? `扫描完成（增量模式），扫描 ${scannedFiles} 文件，跳过 ${skippedFiles} 未修改文件，共找到 ${endpointCount} 个 REST 端点`
+            : `扫描完成，共找到 ${endpointCount} 个 REST 端点`;
+
+        this.showProgress(message, totalFiles, totalFiles, true);
 
         setTimeout(() => {
             this.statusBarItem.hide();
@@ -122,13 +166,14 @@ export class FileScanner {
 
     async scanFile(uri: vscode.Uri): Promise<void> {
         try {
-            const document = await vscode.workspace.openTextDocument(uri);
-            const content = document.getText();
             const filePath = uri.fsPath;
 
             if (!filePath.endsWith('.java') && !filePath.endsWith('.kt')) {
                 return;
             }
+
+            // 强制从磁盘读取最新内容，避免VS Code缓存问题
+            const content = fs.readFileSync(filePath, 'utf-8');
 
             const endpoints = this.annotationParser.parseFile(content, filePath);
 
@@ -180,9 +225,19 @@ export class FileScanner {
         }
     }
 
-    refresh(): Promise<void> {
-        this.logger.info('Manual refresh triggered');
-        this.cache.clear();
+    /**
+     * 刷新端点（默认增量刷新）
+     *
+     * @param forceFullScan 是否强制全量刷新
+     */
+    refresh(forceFullScan: boolean = false): Promise<void> {
+        this.logger.info(`Manual refresh triggered (${forceFullScan ? 'FULL' : 'INCREMENTAL'})`);
+
+        if (forceFullScan) {
+            this.cache.clear();
+            this.scanStateManager.clearAll();
+        }
+
         return this.scanWorkspace();
     }
 

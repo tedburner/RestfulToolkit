@@ -8,7 +8,7 @@ export class SpringMvcParser {
         this.logger = Logger.getInstance();
     }
 
-    parseClassLevelPath(content: string, className: string): string | null {
+    parseClassLevelPath(content: string): string | null {
         const patterns = [
             /@RequestMapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?"([^"]+)"\s*\)/,
             /@RequestMapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?\{([^}]+)\}\s*\)/
@@ -50,13 +50,19 @@ export class SpringMvcParser {
                     continue;
                 }
 
+                // 找到注解块的真正起始位置（第一个 @ 的位置）
+                const annotationStartIndex = this.findAnnotationStart(content, annotationIndex);
+                if (annotationStartIndex === -1) {
+                    continue;
+                }
+
                 // 从注解位置向后查找方法名
                 const methodName = this.findMethodNameForward(content, annotationIndex + annotationText.length);
                 if (!methodName) {
                     continue;
                 }
 
-                const line = this.getLineNumber(content, annotationIndex);
+                const line = this.getLineNumber(content, annotationStartIndex);
                 const methodEndpoints = this.parseAnnotationsBlock(
                     annotationBlock,
                     classPath || '',
@@ -73,14 +79,19 @@ export class SpringMvcParser {
         return endpoints;
     }
 
+    private findAnnotationStart(content: string, matchIndex: number): number {
+        // 正则匹配的 annotationIndex 已经指向注解起始位置（@符号）
+        // 直接返回 matchIndex 即可
+        return matchIndex;
+    }
+
     private extractAnnotationBlockBackward(content: string, startIndex: number): string | null {
         // 从注解位置向前查找所有相关注解
-        let blockStart = startIndex;
-        let lines = content.substring(0, startIndex).split('\n');
-        let currentLineIndex = lines.length - 1;
+        const lines = content.substring(0, startIndex).split('\n');
+        const currentLineIndex = lines.length - 1;
 
         // 从当前行开始向前查找，找到所有连续的注解行
-        let annotationLines: string[] = [];
+        const annotationLines: string[] = [];
 
         // 首先添加当前注解所在行到结束位置的文本
         let currentLineEnd = content.indexOf('\n', startIndex);

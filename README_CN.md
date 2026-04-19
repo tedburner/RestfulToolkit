@@ -1,6 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
+[![Version](https://img.shields.io/badge/version-0.0.1-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **[English Documentation](README.md)** | **中文文档**
@@ -69,27 +70,57 @@
 
 ## 配置
 
-在 VS Code 设置中配置扫描路径：
+RestfulToolkit 支持两个级别的配置：
+
+### 🌐 全局/工作区设置（VS Code 设置）
+
+在 VS Code 设置中配置（`Ctrl+,` / `Cmd+,`）：
 
 ```json
 {
   "restfulToolkit.scanPaths": [
-    "src/main/java/**/*.java",
-    "src/main/kotlin/**/*.kt"
+    "**/src/main/java/**/*.java",
+    "**/src/main/kotlin/**/*.kt"
   ],
   "restfulToolkit.excludePaths": [
-    "src/test/**",
+    "**/src/test/**",
     "**/target/**",
-    "**/build/**"
+    "**/build/**",
+    "**/.gradle/**",
+    "**/node_modules/**"
   ],
   "restfulToolkit.maxResults": 100
 }
 ```
 
-### 设置选项
-- **scanPaths**：扫描文件的 glob 模式（默认：Java/Kotlin 源路径）
-- **excludePaths**：排除扫描的 glob 模式（默认：测试和构建目录）
-- **maxResults**：显示的最大搜索结果数（默认：100）
+### 📁 项目级配置（推荐）
+
+在项目根目录创建 `.restful-toolkit.json` 进行项目级自定义：
+
+```json
+{
+  "scanPaths": [
+    "**/src/main/java/**/*.java"
+  ],
+  "excludePaths": [
+    "**/src/test/**",
+    "**/target/**"
+  ],
+  "maxResults": 200
+}
+```
+
+**优先级顺序**：项目 `.restful-toolkit.json` > VS Code 设置 > 默认配置
+
+> 💡 **提示**：项目级配置适合团队共享和多模块项目。可以将该文件提交到 Git，确保团队成员配置一致。
+
+### 设置说明
+
+| 设置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | 扫描文件的 glob 模式 |
+| `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | 排除扫描的 glob 模式 |
+| `maxResults` | `number` | `100` | 显示的最大搜索结果数 |
 
 ## 已知限制
 

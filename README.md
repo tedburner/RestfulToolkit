@@ -1,6 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
+[![Version](https://img.shields.io/badge/version-0.0.1-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **English Documentation** | **[中文文档](README_CN.md)**
@@ -69,27 +70,57 @@ To manually refresh the endpoint cache:
 
 ## Configuration
 
-Configure scan paths in VS Code settings:
+RestfulToolkit supports two levels of configuration:
+
+### 🌐 Global/Workspace Settings (VS Code Settings)
+
+Configure in VS Code settings (`Ctrl+,` / `Cmd+,`):
 
 ```json
 {
   "restfulToolkit.scanPaths": [
-    "src/main/java/**/*.java",
-    "src/main/kotlin/**/*.kt"
+    "**/src/main/java/**/*.java",
+    "**/src/main/kotlin/**/*.kt"
   ],
   "restfulToolkit.excludePaths": [
-    "src/test/**",
+    "**/src/test/**",
     "**/target/**",
-    "**/build/**"
+    "**/build/**",
+    "**/.gradle/**",
+    "**/node_modules/**"
   ],
   "restfulToolkit.maxResults": 100
 }
 ```
 
-### Settings
-- **scanPaths**: Glob patterns for files to scan (default: Java/Kotlin source paths)
-- **excludePaths**: Glob patterns to exclude from scanning (default: test and build directories)
-- **maxResults**: Maximum number of search results to display (default: 100)
+### 📁 Project-level Configuration (Recommended)
+
+Create `.restful-toolkit.json` in your project root for per-project customization:
+
+```json
+{
+  "scanPaths": [
+    "**/src/main/java/**/*.java"
+  ],
+  "excludePaths": [
+    "**/src/test/**",
+    "**/target/**"
+  ],
+  "maxResults": 200
+}
+```
+
+**Priority Order**: Project `.restful-toolkit.json` > VS Code Settings > Default Configuration
+
+> 💡 **Tip**: Use project-level config for team sharing and multi-module projects. The file can be committed to Git for consistent configuration across team members.
+
+### Settings Description
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | Glob patterns for files to scan |
+| `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | Glob patterns to exclude from scanning |
+| `maxResults` | `number` | `100` | Maximum number of search results to display |
 
 ## Known Limitations
 

@@ -8,7 +8,7 @@ export class JaxRsParser {
         this.logger = Logger.getInstance();
     }
 
-    parseClassLevelPath(content: string, className: string): string | null {
+    parseClassLevelPath(content: string): string | null {
         const pattern = /@Path\s*\(\s*"([^"]+)"\s*\)/;
         const match = content.match(pattern);
 
@@ -22,7 +22,8 @@ export class JaxRsParser {
     parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
-        const methodPattern = /(?:public|private|protected)?\s+\w+\s+(\w+)\s*\([^)]*\)\s*\{[^}]*\}/g;
+        // 更精确的方法匹配正则，支持泛型返回类型
+        const methodPattern = /(?:public|private|protected)?\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:\w+(?:<[^>]+>)?\s+)+(\w+)\s*\([^)]*\)\s*\{[^}]*\}/g;
         let methodMatch;
 
         while ((methodMatch = methodPattern.exec(content)) !== null) {
@@ -87,30 +88,56 @@ export class JaxRsParser {
     }
 
     private getAnnotationBlock(content: string, methodIndex: number): string | null {
+        // 找到方法签名前面的换行符位置
+        // methodIndex 指向正则匹配的起始位置（可能包含换行符）
+        // 我们需要找到方法签名真正开始的行首位置
         let endIndex = methodIndex;
+
+        // 如果 methodIndex 指向换行符，向前跳过换行符本身
+        while (endIndex < content.length && content[endIndex] === '\n') {
+            endIndex++;
+        }
+
+        // 现在 endIndex 指向方法签名的第一个非换行符字符（可能是空格或实际内容）
+        // 向前查找这一行的行首
         while (endIndex > 0 && content[endIndex - 1] !== '\n') {
             endIndex--;
         }
 
         let startIndex = endIndex;
-        let annotationDepth = 0;
 
+        // 向前查找所有连续的注解行
         while (startIndex > 0) {
-            const char = content[startIndex - 1];
-            if (char === '@') {
-                annotationDepth++;
-            }
-            if (annotationDepth === 0 && (char === '\n' || char === '{')) {
+            // 找到当前行前面的换行符（前一行的结尾）
+            let prevNewlineIndex = startIndex - 1;
+            if (prevNewlineIndex < 0) {
                 break;
             }
-            startIndex--;
+
+            // 找到前一行的开始位置
+            let prevLineStart = prevNewlineIndex;
+            while (prevLineStart > 0 && content[prevLineStart - 1] !== '\n') {
+                prevLineStart--;
+            }
+
+            // 获取前一行的内容（不包含换行符）
+            const prevLine = content.substring(prevLineStart, prevNewlineIndex).trim();
+
+            // 如果前一行不是注解行（不以 @ 开头），停止查找
+            if (prevLine === '' || !prevLine.startsWith('@')) {
+                break;
+            }
+
+            // 前一行是注解行，继续向前查找
+            startIndex = prevLineStart;
         }
 
-        if (annotationDepth === 0) {
+        // 返回从 startIndex 到 endIndex 的内容（所有注解行）
+        const block = content.substring(startIndex, endIndex);
+        if (!block.trim().startsWith('@')) {
             return null;
         }
-
-        return content.substring(startIndex, endIndex);
+        return block;
     }
 
     private combinePath(classPath: string, methodPath: string): string {

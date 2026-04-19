@@ -5,6 +5,7 @@ import { FileWatcher } from './utils/FileWatcher';
 import { Logger } from './utils/Logger';
 import { SearchUI } from './ui/SearchUI';
 import { ConfigManager } from './config/ConfigManager';
+import { ScanStateManager } from './cache/ScanStateManager';
 
 let cache: EndpointCache;
 let scanner: FileScanner;
@@ -12,6 +13,7 @@ let watcher: FileWatcher;
 let logger: Logger;
 let searchUI: SearchUI;
 let configManager: ConfigManager;
+let scanStateManager: ScanStateManager;
 
 export async function activate(context: vscode.ExtensionContext) {
     logger = Logger.getInstance();
@@ -19,6 +21,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // 初始化配置管理器
     configManager = ConfigManager.getInstance();
+
+    // 初始化扫描状态管理器（需要 context 用于持久化）
+    scanStateManager = ScanStateManager.getInstance();
+    scanStateManager.setContext(context);
 
     // 设置工作区文件夹（用于加载项目配置）
     if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
@@ -64,18 +70,52 @@ export async function activate(context: vscode.ExtensionContext) {
         async () => {
             logger.info('Refresh endpoints command executed');
 
-            await vscode.window.withProgress(
+            // 询问用户选择刷新模式
+            const choice = await vscode.window.showQuickPick(
+                [
+                    {
+                        label: '$(sync) 增量刷新',
+                        description: '仅扫描修改过的文件（推荐）',
+                        detail: '快速、高效，适合日常使用',
+                        value: 'incremental'
+                    },
+                    {
+                        label: '$(refresh) 全量刷新',
+                        description: '重新扫描所有文件',
+                        detail: '完整、彻底，适合配置变化或怀疑缓存错误时',
+                        value: 'full'
+                    }
+                ],
                 {
-                    location: vscode.ProgressLocation.Notification,
-                    title: 'RestfulToolkit: Refreshing endpoints...',
-                    cancellable: false
-                },
-                async () => {
-                    await scanner.refresh();
+                    placeHolder: '选择刷新模式',
+                    matchOnDescription: true
                 }
             );
 
-            vscode.window.showInformationMessage(`Refreshed! Found ${cache.size()} endpoints.`);
+            if (!choice) {
+                logger.info('Refresh cancelled by user');
+                return;
+            }
+
+            const forceFullScan = choice.value === 'full';
+
+            await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: forceFullScan ? 'RestfulToolkit: 全量刷新端点...' : 'RestfulToolkit: 增量刷新端点...',
+                    cancellable: false
+                },
+                async () => {
+                    await scanner.refresh(forceFullScan);
+                }
+            );
+
+            const stats = scanStateManager.getStats();
+            const message = forceFullScan
+                ? `全量刷新完成！共找到 ${cache.size()} 个端点`
+                : `增量刷新完成！共找到 ${cache.size()} 个端点（扫描 ${stats.totalFiles} 文件）`;
+
+            vscode.window.showInformationMessage(message);
         }
     );
 

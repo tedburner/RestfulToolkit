@@ -38,9 +38,9 @@ export const DEFAULT_CONFIG: ScanConfig = {
  * 配置键名（对应 package.json 的 contributes.configuration）
  */
 export const CONFIG_KEYS = {
-    scanPaths: 'scanPaths',
-    excludePaths: 'excludePaths',
-    maxResults: 'maxResults'
+    scanPaths: 'restfulToolkit.scanPaths',
+    excludePaths: 'restfulToolkit.excludePaths',
+    maxResults: 'restfulToolkit.maxResults'
 } as const;
 
 /**
@@ -58,7 +58,7 @@ export const PROJECT_CONFIG_FILE = '.restful-toolkit.json';
  * 2. 项目配置文件 .restful-toolkit.json
  * 3. 默认配置（最低）
  */
-export function getScanConfig(workspaceFolder?: string): ScanConfig {
+export function getScanConfig(): ScanConfig {
     // 这里只是定义函数，实际逻辑在 FileScanner 或专门的 ConfigManager 中实现
     return DEFAULT_CONFIG;
 }

@@ -46,7 +46,7 @@ export class AnnotationParser {
 
     private parseSpringMvc(content: string, className: string, filePath: string): RestEndpoint[] {
         try {
-            const classPath = this.springMvcParser.parseClassLevelPath(content, className);
+            const classPath = this.springMvcParser.parseClassLevelPath(content);
             const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath);
 
             if (classPath && endpoints.length > 0) {
@@ -55,14 +55,13 @@ export class AnnotationParser {
 
             return endpoints;
         } catch (error) {
-            const err = error as Error;
             return [];
         }
     }
 
     private parseJaxRs(content: string, className: string, filePath: string): RestEndpoint[] {
         try {
-            const classPath = this.jaxRsParser.parseClassLevelPath(content, className);
+            const classPath = this.jaxRsParser.parseClassLevelPath(content);
             return this.jaxRsParser.parseMethodAnnotations(content, className, classPath, filePath);
         } catch (error) {
             const err = error as Error;

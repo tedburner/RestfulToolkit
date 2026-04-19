@@ -2,8 +2,9 @@
   "name": "restful-toolkit",
   "displayName": "RestfulToolkit",
   "description": "VS Code extension for searching and navigating RESTful API endpoints in Java/Kotlin Spring and JAX-RS projects",
-  "version": "0.0.1-alpha",
-  "publisher": "tedburner",
+  "version": "0.0.1",
+  "publisher": "kiturone",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -38,7 +39,7 @@
       },
       {
         "command": "restfulToolkit.refreshEndpoints",
-        "title": "Refresh Endpoints",
+        "title": "Refresh Endpoints (Incremental/Full)",
         "category": "RestfulToolkit"
       },
       {
@@ -97,7 +98,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
+    "test": "node ./dist/test/runTest.js",
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch"
   },

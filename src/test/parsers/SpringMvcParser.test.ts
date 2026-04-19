@@ -16,7 +16,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content, 'UserController');
+        const classPath = parser.parseClassLevelPath(content);
         assert.strictEqual(classPath, '/api');
     });
 
@@ -69,7 +69,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content, 'UserController');
+        const classPath = parser.parseClassLevelPath(content);
         const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/api/users');
@@ -158,22 +158,22 @@ suite('SpringMvcParser Test Suite', () => {
             public class DocumentRagController {
                 @PostMapping("/v1/parse")
                 public WebResult uploadParse() {}
-                
+
                 @RequestMapping("/v1/test")
                 public WebResult test() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content, 'DocumentRagController');
+        const classPath = parser.parseClassLevelPath(content);
         assert.strictEqual(classPath, '/document/rag');
-        
+
         const endpoints = parser.parseMethodAnnotations(content, 'DocumentRagController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 2);
-        
+
         // 检查第一个端点: @PostMapping + class-level
         assert.strictEqual(endpoints[0].method, 'POST');
         assert.strictEqual(endpoints[0].path, '/document/rag/v1/parse');
         assert.strictEqual(endpoints[0].methodName, 'uploadParse');
-        
+
         // 检查第二个端点: @RequestMapping (简写) + class-level
         assert.strictEqual(endpoints[1].method, 'GET');
         assert.strictEqual(endpoints[1].path, '/document/rag/v1/test');
