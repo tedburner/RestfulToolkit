@@ -37,10 +37,13 @@ export class ScanStateManager {
     }
 
     /**
-     * 设置扩展上下文（不再使用，但保留接口兼容）
+     * 设置扩展上下文（已弃用：不再使用 workspaceState）
+     * @deprecated 现在使用内存模式，此方法已无实际作用
      */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     setContext(context: vscode.ExtensionContext): void {
-        // 不再使用 workspaceState 持久化
+        // 不再使用 workspaceState 持久化，参数仅保留接口兼容性
+        void context; // 显式标记为未使用
         this.logger.info('ScanStateManager running in memory-only mode, ignoring workspaceState');
     }
 

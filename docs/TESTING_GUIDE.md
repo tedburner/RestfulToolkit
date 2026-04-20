@@ -1,4 +1,56 @@
-# RestfulToolkit 本地测试指南
+# RestfulToolkit 测试指南
+
+## 测试脚本概览
+
+RestfulToolkit 提供三种测试方式：
+
+### 1. 单元测试（Mocha框架）✅
+
+**位置**: `src/test/` 目录
+
+**测试内容**:
+- Spring MVC解析器测试
+- JAX-RS解析器测试  
+- 端点缓存管理测试
+
+**运行方式**:
+```bash
+npm test
+```
+
+**测试文件**:
+- `src/test/runTest.ts` - Mocha测试入口
+- `src/test/parsers/SpringMvcParser.test.ts`
+- `src/test/parsers/JaxRsParser.test.ts`
+- `src/test/cache/EndpointCache.test.ts`
+
+### 2. 自动化验证脚本 ✅
+
+**位置**: `test-project/scripts/test-all-files.js`
+
+**验证内容**:
+- 49个端点识别准确性
+- 行号定位100%准确
+- 多路径拆分正确性
+- Kotlin文件支持
+- Spring vs JAX-RS框架分布
+
+**运行方式**:
+```bash
+node test-project/scripts/test-all-files.js
+```
+
+**输出统计**:
+- 总端点数、行号准确率
+- 框架分布（Spring 90%, JAX-RS 10%）
+- 语言分布（Java 92%, Kotlin 8%）
+- 多路径拆分统计
+
+### 3. VS Code扩展测试（本文档主要内容）
+
+使用VS Code扩展开发主机进行功能测试。
+
+---
 
 ## 方法 1: VS Code 扩展开发主机（推荐）
 

@@ -25,6 +25,11 @@ public class CategoryController {
         return "测试端点 - 结尾带斜杠";
     }
 
+    @GetMapping("test_line/")
+    public String testEndpoint() {
+        return "测试端点 - 结尾带斜杠";
+    }
+
     @GetMapping("/nested/{categoryId}/products")
     public String getProductsByCategory(@PathVariable Long categoryId) {
         return "分类 " + categoryId + " 的产品列表";

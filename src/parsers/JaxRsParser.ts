@@ -22,26 +22,62 @@ export class JaxRsParser {
     parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
-        // 更精确的方法匹配正则，支持泛型返回类型
-        const methodPattern = /(?:public|private|protected)?\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:\w+(?:<[^>]+>)?\s+)+(\w+)\s*\([^)]*\)\s*\{[^}]*\}/g;
+        // 使用更准确的方法匹配：先找方法签名，然后用括号深度匹配方法体
+        const methodSignaturePattern = /(?:public|private|protected)?\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:\w+(?:<[^>]+>)?\s+)+(\w+)\s*\(/g;
         let methodMatch;
 
-        while ((methodMatch = methodPattern.exec(content)) !== null) {
+        while ((methodMatch = methodSignaturePattern.exec(content)) !== null) {
             const methodName = methodMatch[1];
-            const methodStartIndex = methodMatch.index;
+            const signatureStartIndex = methodMatch.index;
 
-            const annotationBlock = this.getAnnotationBlock(content, methodStartIndex);
+            // 找到方法体的第一个 { 和最后一个 }
+            let braceStart = -1;
+            for (let i = signatureStartIndex; i < content.length; i++) {
+                if (content[i] === '{') {
+                    braceStart = i;
+                    break;
+                }
+            }
+
+            if (braceStart === -1) {
+                continue; // 方法体开始括号未找到
+            }
+
+            // 计算括号深度找到方法体结束
+            let braceDepth = 1;
+            let braceEnd = braceStart + 1;
+            while (braceEnd < content.length && braceDepth > 0) {
+                if (content[braceEnd] === '{') {
+                    braceDepth++;
+                } else if (content[braceEnd] === '}') {
+                    braceDepth--;
+                }
+                braceEnd++;
+            }
+
+            // braceEnd 是方法体结束括号的位置+1
+            // 方法签名真正的起始位置应该是方法前面的第一个非空行
+            let actualMethodStart = signatureStartIndex;
+            while (actualMethodStart > 0 && content[actualMethodStart - 1] !== '\n') {
+                actualMethodStart--;
+            }
+
+            const annotationBlock = this.getAnnotationBlock(content, actualMethodStart);
             if (!annotationBlock) {
                 continue;
             }
 
+            // 计算注解块在content中的起始位置
+            const annotationBlockStart = content.indexOf(annotationBlock, actualMethodStart - annotationBlock.length);
+
             const methodEndpoints = this.parseJaxRsAnnotations(
                 annotationBlock,
+                annotationBlockStart,
                 classPath || '',
                 className,
                 methodName,
                 filePath,
-                this.getLineNumber(content, methodStartIndex)
+                content
             );
 
             endpoints.push(...methodEndpoints);
@@ -52,11 +88,12 @@ export class JaxRsParser {
 
     private parseJaxRsAnnotations(
         annotationBlock: string,
+        annotationBlockStart: number,
         classPath: string,
         className: string,
         methodName: string,
         filePath: string,
-        line: number
+        content: string
     ): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
@@ -69,7 +106,15 @@ export class JaxRsParser {
         ];
 
         for (const httpMethod of httpMethods) {
-            if (annotationBlock.match(httpMethod.pattern)) {
+            const match = annotationBlock.match(httpMethod.pattern);
+            if (match) {
+                // 找到HTTP方法注解在annotationBlock中的位置
+                const httpMethodIndexInBlock = annotationBlock.indexOf(httpMethod.pattern.source);
+                // 计算在原始content中的绝对位置
+                const absolutePosition = annotationBlockStart + httpMethodIndexInBlock;
+                // 计算正确的行号
+                const line = this.getLineNumber(content, absolutePosition);
+
                 const pathMatch = annotationBlock.match(/@Path\s*\(\s*"([^"]+)"\s*\)/);
                 const methodPath = pathMatch ? pathMatch[1].replace(/\s+/g, '') : '';
 
@@ -88,28 +133,15 @@ export class JaxRsParser {
     }
 
     private getAnnotationBlock(content: string, methodIndex: number): string | null {
-        // 找到方法签名前面的换行符位置
-        // methodIndex 指向正则匹配的起始位置（可能包含换行符）
-        // 我们需要找到方法签名真正开始的行首位置
-        let endIndex = methodIndex;
+        // methodIndex 指向方法签名行的起始位置（行首）
+        // 向前查找所有注解行
+        let startIndex = methodIndex;
+        const endIndex = methodIndex;
 
-        // 如果 methodIndex 指向换行符，向前跳过换行符本身
-        while (endIndex < content.length && content[endIndex] === '\n') {
-            endIndex++;
-        }
-
-        // 现在 endIndex 指向方法签名的第一个非换行符字符（可能是空格或实际内容）
-        // 向前查找这一行的行首
-        while (endIndex > 0 && content[endIndex - 1] !== '\n') {
-            endIndex--;
-        }
-
-        let startIndex = endIndex;
-
-        // 向前查找所有连续的注解行
+        // 向前查找注解行
         while (startIndex > 0) {
             // 找到当前行前面的换行符（前一行的结尾）
-            let prevNewlineIndex = startIndex - 1;
+            const prevNewlineIndex = startIndex - 1;
             if (prevNewlineIndex < 0) {
                 break;
             }
@@ -141,6 +173,7 @@ export class JaxRsParser {
     }
 
     private combinePath(classPath: string, methodPath: string): string {
+        // 规范化路径拼接，处理斜杠重复问题
         if (!classPath || classPath === '') {
             if (!methodPath || methodPath === '') {
                 return '/';
@@ -148,14 +181,17 @@ export class JaxRsParser {
             return methodPath.startsWith('/') ? methodPath : '/' + methodPath;
         }
 
-        const base = classPath.startsWith('/') ? classPath : '/' + classPath;
+        // 去除类路径结尾的斜杠
+        let base = classPath.startsWith('/') ? classPath : '/' + classPath;
+        base = base.replace(/\/+$/, ''); // 去除结尾所有斜杠
 
+        // 去除方法路径开头的斜杠
         if (!methodPath || methodPath === '') {
-            return base;
+            return base; // 方法路径为空，只返回类路径
         }
 
-        const method = methodPath.startsWith('/') ? methodPath : '/' + methodPath;
-        return base + method;
+        const method = methodPath.replace(/^\/+/, ''); // 去除开头所有斜杠
+        return base + '/' + method;
     }
 
     private createEndpoint(

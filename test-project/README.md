@@ -1,6 +1,76 @@
 # RestfulToolkit 测试项目
 
-这是一个简单的测试项目，用于验证 RestfulToolkit 扩展的功能。
+这是一个精简的测试项目，用于验证 RestfulToolkit 扩展的核心功能。
+
+## 测试脚本说明
+
+### 1. 自动化验证脚本（推荐）
+
+**位置**: `scripts/test-all-files.js`
+
+**运行方法**：
+```bash
+cd F:\Project\person\restful-toolkit
+node test-project/scripts/test-all-files.js
+```
+
+**验证内容**：
+- ✅ 端点识别数量统计：49个端点
+- ✅ 行号定位准确性验证：100%准确
+- ✅ 多路径拆分正确性：7个端点来自3个注解
+- ✅ Kotlin文件支持：4个端点
+- ✅ 框架分布统计：Spring 44个, JAX-RS 5个
+- ✅ 路径拼接问题检测：无异常
+
+**输出示例**：
+```
+=== 测试结果汇总 ===
+📊 总端点数: 49
+✅ 行号正确: 49 (100%)
+❌ 行号错误: 0 (0%)
+⚠️  路径异常: 0
+
+=== 框架与语言分布 ===
+📊 Spring MVC 端点: 44 (90%)
+📊 JAX-RS 端点: 5 (10%)
+📊 Kotlin 端点: 4 (8%)
+📊 Java 端点: 45 (92%)
+
+=== 多路径统计 ===
+📊 多路径拆分端点数: 7 个
+📊 多路径注解数: 3 个注解
+📊 多路径拆分比例: 14%
+```
+
+### 2. 单元测试（Mocha）
+
+**位置**: `../src/test/` 目录
+
+**运行方法**：
+```bash
+cd F:\Project\person\restful-toolkit
+npm test
+```
+
+**测试覆盖**：Spring MVC解析、JAX-RS解析、缓存管理
+
+### 3. VS Code功能测试
+
+在VS Code扩展开发主机中进行交互测试，详见 `docs/TESTING_GUIDE.md`
+
+## 快速测试
+
+**自动化测试脚本**：
+```bash
+cd F:\Project\person\restful-toolkit
+node test-project/scripts/test-all-files.js
+```
+
+输出包括：
+- 端点识别数量统计
+- 行号定位准确性验证
+- 详细错误报告
+- 路径拼接问题检测
 
 ## 项目结构
 
@@ -10,15 +80,23 @@ test-project/
     └── main/
         ├── java/
         │   └── com/example/controller/
-        │       ├── UserController.java      (Spring MVC)
-        │       ├── ProductController.java   (Spring MVC)
-        │       └── OrderResource.java       (JAX-RS)
+        │       ├── CoreAcceptanceController.java  (验收测试核心)
+        │       ├── UserController.java            (Spring MVC 基础)
+        │       ├── ProductController.java         (Spring MVC CRUD)
+        │       ├── OrderResource.java             (JAX-RS 测试)
+        │       └── CategoryController.java        (结尾斜杠场景)
         └── kotlin/
             └── com/example/
-                └── ItemController.kt        (Kotlin + Spring)
+                └── ItemController.kt              (Kotlin + Spring)
 ```
 
 ## 包含的端点
+
+### CoreAcceptanceController (验收测试) - 12 个端点
+- 跨行注解：2 个端点
+- 多路径注解：5 个端点（2+3）
+- 行号验证：4 个端点
+- 复杂参数：2 个端点
 
 ### UserController (Spring MVC) - 8 个端点
 - GET    /api/users
@@ -46,6 +124,14 @@ test-project/
 - DELETE /api/orders/{id}
 - GET    /api/orders/status/{status}
 
+### CategoryController (结尾斜杠测试) - 6 个端点
+- GET    /api/categories/
+- GET    /api/categories/{id}
+- GET    /api/categories/test/
+- GET    /api/categories/nested/{categoryId}/products
+- POST   /api/categories/
+- PUT    /api/categories/{id}
+
 ### ItemController (Kotlin) - 6 个端点
 - GET    /api/items
 - GET    /api/items/{id}
@@ -54,7 +140,37 @@ test-project/
 - DELETE /api/items/{id}
 - GET    /api/items/special
 
-**总计**: 26 个 REST 端点
+**总计**: 44 个 REST 端点
+
+## 核心测试场景
+
+### 1. 验收测试（本次修改）
+搜索关键词：`multiline`, `multipath`, `linetest`, `complex`
+- 跨行注解解析
+- 行号精确定位
+- 多路径注解拆分
+- 嵌套括号参数处理
+
+### 2. Spring MVC 基础功能
+搜索关键词：`users`, `products`
+- CRUD 端点识别
+- 路径变量支持
+- 多路径注解
+
+### 3. JAX-RS 支持
+搜索关键词：`orders`
+- JAX-RS 注解解析
+- 基础端点识别
+
+### 4. 边界情况
+搜索关键词：`categories`
+- 结尾斜杠路径拼接
+- 类级别 RequestMapping
+
+### 5. Kotlin 支持
+搜索关键词：`items`
+- Kotlin 文件解析
+- Spring 注解支持
 
 ## 测试步骤
 
