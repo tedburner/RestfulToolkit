@@ -40,11 +40,10 @@ export class CopyEndpointParametersCommand {
                 return;
             }
 
-            const result = await this.showFormatPicker(copyInfo, labels);
-            if (!result) { return; }
+            const format = await this.showFormatPicker(copyInfo, labels);
+            if (!format) { return; }
 
-            const { format, nameFormat } = result;
-            const nameTransform = nameFormat === 'snake_case' ? toSnakeCase : undefined;
+            const nameTransform = this.autoDetectNameTransform(copyInfo);
 
             let output: string;
             switch (format) {
@@ -72,10 +71,7 @@ export class CopyEndpointParametersCommand {
         }
     }
 
-    private async showFormatPicker(copyInfo: EndpointCopyInfo, labels: I18nLabels): Promise<{
-        format: string;
-        nameFormat: 'camelCase' | 'snake_case';
-    } | null> {
+    private async showFormatPicker(copyInfo: EndpointCopyInfo, labels: I18nLabels): Promise<string | null> {
         const defaultFormat = this.autoDetectFormat(copyInfo);
 
         const formats: FormatOption[] = [
@@ -91,26 +87,34 @@ export class CopyEndpointParametersCommand {
             value: f.value
         }));
 
-        const formatPick = await vscode.window.showQuickPick(items, {
+        const pick = await vscode.window.showQuickPick(items, {
             placeHolder: labels.title,
             matchOnDescription: true
         });
 
-        if (!formatPick) { return null; }
+        return pick?.value || null;
+    }
 
-        const nameFormatItems = [
-            { label: labels.camelCase, value: 'camelCase' as const },
-            { label: labels.snakeCase, value: 'snake_case' as const }
-        ];
+    /**
+     * 根据参数名和 DTO 字段名自动判断是否需要转 snake_case。
+     * 如果大部分字段名中包含下划线，返回 snake_case 转换函数。
+     */
+    private autoDetectNameTransform(copyInfo: EndpointCopyInfo): ((n: string) => string) | undefined {
+        const allNames: string[] = [];
 
-        const nameFormatPick = await vscode.window.showQuickPick(nameFormatItems, {
-            placeHolder: labels.nameFormat
-        });
+        // 收集参数名
+        allNames.push(...copyInfo.parameters.map(p => p.name));
 
-        return {
-            format: formatPick.value,
-            nameFormat: nameFormatPick?.value || 'camelCase'
-        };
+        // 收集 DTO 字段名
+        for (const fields of copyInfo.dtoFields.values()) {
+            allNames.push(...fields.map(f => f.name));
+        }
+
+        if (allNames.length === 0) { return undefined; }
+
+        // 如果包含下划线的名称超过 50%，判定为 snake_case
+        const snakeCount = allNames.filter(n => n.includes('_')).length;
+        return snakeCount / allNames.length > 0.5 ? toSnakeCase : undefined;
     }
 
     private autoDetectFormat(copyInfo: EndpointCopyInfo): number {

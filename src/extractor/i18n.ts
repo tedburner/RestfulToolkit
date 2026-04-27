@@ -7,8 +7,6 @@ export interface I18nLabels {
     formData: string;
     formUrlencoded: string;
     nameFormat: string;
-    camelCase: string;
-    snakeCase: string;
     copied: string;
     noParams: string;
     copy: string;
@@ -25,8 +23,6 @@ const zhLabels: I18nLabels = {
     formData: 'Form Data',
     formUrlencoded: 'x-www-form-urlencoded',
     nameFormat: '命名格式',
-    camelCase: '驼峰 (camelCase)',
-    snakeCase: '蛇形 (snake_case)',
     copied: '✓ 已复制到剪贴板',
     noParams: '该方法没有可复制的参数',
     copy: '复制',
@@ -43,8 +39,6 @@ const enLabels: I18nLabels = {
     formData: 'Form Data',
     formUrlencoded: 'x-www-form-urlencoded',
     nameFormat: 'Name Format',
-    camelCase: 'camelCase',
-    snakeCase: 'snake_case',
     copied: '✓ Copied to clipboard',
     noParams: 'No copyable parameters found',
     copy: 'Copy',

@@ -191,23 +191,18 @@ Object.keys(lineGroups).forEach(key => {
   }
 });
 
-// 特殊验证：UserController的/active和/enabled必须都存在
-const userEndpoints = allEndpoints.filter(ep => ep.className === 'UserController');
-const hasActive = userEndpoints.some(ep => ep.path === '/api/users/active');
-const hasEnabled = userEndpoints.some(ep => ep.path === '/api/users/enabled');
+// 特殊验证：TestController 的多路径拆分（/items 和 /products/alt）
+const testEndpoints = allEndpoints.filter(ep => ep.className === 'TestController');
+const hasItems = testEndpoints.some(ep => ep.path === '/api/test/items');
+const hasAlt = testEndpoints.some(ep => ep.path === '/api/test/products/alt');
 
-if (!hasActive || !hasEnabled) {
+if (!hasItems || !hasAlt) {
   console.log('\n❌ 多路径拆分失败：');
-  if (!hasActive) console.log('   缺少端点：GET /api/users/active');
-  if (!hasEnabled) console.log('   缺少端点：GET /api/users/enabled');
-  console.log(`   UserController实际端点数：${userEndpoints.length}`);
-  console.log('   预期端点数：7 (含多路径拆分)');
-  console.log('   UserController所有端点：');
-  userEndpoints.forEach(ep => {
-    console.log(`     ${ep.method} ${ep.path} (line ${ep.line})`);
-  });
+  if (!hasItems) console.log('   缺少端点：GET /api/test/items');
+  if (!hasAlt) console.log('   缺少端点：GET /api/test/products/alt');
+  console.log(`   TestController实际端点数：${testEndpoints.length}`);
 } else {
-  console.log('\n✅ 多路径拆分正确：UserController 包含 /active 和 /enabled');
+  console.log('\n✅ 多路径拆分正确：TestController 包含 /items 和 /products/alt');
 }
 
 // Kotlin文件验证
