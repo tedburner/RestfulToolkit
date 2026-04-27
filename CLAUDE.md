@@ -20,6 +20,10 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - **运行所有测试**: `npm test` - Mocha 测试（解析器和缓存）
 - **单元测试位置**: `src/test/` - Parser 测试（SpringMvcParser, JaxRsParser）和缓存测试
 
+**参数复制批量测试**:
+- **运行**: `node test-project/scripts/test-parameter-copy.js`
+- **覆盖**: 75 个测试（Spring 解析 26、JAX-RS 解析 10、DTO 提取 17、格式转换 12、文件完整性 10）
+
 **自动化验证脚本**:
 - **运行验证**: `node test-project/scripts/test-all-files.js`
 - **验证位置**: `test-project/scripts/test-all-files.js`
@@ -118,6 +122,17 @@ vsce publish patch
 - 搜索结果按匹配评分过滤和排序
 - 打开文件并跳转到精确行号
 
+**参数提取层** (`src/extractor/`):
+- **ParameterExtractor.ts** — 入口：检测框架、查找方法、解析参数、解析 DTO 字段
+- **SpringParameterParser.ts** — Spring 注解参数解析（@RequestParam, @PathVariable, @RequestBody 等），跟踪括号深度
+- **JaxRsParameterParser.ts** — JAX-RS 注解参数解析（@PathParam, @QueryParam, @FormParam）
+- **DtoFieldExtractor.ts** — 异步嵌套 DTO 字段提取（最多 3 层，循环引用保护），支持 @JsonProperty/@JsonAlias/@JSONField/@JsonNaming
+- **FormatConverter.ts** — 格式转换：URL Params、JSON Body（body 参数展开）、Form Data（form 参数展开）、x-www-form-urlencoded
+- **i18n.ts** — 格式标签翻译
+
+**命令层** (`src/commands/`):
+- **CopyEndpointParametersCommand.ts** — 右键菜单命令：自动检测输出格式和命名风格，QuickPick 选择后写入剪贴板
+
 ### 配置系统 (`src/config/`)
 
 **关键点**: 所有默认配置在 `ScanConfig.ts` 的 `DEFAULT_CONFIG` 中定义，避免多处维护。
@@ -175,13 +190,17 @@ openspec/
 └── commands/            # 自定义斜杠命令 (opsx)
 
 src/
-├── config/              # 配置管理（关键：ConfigManager, ScanConfig）
-├── scanner/             # 文件扫描器
-├── parsers/             # 注解解析器（Spring MVC, JAX-RS）
-├── cache/               # 端点缓存和搜索
-├── ui/                  # QuickPick 搜索界面
-├── utils/               # 文件监视、日志
-└── models/              # 类型定义（RestEndpoint, SearchQuery）
+├── extension.ts           # 扩展入口
+├── cache/                 # 端点缓存（EndpointCache）
+├── commands/              # VS Code 命令（CopyEndpointParametersCommand）
+├── config/                # 配置管理（ConfigManager, ScanConfig）
+├── extractor/             # 参数提取（ParameterExtractor, SpringParameterParser, JaxRsParameterParser, DtoFieldExtractor, FormatConverter, i18n）
+├── models/                # 类型定义（RestEndpoint, SearchQuery, EndpointCopyInfo, DtoField）
+├── parsers/               # 注解解析器（Spring MVC, JAX-RS）
+├── scanner/               # 文件扫描器
+├── ui/                    # QuickPick 搜索界面
+├── utils/                 # 文件监视、日志
+└── test/                  # Mocha 单元测试
 ```
 
 ## 工作流使用

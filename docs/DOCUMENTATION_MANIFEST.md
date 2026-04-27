@@ -2,12 +2,15 @@
 
 ## 整理完成 ✅
 
-**整理日期**: 2026-04-20
+**整理日期**: 2026-04-20 | **更新日期**: 2026-04-27（v0.0.3 端点参数复制功能）
 
-**操作**:
-- 删除8个重复/过时文档
-- 清理3个冗余测试脚本
-- 删除4项冗余目录结构
+**v0.0.3 新增**:
+- `package.nls.json` / `package.nls.zh-cn.json` — 中英文国际化文件
+- `docs/superpowers/` — 规范与设计文档（设计规格 + 实现计划）
+- `test-project/scripts/test-parameter-copy.js` — 75个参数复制批量测试
+- `src/extractor/` — 参数提取模块（FormatConverter, ParameterExtractor, DtoFieldExtractor）
+- `src/commands/CopyEndpointParametersCommand.ts` — 右键复制参数命令
+- `test-project/` — 新增 FormController、OrderDto、AddressDto、LoginForm
 
 ---
 
@@ -17,7 +20,7 @@
 
 ```
 restful-toolkit/
-├── 根目录文件 (12个)
+├── 根目录文件 (14个)
 │   ├── .eslintrc.json       # ESLint配置
 │   ├── .gitignore           # Git忽略配置
 │   ├── .vscodeignore        # VS Code打包配置
@@ -29,13 +32,17 @@ restful-toolkit/
 │   ├── icon.png             # 扩展图标
 │   ├── package.json         # 扩展配置
 │   ├── package-lock.json    # npm依赖锁定
+│   ├── package.nls.json     # 英文国际化文件
+│   ├── package.nls.zh-cn.json # 中文国际化文件
 │   ├── tsconfig.json        # TypeScript配置
 │   └── webpack.config.js    # Webpack配置
 │
-├── src/ (源代码13个模块)
+├── src/ (源代码14个模块)
 │   ├── extension.ts         # 扩展入口
 │   ├── cache/               # 缓存管理（2模块）
+│   ├── commands/            # 命令（1模块：CopyEndpointParameters）
 │   ├── config/              # 配置管理（2模块）
+│   ├── extractor/           # 参数提取（4模块：FormatConverter, ParameterExtractor, SpringParameterParser, DtoFieldExtractor, i18n）
 │   ├── models/              # 数据模型（1模块）
 │   ├── parsers/             # 注解解析（3模块）
 │   ├── scanner/             # 文件扫描（1模块）
@@ -50,11 +57,28 @@ restful-toolkit/
 │   ├── TESTING_GUIDE.md     # 测试指南
 │   └── screenshot.png       # 扩展截图演示
 │
+├── docs/superpowers/ (规范与设计)
+│   ├── plans/               # 实现计划
+│   │   └── 2026-04-27-endpoint-parameter-copy.md
+│   └── specs/               # 设计规格
+│       └── 2026-04-27-endpoint-parameter-copy-design.md
+│
+├── docs/superpowers/ (规范与设计)
+│   ├── plans/               # 实现计划
+│   │   └── 2026-04-27-endpoint-parameter-copy.md
+│   └── specs/               # 设计规格
+│       └── 2026-04-27-endpoint-parameter-copy-design.md
+│
 ├── test-project/ (完整测试项目)
 │   ├── README.md            # 测试项目说明
 │   ├── TEST-COVERAGE-CHECKLIST.md # 测试覆盖清单
-│   ├── scripts/test-all-files.js # 自动化验证脚本
-│   └── src/main/            # 8个测试文件（7Java+1Kotlin）
+│   ├── scripts/             # 测试脚本
+│   │   ├── test-all-files.js     # 端点验证脚本（49端点）
+│   │   └── test-parameter-copy.js # 参数复制批量测试（75测试）
+│   └── src/main/            # 测试Controller + DTO
+│       └── java/com/example/
+│           ├── controller/  # TestController, TestResource, FormController
+│           └── dto/         # UserDto, OrderDto, AddressDto, SnakeCaseDto, AliasDto, LoginForm
 │
 ├── openspec/ (OpenSpec规范 - 保持不变)
 │   └── changes/restful-toolkit/
@@ -81,13 +105,14 @@ restful-toolkit/
 
 **运行**: `npm test`
 
-### 自动化验证 - 1个脚本 ✅
+### 自动化验证 - 2个脚本 ✅
 
-**位置**: `test-project/scripts/test-all-files.js`
+**位置**: `test-project/scripts/`
 
-**功能**: 49个端点验证、行号准确性100%、多路径拆分、Kotlin支持
-
-**运行**: `node test-project/scripts/test-all-files.js`
+| 脚本 | 说明 | 运行 |
+|------|------|------|
+| test-all-files.js | 49个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node test-project/scripts/test-all-files.js` |
+| test-parameter-copy.js | 75个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node test-project/scripts/test-parameter-copy.js` |
 
 ---
 
@@ -102,7 +127,7 @@ restful-toolkit/
 | CHANGELOG.md | 版本变更日志 |
 | CLAUDE.md | Claude开发指导 |
 
-### docs目录 (5个) ✅
+### docs目录 (7个) ✅
 
 | 文档 | 说明 |
 |------|------|
@@ -111,13 +136,19 @@ restful-toolkit/
 | INCREMENTAL_SCAN.md | 增量扫描文档 |
 | DOCUMENTATION_MANIFEST.md | 本清单文档 |
 | screenshot.png | 扩展截图演示 |
+| superpowers/plans/2026-04-27-endpoint-parameter-copy.md | 参数复制功能实现计划 |
+| superpowers/specs/2026-04-27-endpoint-parameter-copy-design.md | 参数复制功能设计规格 |
 
-### test-project目录 (2个) ✅
+### test-project目录 (2个 + 脚本 + 测试代码) ✅
 
 | 文档 | 说明 |
 |------|------|
 | README.md | 测试项目说明 |
 | TEST-COVERAGE-CHECKLIST.md | 测试覆盖清单 |
+| scripts/test-parameter-copy.js | 参数复制批量测试（75个） |
+
+**测试 Controller**（3个）：TestController（Spring 26端点）、TestResource（JAX-RS 9端点）、FormController（@ModelAttribute）
+**测试 DTO**（6个）：UserDto, OrderDto, AddressDto, SnakeCaseDto, AliasDto, LoginForm
 
 ### openspec目录 (14个) - 保持不变 ✅
 
@@ -161,25 +192,25 @@ restful-toolkit/
 
 ---
 
-## 五、整理统计
+## 五、统计
 
-### 文档数量
+### v0.0.3 当前状态
 
-- **整理前**: 31个Markdown文档
-- **整理后**: 23个Markdown文档
-- **减少**: 8个文档（26%减少）
+| 类别 | 数量 |
+|------|------|
+| 根目录文档 | 6个（README, README_CN, CHANGELOG, CLAUDE, LICENSE, RELEASE_v0.0.2） |
+| 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
+| docs 文档 | 7个（5个 + 2个 superpowers） |
+| 源代码模块 | 14个（含 extractor/, commands/） |
+| 单元测试 | 4个 Mocha 测试 |
+| 自动化脚本 | 2个（49端点验证 + 75参数复制测试） |
+| 测试 Controller | 3个（Spring 26 + JAX-RS 9 + Form） |
+| 测试 DTO | 6个 |
 
-### 测试脚本
+### 历史整理记录
 
-- **整理前**: 8个测试文件（含3个临时脚本）
-- **整理后**: 5个测试文件
-- **减少**: 3个文件（37.5%减少）
-
-### 目录结构
-
-- **整理前**: 有冗余目录和空目录
-- **整理后**: 结构清晰，无冗余
-- **优化**: 删除4项冗余内容
+- **v0.0.2 整理**（2026-04-20）：删除8个冗余文档，清理3个冗余脚本，删除4项冗余目录
+- **v0.0.3 更新**（2026-04-27）：新增国际化、参数复制功能、批量测试脚本、规范文档
 
 ---
 

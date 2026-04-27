@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.1-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.3-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **[English Documentation](README.md)** | **中文文档**
@@ -16,6 +16,9 @@
 - 🎨 **可视化标识**：颜色编码的 HTTP 方法图标（GET、POST、PUT、DELETE、PATCH）
 - ⚙️ **可配置**：自定义扫描路径和排除模式
 - 🔄 **手动刷新**：按需强制重新扫描
+- 📋 **复制参数**：右键菜单支持 URL Params、JSON Body、Form Data、x-www-form-urlencoded 格式复制接口参数
+- 🔀 **命名转换**：自动检测或切换驼峰/蛇形命名风格
+- 📦 **DTO 展开**：嵌套 DTO 字段自动展开（最多 3 层）
 
 ## 支持的框架
 
@@ -121,6 +124,27 @@ RestfulToolkit 支持两个级别的配置：
 | `scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | 扫描文件的 glob 模式 |
 | `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | 排除扫描的 glob 模式 |
 | `maxResults` | `number` | `100` | 显示的最大搜索结果数 |
+| `copyNameFormat` | `string` | `"camelCase"` | 复制参数的默认命名格式（`"camelCase"` 或 `"snake_case"`） |
+
+### 复制参数
+
+在 Controller 方法中右键复制接口参数：
+
+1. 将光标放在 REST 端点方法上
+2. 右键选择「复制接口参数」
+3. 选择输出格式：
+   - **URL Params**：`?param1=&param2=` — 适用于 GET/DELETE 请求
+   - **JSON Body**：`{"field": ""}` — 适用于 POST/PUT/PATCH（`@RequestBody`）
+   - **Form Data**：`field: ` 逐行格式 — 适用于 `@ModelAttribute`
+   - **x-www-form-urlencoded**：`field1=&field2=` — URL 编码表单
+4. 选择命名风格（自动检测，可切换驼峰/蛇形）
+
+**支持的注解**：
+- **Spring**：`@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestPart`, `@ModelAttribute`
+- **JAX-RS**：`@PathParam`, `@QueryParam`, `@FormParam`
+- **JSON**：`@JsonProperty`, `@JsonAlias`, `@JSONField`, `@JsonNaming`
+
+**DTO 展开**：`@RequestBody` 和 `@ModelAttribute` 参数自动展开嵌套 DTO 字段（最多 3 层）。
 
 ## 已知限制
 
@@ -183,6 +207,12 @@ RestfulToolkit 支持两个级别的配置：
 - [ ] HTTP 请求测试（类似 Postman 的功能）
 - [ ] 服务树视图
 - [ ] 更好的继承和配置类支持
+
+### v0.0.3 已完成
+- [x] 复制接口参数（JSON Body、URL Params、Form Data、x-www-form-urlencoded）
+- [x] 嵌套 DTO 字段展开（最多 3 层）
+- [x] 命名风格转换（驼峰 / 蛇形）
+- [x] 国际化支持（英文 / 中文）
 
 ---
 

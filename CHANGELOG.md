@@ -6,6 +6,33 @@ All notable changes to RestfulToolkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.3] - 2026-04-27
+
+### Added / 新增
+
+- **Copy Endpoint Parameters / 复制接口参数**: Right-click context menu to copy endpoint parameters in multiple formats. 右键菜单支持多种格式复制接口参数：
+  - URL Params: `?key1=&key2=` (GET/DELETE requests)
+  - JSON Body: `{"key": ""}` with DTO field expansion (POST/PUT/PATCH with `@RequestBody`)
+  - Form Data: `key: ` line-by-line format (`@ModelAttribute` with DTO expansion)
+  - x-www-form-urlencoded: `key1=&key2=` format
+  - 支持 URL 参数、JSON Body（含 DTO 字段展开）、Form Data（含 `@ModelAttribute` 展开）、x-www-form-urlencoded 格式
+
+- **Nested DTO Expansion / 嵌套 DTO 展开**: Recursive DTO field resolution up to 3 levels deep with circular reference protection. Supports `@JsonProperty`, `@JsonAlias`, `@JSONField`, and `@JsonNaming` (SnakeCaseStrategy, KebabCaseStrategy) annotations. 递归解析嵌套 DTO 字段（最多 3 层），循环引用保护，支持 Jackson/Fastjson 注解。
+
+- **Auto Format Detection / 自动格式检测**: Automatically detects output format based on HTTP method and parameter type (url-params for GET/DELETE, json for @RequestBody, form-data for @ModelAttribute). 根据 HTTP 方法和参数类型自动检测输出格式。
+
+- **Naming Convention Transform / 命名风格转换**: Auto-detects naming convention (snake_case if >50% of names contain underscores) with camelCase/snake_case toggle. 自动检测命名风格（超 50% 含下划线则为蛇形），支持驼峰/蛇形切换。
+
+- **i18n Support / 国际化支持**: Command titles now support Chinese and English via `package.nls.json` and `package.nls.zh-cn.json`. 命令标题支持中英文切换。
+
+- **Batch Test Script / 批量测试脚本**: `test-parameter-copy.js` with 75 tests covering Spring/JAX-RS parsing, DTO extraction, format conversion, and file integrity checks. 75 个测试用例覆盖解析、提取、格式转换和文件完整性。
+
+### Changed / 变更
+
+- **SpringParameterParser**: Fixed `splitParameters` to track parentheses depth, correctly parsing annotations with `defaultValue`. 修复参数拆分逻辑，正确解析含 `defaultValue` 的注解。
+- **ParameterExtractor**: Improved `findMethodAtPosition` to handle multi-line method signatures with annotations on separate lines. 改进多行方法签名查找逻辑。
+- **Test Project**: Consolidated test files to manageable set (TestController, TestResource, FormController + DTOs). 整合测试项目文件。
+
 ## [0.0.2] - 2026-04-20
 
 ### Fixed / 修复

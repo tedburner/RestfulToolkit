@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.1-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.3-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **English Documentation** | **[中文文档](README_CN.md)**
@@ -16,6 +16,9 @@ A VS Code extension for searching and navigating RESTful API endpoints in Java/K
 - 🎨 **Visual Indicators**: Color-coded HTTP method icons (GET, POST, PUT, DELETE, PATCH)
 - ⚙️ **Configurable**: Customizable scan paths and exclusion patterns
 - 🔄 **Manual Refresh**: Force re-scan on demand
+- 📋 **Copy Parameters**: Right-click context menu to copy endpoint parameters in URL Params, JSON Body, Form Data, or x-www-form-urlencoded format
+- 🔀 **Naming Transform**: Auto-detect or toggle between camelCase and snake_case
+- 📦 **DTO Expansion**: Nested DTO field resolution up to 3 levels deep
 
 ## Supported Frameworks
 
@@ -121,6 +124,27 @@ Create `.restful-toolkit.json` in your project root for per-project customizatio
 | `scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | Glob patterns for files to scan |
 | `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | Glob patterns to exclude from scanning |
 | `maxResults` | `number` | `100` | Maximum number of search results to display |
+| `copyNameFormat` | `string` | `"camelCase"` | Default name format for copied parameters (`"camelCase"` or `"snake_case"`) |
+
+### Copy Parameters
+
+Right-click in a controller method to copy endpoint parameters:
+
+1. Place cursor on a REST endpoint method
+2. Right-click and select "Copy Endpoint Parameters"
+3. Choose the output format:
+   - **URL Params**: `?param1=&param2=` — for GET/DELETE requests
+   - **JSON Body**: `{"field": ""}` — for POST/PUT/PATCH with `@RequestBody`
+   - **Form Data**: `field: ` line-by-line — for `@ModelAttribute`
+   - **x-www-form-urlencoded**: `field1=&field2=` — URL-encoded form
+4. Choose naming convention (auto-detected, or toggle camelCase/snake_case)
+
+**Supported Annotations**:
+- **Spring**: `@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestPart`, `@ModelAttribute`
+- **JAX-RS**: `@PathParam`, `@QueryParam`, `@FormParam`
+- **JSON**: `@JsonProperty`, `@JsonAlias`, `@JSONField`, `@JsonNaming`
+
+**DTO Expansion**: `@RequestBody` and `@ModelAttribute` parameters automatically expand nested DTO fields (up to 3 levels deep).
 
 ## Known Limitations
 
@@ -183,6 +207,12 @@ Future enhancements:
 - [ ] HTTP request testing (Postman-like features)
 - [ ] Services tree view
 - [ ] Better support for inheritance and configuration classes
+
+### Completed in v0.0.3
+- [x] Copy endpoint parameters (JSON Body, URL Params, Form Data, x-www-form-urlencoded)
+- [x] Nested DTO field expansion (up to 3 levels)
+- [x] Naming convention transform (camelCase / snake_case)
+- [x] i18n support (English / Chinese)
 
 ---
 
