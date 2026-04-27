@@ -40,4 +40,10 @@ public class OrderResource {
     public String getOrdersByStatus(@PathParam("status") String status) {
         return "订单状态: " + status;
     }
+
+    @GET
+    @Path("/search")
+    public String searchOrders(@QueryParam("keyword") String keyword) {
+        return "搜索订单: " + keyword;
+    }
 }

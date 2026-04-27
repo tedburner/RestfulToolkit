@@ -37,6 +37,13 @@ public class ItemController {
         return "搜索结果: " + keyword;
     }
 
+    @GetMapping("/filter")
+    public String filterItems(
+            @RequestParam(value = "category", defaultValue = "all") String category,
+            @RequestParam(value = "sort_by") String sortBy) {
+        return "过滤: " + category;
+    }
+
     @PostMapping
     public String createItem() {
         return "创建项目成功";
