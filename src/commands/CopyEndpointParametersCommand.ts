@@ -7,7 +7,7 @@ import { EndpointCopyInfo } from '../models/types';
 
 interface FormatOption {
     label: string;
-    value: 'url-params' | 'json-quick' | 'json-expand' | 'form-data' | 'x-www-form-urlencoded';
+    value: 'url-params' | 'json-body' | 'form-data' | 'x-www-form-urlencoded';
     icon: string;
 }
 
@@ -51,11 +51,8 @@ export class CopyEndpointParametersCommand {
                 case 'url-params':
                     output = this.converter.toUrlParams(copyInfo, nameTransform);
                     break;
-                case 'json-quick':
-                    output = this.converter.toJsonQuick(copyInfo, nameTransform);
-                    break;
-                case 'json-expand':
-                    output = this.converter.toJsonExpand(copyInfo, nameTransform);
+                case 'json-body':
+                    output = this.converter.toJsonBody(copyInfo, nameTransform);
                     break;
                 case 'form-data':
                     output = this.converter.toFormData(copyInfo, nameTransform);
@@ -83,8 +80,7 @@ export class CopyEndpointParametersCommand {
 
         const formats: FormatOption[] = [
             { label: `${labels.urlParams}`, value: 'url-params', icon: '$(link)' },
-            { label: `${labels.jsonQuick}`, value: 'json-quick', icon: '$(json)' },
-            { label: `${labels.jsonExpand}`, value: 'json-expand', icon: '$(json)' },
+            { label: `${labels.jsonBody}`, value: 'json-body', icon: '$(json)' },
             { label: `${labels.formData}`, value: 'form-data', icon: '$(file-media)' },
             { label: `${labels.formUrlencoded}`, value: 'x-www-form-urlencoded', icon: '$(file-text)' },
         ];
@@ -123,8 +119,8 @@ export class CopyEndpointParametersCommand {
 
         if (httpMethod === 'GET' || httpMethod === 'DELETE') { return 0; }
         if (hasBody) { return 1; }
-        if (contentType === 'form-data') { return 3; }
-        if (contentType === 'x-www-form-urlencoded') { return 4; }
+        if (contentType === 'form-data') { return 2; }
+        if (contentType === 'x-www-form-urlencoded') { return 3; }
         if (['POST', 'PUT', 'PATCH'].includes(httpMethod)) { return 1; }
         return -1;
     }

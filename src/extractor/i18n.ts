@@ -3,8 +3,7 @@ import * as vscode from 'vscode';
 export interface I18nLabels {
     title: string;
     urlParams: string;
-    jsonQuick: string;
-    jsonExpand: string;
+    jsonBody: string;
     formData: string;
     formUrlencoded: string;
     nameFormat: string;
@@ -22,8 +21,7 @@ export interface I18nLabels {
 const zhLabels: I18nLabels = {
     title: '复制接口参数',
     urlParams: 'URL Params',
-    jsonQuick: 'JSON Body (快捷)',
-    jsonExpand: 'JSON Body (展开)',
+    jsonBody: 'JSON Body',
     formData: 'Form Data',
     formUrlencoded: 'x-www-form-urlencoded',
     nameFormat: '命名格式',
@@ -41,8 +39,7 @@ const zhLabels: I18nLabels = {
 const enLabels: I18nLabels = {
     title: 'Copy Endpoint Parameters',
     urlParams: 'URL Params',
-    jsonQuick: 'JSON Body (Quick)',
-    jsonExpand: 'JSON Body (Expand)',
+    jsonBody: 'JSON Body',
     formData: 'Form Data',
     formUrlencoded: 'x-www-form-urlencoded',
     nameFormat: 'Name Format',

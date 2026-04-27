@@ -2,16 +2,19 @@ import * as vscode from 'vscode';
 import { EndpointCopyInfo, EndpointParameter } from '../models/types';
 import { SpringParameterParser } from './SpringParameterParser';
 import { JaxRsParameterParser } from './JaxRsParameterParser';
+import { DtoFieldExtractor } from './DtoFieldExtractor';
 import { Logger } from '../utils/Logger';
 
 export class ParameterExtractor {
     private springParser: SpringParameterParser;
     private jaxRsParser: JaxRsParameterParser;
+    private dtoExtractor: DtoFieldExtractor;
     private logger: Logger;
 
     constructor() {
         this.springParser = new SpringParameterParser();
         this.jaxRsParser = new JaxRsParameterParser();
+        this.dtoExtractor = new DtoFieldExtractor();
         this.logger = Logger.getInstance();
     }
 
@@ -39,12 +42,16 @@ export class ParameterExtractor {
         // 检测 HTTP 方法和内容类型
         const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework);
 
+        // 解析 @RequestBody 参数的 DTO 字段
+        const dtoFields = await this.resolveDtoFields(parameters);
+
         return {
             httpMethod,
             contentType,
             path: methodInfo.path || '',
             parameters,
-            framework
+            framework,
+            dtoFields
         };
     }
 
@@ -165,5 +172,37 @@ export class ParameterExtractor {
             return { httpMethod, contentType: 'url-params' };
         }
         return { httpMethod, contentType: 'json' };
+    }
+
+    /**
+     * 为 @RequestBody 参数解析 DTO 字段。
+     */
+    private async resolveDtoFields(parameters: EndpointParameter[]): Promise<Map<string, import('../models/types').DtoField[]>> {
+        const dtoFields = new Map<string, import('../models/types').DtoField[]>();
+
+        for (const param of parameters) {
+            if (param.source === 'body' && param.type && !this.isPrimitiveType(param.type)) {
+                const fields = await this.dtoExtractor.findDtoFields(param.type);
+                if (fields.length > 0) {
+                    dtoFields.set(param.type, fields);
+                }
+            }
+        }
+
+        return dtoFields;
+    }
+
+    /**
+     * 判断是否为基本类型（无需展开 DTO）。
+     */
+    private isPrimitiveType(type: string): boolean {
+        const primitives = [
+            'String', 'Integer', 'Long', 'Short', 'Byte', 'Float', 'Double',
+            'Boolean', 'int', 'long', 'short', 'byte', 'float', 'double',
+            'boolean', 'char', 'Character', 'BigDecimal', 'BigInteger',
+            'Date', 'LocalDate', 'LocalDateTime', 'ZonedDateTime',
+            'MultipartFile', 'File', 'InputStream', 'byte[]'
+        ];
+        return primitives.includes(type);
     }
 }

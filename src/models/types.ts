@@ -36,10 +36,18 @@ export interface EndpointParameter {
     defaultValue?: string;
 }
 
+export interface DtoField {
+    name: string;
+    type: string;
+    originalName: string;
+}
+
 export interface EndpointCopyInfo {
     httpMethod: string;
     contentType: 'json' | 'form-data' | 'x-www-form-urlencoded' | 'url-params';
     path: string;
     parameters: EndpointParameter[];
     framework: 'Spring' | 'JAX-RS';
+    /** DTO 类型名 → 字段列表，由 DtoFieldExtractor 填充 */
+    dtoFields: Map<string, DtoField[]>;
 }

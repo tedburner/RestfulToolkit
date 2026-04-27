@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { FormatConverter } from '../../extractor/FormatConverter';
-import { EndpointCopyInfo, EndpointParameter } from '../../models/types';
+import { EndpointCopyInfo, EndpointParameter, DtoField } from '../../models/types';
 
 suite('FormatConverter Test Suite', () => {
     let converter: FormatConverter;
@@ -9,12 +9,13 @@ suite('FormatConverter Test Suite', () => {
         converter = new FormatConverter();
     });
 
-    const makeInfo = (params: EndpointParameter[]): EndpointCopyInfo => ({
+    const makeInfo = (params: EndpointParameter[], dtoFields: Map<string, DtoField[]> = new Map()): EndpointCopyInfo => ({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test',
         parameters: params,
-        framework: 'Spring'
+        framework: 'Spring',
+        dtoFields
     });
 
     test('Should convert to URL params', () => {
@@ -66,5 +67,58 @@ suite('FormatConverter Test Suite', () => {
         ]);
         const result = converter.toUrlParams(info, (n) => n.replace(/([A-Z])/g, '_$1').toLowerCase());
         assert.strictEqual(result, '?user_name=');
+    });
+
+    test('Should expand DTO fields in toJsonBody when available', () => {
+        const dtoFields = new Map<string, DtoField[]>();
+        dtoFields.set('UserDto', [
+            { name: 'id', type: 'Long', originalName: 'id' },
+            { name: 'userName', type: 'String', originalName: 'userName' },
+            { name: 'emailAddr', type: 'String', originalName: 'emailAddr' }
+        ]);
+        const info = makeInfo([
+            { name: 'userDto', type: 'UserDto', source: 'body', originalCaseName: 'userDto', isRequired: true }
+        ], dtoFields);
+        const result = converter.toJsonBody(info);
+        assert.strictEqual(result, '{"id": "", "userName": "", "emailAddr": ""}');
+    });
+
+    test('Should fall back to quick format in toJsonBody when DTO not found', () => {
+        const info = makeInfo([
+            { name: 'userDto', type: 'UnknownDto', source: 'body', originalCaseName: 'userDto', isRequired: true }
+        ]);
+        const result = converter.toJsonBody(info);
+        assert.strictEqual(result, '{"userDto": ""}');
+    });
+
+    test('Should apply snake_case transformation to DTO fields', () => {
+        const dtoFields = new Map<string, DtoField[]>();
+        dtoFields.set('UserDto', [
+            { name: 'id', type: 'Long', originalName: 'id' },
+            { name: 'userName', type: 'String', originalName: 'userName' },
+            { name: 'emailAddr', type: 'String', originalName: 'emailAddr' }
+        ]);
+        const info = makeInfo([
+            { name: 'userDto', type: 'UserDto', source: 'body', originalCaseName: 'userDto', isRequired: true }
+        ], dtoFields);
+        const result = converter.toJsonBody(info, (n) => n.replace(/([A-Z])/g, '_$1').toLowerCase());
+        assert.strictEqual(result, '{"id": "", "user_name": "", "email_addr": ""}');
+    });
+
+    test('Should fall back to quick format for non-body parameters', () => {
+        const info = makeInfo([
+            { name: 'id', type: 'Long', source: 'path', originalCaseName: 'id', isRequired: true },
+            { name: 'name', type: 'String', source: 'query', originalCaseName: 'name', isRequired: true }
+        ]);
+        const result = converter.toJsonBody(info);
+        assert.strictEqual(result, '{"id": "", "name": ""}');
+    });
+
+    test('Should fall back to quick format when body param is primitive type', () => {
+        const info = makeInfo([
+            { name: 'id', type: 'Long', source: 'body', originalCaseName: 'id', isRequired: true }
+        ]);
+        const result = converter.toJsonBody(info);
+        assert.strictEqual(result, '{"id": ""}');
     });
 });
