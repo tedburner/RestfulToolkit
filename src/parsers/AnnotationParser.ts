@@ -18,6 +18,10 @@ export class AnnotationParser {
         const endpoints: RestEndpoint[] = [];
 
         try {
+            if (filePath.endsWith('.kt')) {
+                content = this.preprocessKotlin(content);
+            }
+
             const classPattern = /(class|interface)\s+(\w+)/g;
             let classMatch;
 

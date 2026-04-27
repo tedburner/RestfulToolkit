@@ -64,4 +64,11 @@ export class Logger {
     dispose(): void {
         this.outputChannel.dispose();
     }
+
+    static resetForTest(): void {
+        if (Logger.instance) {
+            Logger.instance.outputChannel.dispose();
+            Logger.instance = undefined as unknown as Logger;
+        }
+    }
 }

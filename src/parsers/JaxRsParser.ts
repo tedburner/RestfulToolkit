@@ -108,8 +108,8 @@ export class JaxRsParser {
         for (const httpMethod of httpMethods) {
             const match = annotationBlock.match(httpMethod.pattern);
             if (match) {
-                // 找到HTTP方法注解在annotationBlock中的位置
-                const httpMethodIndexInBlock = annotationBlock.indexOf(httpMethod.pattern.source);
+                // 使用正则匹配返回的精确位置
+                const httpMethodIndexInBlock = match.index!;
                 // 计算在原始content中的绝对位置
                 const absolutePosition = annotationBlockStart + httpMethodIndexInBlock;
                 // 计算正确的行号

@@ -6,7 +6,7 @@ import { Logger } from '../utils/Logger';
 import { ConfigManager } from '../config/ConfigManager';
 import { ScanStateManager } from '../cache/ScanStateManager';
 
-export class FileScanner {
+export class FileScanner implements vscode.Disposable {
     private annotationParser: AnnotationParser;
     private cache: EndpointCache;
     private logger: Logger;
@@ -110,8 +110,8 @@ export class FileScanner {
             for (const file of files) {
                 const filePath = file.fsPath;
 
-                // 跳过异常文件（如 .git 后缀）
-                if (filePath.endsWith('.git') || filePath.includes('.git')) {
+                // 跳过 .git 目录下的文件
+                if (/[/\\]\.git([/\\]|$)/.test(filePath)) {
                     this.logger.warning(`Skipping abnormal file: ${filePath}`);
                     continue;
                 }

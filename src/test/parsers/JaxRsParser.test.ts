@@ -119,4 +119,20 @@ suite('JaxRsParser Test Suite', () => {
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/users/{id}');
     });
+
+    test('Should use correct position when HTTP method appears multiple times', () => {
+        // @GET 出现在注释中和实际注解中，应匹配实际注解的位置
+        const content = `
+            public class UserController {
+                // This endpoint handles @GET requests
+                // but actually the method is: @GET
+                @GET
+                @Path("/real")
+                public List<User> getUsers() {}
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/real');
+    });
 });

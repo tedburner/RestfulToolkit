@@ -4,6 +4,7 @@ import { RestEndpoint, MatchScore, SearchQuery } from '../models/types';
 export class EndpointCache {
     private endpoints: Map<string, RestEndpoint[]> = new Map();
     private fileIndex: Map<string, RestEndpoint[]> = new Map();
+    private _size: number = 0;
 
     add(endpoint: RestEndpoint): void {
         const pathKey = endpoint.path;
@@ -17,6 +18,7 @@ export class EndpointCache {
             this.fileIndex.set(fileKey, []);
         }
         this.fileIndex.get(fileKey)!.push(endpoint);
+        this._size++;
     }
 
     getByFile(file: string): RestEndpoint[] {
@@ -42,6 +44,7 @@ export class EndpointCache {
         }
 
         this.fileIndex.delete(file);
+        this._size -= endpoints.length;
     }
 
     updateFile(file: string, endpoints: RestEndpoint[]): void {
@@ -52,10 +55,7 @@ export class EndpointCache {
     }
 
     search(query: SearchQuery): RestEndpoint[] {
-        const allEndpoints: RestEndpoint[] = [];
-        for (const endpoints of this.endpoints.values()) {
-            allEndpoints.push(...endpoints);
-        }
+        const allEndpoints = this.flattenAll();
 
         const scored = allEndpoints
             .map(endpoint => ({
@@ -121,19 +121,24 @@ export class EndpointCache {
     }
 
     getAll(): RestEndpoint[] {
-        const allEndpoints: RestEndpoint[] = [];
+        return this.flattenAll();
+    }
+
+    private flattenAll(): RestEndpoint[] {
+        const all: RestEndpoint[] = [];
         for (const endpoints of this.endpoints.values()) {
-            allEndpoints.push(...endpoints);
+            all.push(...endpoints);
         }
-        return allEndpoints;
+        return all;
     }
 
     clear(): void {
         this.endpoints.clear();
         this.fileIndex.clear();
+        this._size = 0;
     }
 
     size(): number {
-        return this.getAll().length;
+        return this._size;
     }
 }
