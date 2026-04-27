@@ -26,3 +26,20 @@ export interface SearchQuery {
         framework?: Framework;
     };
 }
+
+export interface EndpointParameter {
+    name: string;
+    type: string;
+    source: 'path' | 'query' | 'body' | 'form';
+    originalCaseName: string;
+    isRequired: boolean;
+    defaultValue?: string;
+}
+
+export interface EndpointCopyInfo {
+    httpMethod: string;
+    contentType: 'json' | 'form-data' | 'x-www-form-urlencoded' | 'url-params';
+    path: string;
+    parameters: EndpointParameter[];
+    framework: 'Spring' | 'JAX-RS';
+}
