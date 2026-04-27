@@ -40,6 +40,7 @@ export class DtoFieldExtractor {
         let inClass = false;
         let braceDepth = 0;
         let pendingJsonName: string | null = null;
+        let classNamingStrategy: ((n: string) => string) | null = null;
 
         for (const line of lines) {
             const trimmed = line.trim();
@@ -47,6 +48,14 @@ export class DtoFieldExtractor {
             // 跳过空行和注释
             if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
                 continue;
+            }
+
+            // 检测 @JsonNaming(...)，提取类级别命名策略
+            if (!inClass) {
+                const jsonNamingMatch = trimmed.match(/@JsonNaming\s*\(\s*(\w+)\s*\)/);
+                if (jsonNamingMatch) {
+                    classNamingStrategy = this.resolveNamingStrategy(jsonNamingMatch[1]);
+                }
             }
 
             // 检测类声明
@@ -80,6 +89,14 @@ export class DtoFieldExtractor {
                 continue;
             }
 
+            // 检测 @JsonAlias("name") 或 @JsonAlias({"name1", "name2"})
+            const jsonAliasMatch = trimmed.match(/@JsonAlias\s*\(\s*["']([^"']+)["']\s*\)/)
+                || trimmed.match(/@JsonAlias\s*\(\s*\{\s*["']([^"']+)["']/);
+            if (jsonAliasMatch && !pendingJsonName) {
+                pendingJsonName = jsonAliasMatch[1];
+                continue;
+            }
+
             // 检测字段声明：private/protected/public Type fieldName;
             // 或 Kotlin: val/var fieldName: Type
             const javaFieldMatch = trimmed.match(/(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)\s*[;=]/);
@@ -89,7 +106,7 @@ export class DtoFieldExtractor {
                 const type = javaFieldMatch[1];
                 const name = javaFieldMatch[2];
                 fields.push({
-                    name: pendingJsonName || name,
+                    name: pendingJsonName || (classNamingStrategy ? classNamingStrategy(name) : name),
                     type,
                     originalName: name
                 });
@@ -98,7 +115,7 @@ export class DtoFieldExtractor {
                 const name = kotlinFieldMatch[1];
                 const type = kotlinFieldMatch[2];
                 fields.push({
-                    name: pendingJsonName || name,
+                    name: pendingJsonName || (classNamingStrategy ? classNamingStrategy(name) : name),
                     type,
                     originalName: name
                 });
@@ -112,5 +129,20 @@ export class DtoFieldExtractor {
         }
 
         return fields;
+    }
+
+    /**
+     * 将 @JsonNaming 注解值转换为命名转换函数。
+     */
+    private resolveNamingStrategy(value: string): ((n: string) => string) | null {
+        const snakePatterns = ['PropertyNamingStrategy.SnakeCaseStrategy', 'PropertyNamingStrategies.SnakeCaseStrategy', 'SNAKE_CASE'];
+        const kebabPatterns = ['PropertyNamingStrategy.KebabCaseStrategy', 'PropertyNamingStrategies.KebabCaseStrategy', 'KEBAB_CASE'];
+        if (snakePatterns.some(s => value.includes(s))) {
+            return (n: string) => n.replace(/([A-Z])/g, '_$1').toLowerCase().replace(/^_/, '');
+        }
+        if (kebabPatterns.some(s => value.includes(s))) {
+            return (n: string) => n.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '');
+        }
+        return null;
     }
 }
