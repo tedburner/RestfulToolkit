@@ -17,14 +17,13 @@ export class ParameterExtractor {
 
     async extract(document: vscode.TextDocument, position: vscode.Position): Promise<EndpointCopyInfo | null> {
         const text = document.getText();
-        const isKotlin = document.languageId === 'kotlin';
 
         // 检测框架
         const framework = this.detectFramework(text);
         if (!framework) { return null; }
 
         // 查找光标所在方法
-        const methodInfo = this.findMethodAtPosition(text, position.line, isKotlin);
+        const methodInfo = this.findMethodAtPosition(text, position.line);
         if (!methodInfo) { return null; }
 
         // 解析参数
@@ -64,7 +63,7 @@ export class ParameterExtractor {
         return null;
     }
 
-    private findMethodAtPosition(text: string, cursorLine: number, _isKotlin: boolean): {
+    private findMethodAtPosition(text: string, cursorLine: number): {
         signature: string;
         annotations: string;
         path: string;
@@ -72,8 +71,8 @@ export class ParameterExtractor {
         const lines = text.split('\n');
 
         let methodStartLine = -1;
-        let methodSignatureLines: string[] = [];
-        let annotationLines: string[] = [];
+        const methodSignatureLines: string[] = [];
+        const annotationLines: string[] = [];
 
         // 从光标位置向前搜索方法签名
         for (let i = cursorLine; i >= 0; i--) {

@@ -46,6 +46,11 @@
         "command": "restfulToolkit.createProjectConfig",
         "title": "Create Project Config File",
         "category": "RestfulToolkit"
+      },
+      {
+        "command": "restfulToolkit.copyEndpointParameters",
+        "title": "Copy Endpoint Parameters",
+        "category": "RestfulToolkit"
       }
     ],
     "keybindings": [
@@ -88,8 +93,23 @@
           "type": "number",
           "default": 100,
           "description": "Maximum number of search results to display"
+        },
+        "restfulToolkit.copyNameFormat": {
+          "type": "string",
+          "enum": ["camelCase", "snake_case"],
+          "default": "camelCase",
+          "description": "Default name format for copied parameter names"
         }
       }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "restfulToolkit.copyEndpointParameters",
+          "when": "editorLangId =~ /java|kotlin/",
+          "group": "2_copy"
+        }
+      ]
     }
   },
   "scripts": {

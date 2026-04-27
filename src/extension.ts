@@ -6,6 +6,7 @@ import { Logger } from './utils/Logger';
 import { SearchUI } from './ui/SearchUI';
 import { ConfigManager } from './config/ConfigManager';
 import { ScanStateManager } from './cache/ScanStateManager';
+import { CopyEndpointParametersCommand } from './commands/CopyEndpointParametersCommand';
 
 let cache: EndpointCache;
 let scanner: FileScanner;
@@ -132,9 +133,19 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    const copyCommand = vscode.commands.registerCommand(
+        'restfulToolkit.copyEndpointParameters',
+        async () => {
+            logger.info('Copy endpoint parameters command executed');
+            const cmd = new CopyEndpointParametersCommand();
+            await cmd.execute();
+        }
+    );
+
     context.subscriptions.push(searchCommand);
     context.subscriptions.push(refreshCommand);
     context.subscriptions.push(createConfigCommand);
+    context.subscriptions.push(copyCommand);
     context.subscriptions.push(scanner);
     context.subscriptions.push(watcher);
     context.subscriptions.push(logger);
