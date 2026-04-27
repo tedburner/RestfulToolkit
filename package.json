@@ -2,7 +2,7 @@
   "name": "restful-toolkit",
   "displayName": "RestfulToolkit",
   "description": "VS Code extension for searching and navigating RESTful API endpoints in Java/Kotlin Spring and JAX-RS projects",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "kiturone",
   "icon": "icon.png",
   "engines": {
@@ -34,22 +34,22 @@
     "commands": [
       {
         "command": "restfulToolkit.searchEndpoints",
-        "title": "Search REST Endpoints",
+        "title": "%command.searchEndpoints.title%",
         "category": "RestfulToolkit"
       },
       {
         "command": "restfulToolkit.refreshEndpoints",
-        "title": "Refresh Endpoints (Incremental/Full)",
+        "title": "%command.refreshEndpoints.title%",
         "category": "RestfulToolkit"
       },
       {
         "command": "restfulToolkit.createProjectConfig",
-        "title": "Create Project Config File",
+        "title": "%command.createProjectConfig.title%",
         "category": "RestfulToolkit"
       },
       {
         "command": "restfulToolkit.copyEndpointParameters",
-        "title": "Copy Endpoint Parameters",
+        "title": "%command.copyEndpointParameters.title%",
         "category": "RestfulToolkit"
       }
     ],

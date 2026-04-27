@@ -1,6 +1,8 @@
 package com.example.controller;
 
+import com.example.dto.AddressDto;
 import com.example.dto.AliasDto;
+import com.example.dto.OrderDto;
 import com.example.dto.SnakeCaseDto;
 import com.example.dto.UserDto;
 import org.springframework.http.MediaType;
@@ -138,6 +140,12 @@ public class TestController {
     @PostMapping("/alias")
     public String createAlias(@RequestBody AliasDto dto) {
         return "alias";
+    }
+
+    // 嵌套 DTO（OrderDto → UserDto + AddressDto）
+    @PostMapping("/order")
+    public String createOrder(@RequestBody OrderDto order) {
+        return "order";
     }
 
     // ========== 参数复制：multipart/form-data ==========

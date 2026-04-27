@@ -40,6 +40,8 @@ export interface DtoField {
     name: string;
     type: string;
     originalName: string;
+    /** 嵌套 DTO 字段（当此字段类型是另一个 DTO 时） */
+    nested?: DtoField[];
 }
 
 export interface EndpointCopyInfo {

@@ -77,50 +77,48 @@ export class ParameterExtractor {
     } | null {
         const lines = text.split('\n');
 
-        let methodStartLine = -1;
-        const methodSignatureLines: string[] = [];
-        const annotationLines: string[] = [];
-
-        // 从光标位置向前搜索方法签名
+        // Step 1: 从光标位置向前找方法声明行（含 visibility 关键字的行）
+        let declLine = -1;
         for (let i = cursorLine; i >= 0; i--) {
             const line = lines[i].trim();
+            if (/\b(public|private|protected)\b/.test(line)) {
+                declLine = i;
+                break;
+            }
+            if (line === '}' || line.startsWith('} ')) { break; }
+        }
+        if (declLine === -1) { return null; }
 
-            if (line.includes('(') && /\b(public|private|protected)\b/.test(line)) {
-                methodStartLine = i;
-                // 收集完整方法签名（可能跨行）
-                let sigText = '';
-                for (let j = i; j < lines.length; j++) {
-                    sigText += lines[j];
-                    if (lines[j].includes(')')) {
-                        const methodMatch = sigText.match(/((?:public|private|protected)[^{]*\)\s*)\{?/s);
-                        if (methodMatch) {
-                            methodSignatureLines.push(methodMatch[1]);
-                        }
-                        break;
-                    }
+        // Step 2: 从声明行向前找注解行
+        const annotationLines: string[] = [];
+        for (let i = declLine - 1; i >= 0; i--) {
+            const line = lines[i].trim();
+            if (line.startsWith('@')) {
+                annotationLines.unshift(line);
+            } else if (line.length > 0) {
+                break; // 非空非注解行，停止
+            }
+            // 空行跳过
+        }
+
+        // Step 3: 从声明行向后收集完整方法签名（到 ')' 为止）
+        let sigText = '';
+        for (let j = declLine; j < lines.length; j++) {
+            sigText += lines[j];
+            if (lines[j].includes(')')) {
+                const methodMatch = sigText.match(/((?:public|private|protected)[^{]*\)\s*)\{?/s);
+                if (methodMatch) {
+                    return {
+                        signature: [...annotationLines, methodMatch[1]].join('\n'),
+                        annotations: annotationLines.join('\n'),
+                        path: this.extractPathFromAnnotations(annotationLines.join('\n'))
+                    };
                 }
                 break;
             }
-
-            if (line.startsWith('@')) {
-                annotationLines.unshift(line);
-            }
-
-            // 遇到闭合大括号说明到了上一个方法，停止
-            if (line === '}' || line.startsWith('} ')) { break; }
         }
 
-        if (methodStartLine === -1) { return null; }
-
-        const fullSignature = [...annotationLines, ...methodSignatureLines].join('\n');
-        const annotations = annotationLines.join('\n');
-        const path = this.extractPathFromAnnotations(annotations);
-
-        return {
-            signature: fullSignature,
-            annotations,
-            path
-        };
+        return null;
     }
 
     private extractPathFromAnnotations(annotations: string): string {
@@ -175,13 +173,13 @@ export class ParameterExtractor {
     }
 
     /**
-     * 为 @RequestBody 参数解析 DTO 字段。
+     * 为 @RequestBody 和 @ModelAttribute 参数解析 DTO 字段。
      */
     private async resolveDtoFields(parameters: EndpointParameter[]): Promise<Map<string, import('../models/types').DtoField[]>> {
         const dtoFields = new Map<string, import('../models/types').DtoField[]>();
 
         for (const param of parameters) {
-            if (param.source === 'body' && param.type && !this.isPrimitiveType(param.type)) {
+            if ((param.source === 'body' || param.source === 'form') && param.type && !this.isPrimitiveType(param.type)) {
                 const fields = await this.dtoExtractor.findDtoFields(param.type);
                 if (fields.length > 0) {
                     dtoFields.set(param.type, fields);

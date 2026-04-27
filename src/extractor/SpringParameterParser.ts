@@ -40,12 +40,15 @@ export class SpringParameterParser {
     private splitParameters(paramSection: string): string[] {
         const params: string[] = [];
         let depth = 0;
+        let parenDepth = 0;
         let current = '';
 
         for (const char of paramSection) {
             if (char === '<') { depth++; }
             else if (char === '>') { depth--; }
-            else if (char === ',' && depth === 0) {
+            else if (char === '(') { parenDepth++; }
+            else if (char === ')') { parenDepth--; }
+            else if (char === ',' && depth === 0 && parenDepth === 0) {
                 params.push(current.trim());
                 current = '';
                 continue;
@@ -69,13 +72,15 @@ export class SpringParameterParser {
 
         const source = this.mapAnnotationToSource(annotationName);
         const name = explicitName || typeAndName.varName;
+        // defaultValue 存在时，required 自动为 false
+        const isRequiredFinal = isRequired !== null ? isRequired : (defaultValue !== undefined ? false : true);
 
         return {
             name,
             type: typeAndName.type,
             source,
             originalCaseName: typeAndName.varName,
-            isRequired: isRequired ?? true,
+            isRequired: isRequiredFinal,
             defaultValue
         };
     }

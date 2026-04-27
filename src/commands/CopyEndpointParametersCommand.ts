@@ -120,9 +120,11 @@ export class CopyEndpointParametersCommand {
     private autoDetectFormat(copyInfo: EndpointCopyInfo): number {
         const { httpMethod, contentType, parameters } = copyInfo;
         const hasBody = parameters.some(p => p.source === 'body');
+        const hasForm = parameters.some(p => p.source === 'form');
 
         if (httpMethod === 'GET' || httpMethod === 'DELETE') { return 0; }
         if (hasBody) { return 1; }
+        if (hasForm) { return 2; }
         if (contentType === 'form-data') { return 2; }
         if (contentType === 'x-www-form-urlencoded') { return 3; }
         if (['POST', 'PUT', 'PATCH'].includes(httpMethod)) { return 1; }
