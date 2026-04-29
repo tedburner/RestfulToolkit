@@ -63,12 +63,6 @@ restful-toolkit/
 │   └── specs/               # 设计规格
 │       └── 2026-04-27-endpoint-parameter-copy-design.md
 │
-├── docs/superpowers/ (规范与设计)
-│   ├── plans/               # 实现计划
-│   │   └── 2026-04-27-endpoint-parameter-copy.md
-│   └── specs/               # 设计规格
-│       └── 2026-04-27-endpoint-parameter-copy-design.md
-│
 ├── test-project/ (完整测试项目)
 │   ├── README.md            # 测试项目说明
 │   ├── TEST-COVERAGE-CHECKLIST.md # 测试覆盖清单

@@ -126,7 +126,7 @@ vsce publish patch
 - **ParameterExtractor.ts** — 入口：检测框架、查找方法、解析参数、解析 DTO 字段
 - **SpringParameterParser.ts** — Spring 注解参数解析（@RequestParam, @PathVariable, @RequestBody 等），跟踪括号深度
 - **JaxRsParameterParser.ts** — JAX-RS 注解参数解析（@PathParam, @QueryParam, @FormParam）
-- **DtoFieldExtractor.ts** — 异步嵌套 DTO 字段提取（最多 3 层，循环引用保护），支持 @JsonProperty/@JsonAlias/@JSONField/@JsonNaming
+- **DtoFieldExtractor.ts** — 异步嵌套 DTO 字段提取（最多 3 层，循环引用保护），支持 @JsonProperty/@JsonAlias/@JSONField/@JsonNaming，支持泛型集合（List\<T\>、Set\<T\>、Map\<K,V\>）内嵌 DTO 解析
 - **FormatConverter.ts** — 格式转换：URL Params、JSON Body（body 参数展开）、Form Data（form 参数展开）、x-www-form-urlencoded
 - **i18n.ts** — 格式标签翻译
 
@@ -263,3 +263,15 @@ src/
 5. **条件注解**: 无法评估影响端点可用性的条件注解
 
 **预期准确率**: 对典型 Spring Boot 项目约 80-85% 端点检测率。
+
+## 行为规范
+
+### 自动同步文档
+
+每次完成代码变更后，必须自动执行 `/neat-freak`，更新以下文件以保持知识体系一致：
+- **CLAUDE.md** — Agent 开发指导（路由、架构、已知限制）
+- **CHANGELOG.md** — 版本变更日志
+- **README.md / README_CN.md** — 功能描述、已知限制、路线图
+- **docs/DOCUMENTATION_MANIFEST.md** — 目录与文档清单
+
+**目标**: 不留下过期信息、不留下相对时间、不留下已完成待办。

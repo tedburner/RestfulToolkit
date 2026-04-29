@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.3] - 2026-04-27
 
+### Fixed / 修复
+
+- **Generic Type DTO Resolution / 泛型类型 DTO 解析**: Fixed `List<UserDto>` and other generic collection types failing to resolve nested DTO fields. Added `extractGenericTypes` to extract inner type parameters and `resolveNestedDtoFields` for generic container DTO. 修复 `List<UserDto>` 等泛型集合类型无法展开嵌套 DTO 的问题。
+- **Debounced Scan Error Handling / 防抖扫描异常处理**: Fixed unhandled promise rejection in `scanFileDebounced` setTimeout callback. 修复防抖扫描中 setTimeout 回调缺少 catch 的问题。
+
 ### Added / 新增
 
 - **Copy Endpoint Parameters / 复制接口参数**: Right-click context menu to copy endpoint parameters in multiple formats. 右键菜单支持多种格式复制接口参数：
