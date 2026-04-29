@@ -195,9 +195,9 @@ export class FileScanner implements vscode.Disposable {
             clearTimeout(this.debounceTimers.get(filePath)!);
         }
 
-        const timer = setTimeout(async () => {
+        const timer = setTimeout(() => {
             this.debounceTimers.delete(filePath);
-            await this.scanFile(uri);
+            this.scanFile(uri).catch(err => this.logger.error(`Debounced scan failed: ${uri.fsPath}`, err));
         }, delay);
 
         this.debounceTimers.set(filePath, timer);

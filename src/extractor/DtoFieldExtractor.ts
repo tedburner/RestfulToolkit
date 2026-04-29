@@ -199,7 +199,7 @@ export class DtoFieldExtractor {
                     originalName: name
                 };
                 if (!this.isPrimitiveType(type)) {
-                    const nested = await resolveNested(type);
+                    const nested = await this.resolveNestedDtoFields(type, resolveNested);
                     if (nested && nested.length > 0) {
                         field.nested = nested;
                     }
@@ -222,10 +222,34 @@ export class DtoFieldExtractor {
             'Boolean', 'int', 'long', 'short', 'byte', 'float', 'double',
             'boolean', 'char', 'Character', 'BigDecimal', 'BigInteger',
             'Date', 'LocalDate', 'LocalDateTime', 'ZonedDateTime',
-            'MultipartFile', 'File', 'InputStream', 'byte[]',
-            'List', 'Map', 'Set', 'Collection', 'Optional'
+            'MultipartFile', 'File', 'InputStream', 'byte[]'
         ];
-        return primitives.includes(type);
+        if (primitives.includes(type)) { return true; }
+        const genericBase = type.replace(/<[^>]+>/, '');
+        return primitives.includes(genericBase);
+    }
+
+    private extractGenericTypes(type: string): string[] {
+        const match = type.match(/<(.+)>/);
+        if (!match) { return []; }
+        return match[1].split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    private async resolveNestedDtoFields(
+        type: string,
+        resolveNested: (typeName: string) => Promise<DtoField[] | null>
+    ): Promise<DtoField[] | null> {
+        const direct = await resolveNested(type);
+        if (direct && direct.length > 0) { return direct; }
+
+        const genericTypes = this.extractGenericTypes(type);
+        if (genericTypes.length === 0) { return null; }
+
+        for (const innerType of genericTypes) {
+            const inner = await resolveNested(innerType);
+            if (inner && inner.length > 0) { return inner; }
+        }
+        return null;
     }
 
     private resolveNamingStrategy(value: string): ((n: string) => string) | null {
