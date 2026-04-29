@@ -11,7 +11,7 @@
 **运行方法**：
 ```bash
 cd F:\Project\person\restful-toolkit
-node test-project/scripts/test-all-files.js
+node src/test/scripts/test-all-files.js
 ```
 
 **验证内容**：
@@ -63,7 +63,7 @@ npm test
 **自动化测试脚本**：
 ```bash
 cd F:\Project\person\restful-toolkit
-node test-project/scripts/test-all-files.js
+node src/test/scripts/test-all-files.js
 ```
 
 输出包括：

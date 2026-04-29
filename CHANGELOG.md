@@ -6,6 +6,17 @@ All notable changes to RestfulToolkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.4] - 2026-04-29
+
+### Added / 新增
+
+- **Copy Full URL / 复制完整 URL**: Right-click command to copy the complete endpoint URL (base URL + full path with class-level path + path parameter placeholders + query params). 右键菜单新增命令，复制完整端点 URL（含 Base URL、类级路径、路径参数占位符、查询参数）。
+- **Copy as cURL / 复制为 cURL 命令**: Right-click command to generate a cURL command with HTTP method, URL, headers, and request body. Output is directly importable into Postman, Bruno, and Insomnia. 右键菜单新增命令，生成包含 HTTP 方法、URL、请求头、请求体的 cURL 命令，可直接导入 Postman/Bruno/Insomnia。
+- **Base URL Configuration / Base URL 配置**: New `restfulToolkit.baseUrl` setting with fallback chain: user config → auto-detect from `application.yml`/`application.properties` → default `http://localhost:8080`. 新增 `restfulToolkit.baseUrl` 配置项，支持三级回退：用户配置 → 自动检测 application.yml/properties → 默认值。
+- **Header Parameter Parsing / 请求头参数解析**: Support for `@RequestHeader` (Spring) and `@HeaderParam` (JAX-RS) annotations. Headers are included in cURL output. 支持 `@RequestHeader`（Spring）和 `@HeaderParam`（JAX-RS）注解，请求头自动包含在 cURL 输出中。
+- **Class-level Path Concatenation / 类级路径拼接**: Copy commands now correctly concatenate class-level `@RequestMapping`/`@Path` with method-level paths. 复制命令现在正确拼接类级 `@RequestMapping`/`@Path` 与方法级路径。
+- **New test cases / 新增测试**: UrlGenerator tests (5 cases), CurlConverter tests (5 cases), BaseUrlResolver tests (5 cases), Spring `@RequestHeader` tests (2 cases), JAX-RS `@HeaderParam` tests (1 case).
+
 ## [0.0.3] - 2026-04-27
 
 ### Fixed / 修复

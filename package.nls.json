@@ -3,5 +3,7 @@
   "command.refreshEndpoints.title": "Refresh Endpoints (Incremental/Full)",
   "command.createProjectConfig.title": "Create Project Config File",
   "command.copyEndpointParameters.title": "Copy Endpoint Parameters",
-  "menu.copyEndpointParameters.title": "Copy Endpoint Parameters"
+  "menu.copyEndpointParameters.title": "Copy Endpoint Parameters",
+  "command.copyUrl.title": "Copy Full URL",
+  "command.copyCurl.title": "Copy as cURL"
 }

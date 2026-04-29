@@ -1,0 +1,6 @@
+# Test Project Configuration
+# Used by BaseUrlResolver to auto-detect server port and context-path
+server:
+  port: 9090
+  servlet:
+    context-path: /api/v2

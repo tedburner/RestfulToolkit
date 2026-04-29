@@ -61,4 +61,14 @@ suite('JaxRsParameterParser Test Suite', () => {
         );
         assert.strictEqual(params.length, 0);
     });
+
+    test('Should parse @HeaderParam', () => {
+        const params = parser.parseMethodParameters(
+            'public String get(@HeaderParam("Authorization") String auth) {}'
+        );
+        assert.strictEqual(params.length, 1);
+        assert.strictEqual(params[0].name, 'Authorization');
+        assert.strictEqual(params[0].source, 'header');
+        assert.strictEqual(params[0].type, 'String');
+    });
 });

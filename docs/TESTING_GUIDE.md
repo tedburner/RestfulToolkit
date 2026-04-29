@@ -26,7 +26,7 @@ npm test
 
 ### 2. 自动化验证脚本 ✅
 
-**位置**: `test-project/scripts/test-all-files.js`
+**位置**: `src/test/scripts/test-all-files.js`
 
 **验证内容**:
 - 49个端点识别准确性
@@ -37,7 +37,7 @@ npm test
 
 **运行方式**:
 ```bash
-node test-project/scripts/test-all-files.js
+node src/test/scripts/test-all-files.js
 ```
 
 **输出统计**:

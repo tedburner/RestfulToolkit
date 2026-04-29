@@ -3,5 +3,7 @@
   "command.refreshEndpoints.title": "刷新端点（增量/全量）",
   "command.createProjectConfig.title": "创建项目配置文件",
   "command.copyEndpointParameters.title": "复制接口参数",
-  "menu.copyEndpointParameters.title": "复制接口参数"
+  "menu.copyEndpointParameters.title": "复制接口参数",
+  "command.copyUrl.title": "复制完整 URL",
+  "command.copyCurl.title": "复制为 cURL 命令"
 }

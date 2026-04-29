@@ -51,6 +51,16 @@
         "command": "restfulToolkit.copyEndpointParameters",
         "title": "%command.copyEndpointParameters.title%",
         "category": "RestfulToolkit"
+      },
+      {
+        "command": "restfulToolkit.copyUrl",
+        "title": "%command.copyUrl.title%",
+        "category": "RestfulToolkit"
+      },
+      {
+        "command": "restfulToolkit.copyCurl",
+        "title": "%command.copyCurl.title%",
+        "category": "RestfulToolkit"
       }
     ],
     "keybindings": [
@@ -99,6 +109,11 @@
           "enum": ["camelCase", "snake_case"],
           "default": "camelCase",
           "description": "Default name format for copied parameter names"
+        },
+        "restfulToolkit.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for generated URLs and cURL commands (e.g., http://localhost:8080). Overrides auto-detected values."
         }
       }
     },
@@ -107,7 +122,17 @@
         {
           "command": "restfulToolkit.copyEndpointParameters",
           "when": "editorLangId =~ /java|kotlin/",
-          "group": "2_copy"
+          "group": "1_copy@1"
+        },
+        {
+          "command": "restfulToolkit.copyUrl",
+          "when": "editorLangId =~ /java|kotlin/",
+          "group": "1_copy@2"
+        },
+        {
+          "command": "restfulToolkit.copyCurl",
+          "when": "editorLangId =~ /java|kotlin/",
+          "group": "1_copy@3"
         }
       ]
     }

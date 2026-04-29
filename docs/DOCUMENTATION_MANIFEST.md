@@ -2,15 +2,18 @@
 
 ## 整理完成 ✅
 
-**整理日期**: 2026-04-20 | **更新日期**: 2026-04-27（v0.0.3 端点参数复制功能）
+**整理日期**: 2026-04-20 | **更新日期**: 2026-04-29（v0.0.4 Copy URL/cURL 功能）
 
-**v0.0.3 新增**:
-- `package.nls.json` / `package.nls.zh-cn.json` — 中英文国际化文件
-- `docs/superpowers/` — 规范与设计文档（设计规格 + 实现计划）
-- `test-project/scripts/test-parameter-copy.js` — 75个参数复制批量测试
-- `src/extractor/` — 参数提取模块（FormatConverter, ParameterExtractor, DtoFieldExtractor）
-- `src/commands/CopyEndpointParametersCommand.ts` — 右键复制参数命令
-- `test-project/` — 新增 FormController、OrderDto、AddressDto、LoginForm
+**v0.0.4 新增**:
+- `src/extractor/UrlGenerator.ts` — 完整 URL 生成
+- `src/extractor/CurlConverter.ts` — cURL 命令生成
+- `src/commands/CopyUrlCommand.ts` — 复制完整 URL 命令
+- `src/commands/CopyCurlCommand.ts` — 复制 cURL 命令
+- `src/utils/BaseUrlResolver.ts` — Base URL 自动检测
+- `src/test/extractor/UrlGenerator.test.ts` — URL 生成测试（5 用例）
+- `src/test/extractor/CurlConverter.test.ts` — cURL 生成测试（5 用例）
+- `src/test/utils/BaseUrlResolver.test.ts` — Base URL 检测测试（5 用例）
+- `package.nls.json` / `package.nls.zh-cn.json` — 新增 copyUrl/copyCurl 命令标题
 
 ---
 
@@ -40,15 +43,15 @@ restful-toolkit/
 ├── src/ (源代码14个模块)
 │   ├── extension.ts         # 扩展入口
 │   ├── cache/               # 缓存管理（2模块）
-│   ├── commands/            # 命令（1模块：CopyEndpointParameters）
+│   ├── commands/            # 命令（3模块：CopyEndpointParameters, CopyUrl, CopyCurl）
 │   ├── config/              # 配置管理（2模块）
-│   ├── extractor/           # 参数提取（4模块：FormatConverter, ParameterExtractor, SpringParameterParser, DtoFieldExtractor, i18n）
+│   ├── extractor/           # 参数提取（8模块：FormatConverter, ParameterExtractor, SpringParameterParser, JaxRsParameterParser, DtoFieldExtractor, i18n, UrlGenerator, CurlConverter）
 │   ├── models/              # 数据模型（1模块）
 │   ├── parsers/             # 注解解析（3模块）
 │   ├── scanner/             # 文件扫描（1模块）
 │   ├── ui/                  # 用户界面（1模块）
-│   ├── utils/               # 工具类（2模块）
-│   └── test/                # 单元测试（4测试）
+│   ├── utils/               # 工具类（3模块：FileWatcher, Logger, BaseUrlResolver）
+│   └── test/                # 单元测试（含 UrlGenerator, CurlConverter, BaseUrlResolver 测试）
 │
 ├── docs/ (文档6个)
 │   ├── CONFIG_SYSTEM.md     # 配置系统文档
@@ -86,27 +89,35 @@ restful-toolkit/
 
 ## 二、测试脚本结构
 
-### 单元测试（Mocha框架）- 4个文件 ✅
+### 单元测试（Mocha框架）- 9个文件 ✅
 
 **位置**: `src/test/` 目录
 
 | 文件 | 说明 |
 |------|------|
 | runTest.ts | Mocha测试入口 |
-| parsers/SpringMvcParser.test.ts | Spring解析器测试 |
-| parsers/JaxRsParser.test.ts | JAX-RS解析器测试 |
+| parsers/SpringMvcParser.test.ts | Spring解析器测试（含 @RequestHeader） |
+| parsers/JaxRsParser.test.ts | JAX-RS解析器测试（含 @HeaderParam） |
 | cache/EndpointCache.test.ts | 缓存测试 |
+| extractor/UrlGenerator.test.ts | URL 生成测试（5 用例） |
+| extractor/CurlConverter.test.ts | cURL 生成测试（5 用例） |
+| extractor/NameTransformer.test.ts | 命名转换测试 |
+| extractor/FormatConverter.test.ts | 格式转换测试 |
+| extractor/SpringParameterParser.test.ts | Spring 参数解析测试 |
+| extractor/JaxRsParameterParser.test.ts | JAX-RS 参数解析测试 |
+| utils/BaseUrlResolver.test.ts | Base URL 自动检测测试（5 用例） |
 
 **运行**: `npm test`
 
 ### 自动化验证 - 2个脚本 ✅
 
-**位置**: `test-project/scripts/`
+**位置**: `src/test/scripts/`
 
 | 脚本 | 说明 | 运行 |
 |------|------|------|
-| test-all-files.js | 49个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node test-project/scripts/test-all-files.js` |
-| test-parameter-copy.js | 75个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node test-project/scripts/test-parameter-copy.js` |
+| test-all-files.js | 49个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
+| test-parameter-copy.js | 75个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node src/test/scripts/test-parameter-copy.js` |
+| test-copy-url-curl.js | 107个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
 
 ---
 
@@ -188,15 +199,15 @@ restful-toolkit/
 
 ## 五、统计
 
-### v0.0.3 当前状态
+### v0.0.4 当前状态
 
 | 类别 | 数量 |
 |------|------|
 | 根目录文档 | 6个（README, README_CN, CHANGELOG, CLAUDE, LICENSE, RELEASE_v0.0.2） |
 | 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
-| docs 文档 | 7个（5个 + 2个 superpowers） |
-| 源代码模块 | 14个（含 extractor/, commands/） |
-| 单元测试 | 4个 Mocha 测试 |
+| docs 文档 | 5个（CONFIG_SYSTEM, DOCUMENTATION_MANIFEST, INCREMENTAL_SCAN, TESTING_GUIDE, screenshot.png） |
+| 源代码模块 | 19个（含 extractor/ 8、commands/ 3、utils/ 3） |
+| 单元测试 | 9+ Mocha 测试 |
 | 自动化脚本 | 2个（49端点验证 + 75参数复制测试） |
 | 测试 Controller | 3个（Spring 26 + JAX-RS 9 + Form） |
 | 测试 DTO | 6个 |
@@ -205,6 +216,7 @@ restful-toolkit/
 
 - **v0.0.2 整理**（2026-04-20）：删除8个冗余文档，清理3个冗余脚本，删除4项冗余目录
 - **v0.0.3 更新**（2026-04-27）：新增国际化、参数复制功能、批量测试脚本、规范文档
+- **v0.0.4 更新**（2026-04-29）：新增 Copy URL/cURL、Base URL 检测、请求头解析
 
 ---
 

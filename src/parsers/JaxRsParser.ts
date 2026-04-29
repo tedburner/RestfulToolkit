@@ -55,20 +55,19 @@ export class JaxRsParser {
                 braceEnd++;
             }
 
-            // braceEnd 是方法体结束括号的位置+1
-            // 方法签名真正的起始位置应该是方法前面的第一个非空行
-            let actualMethodStart = signatureStartIndex;
-            while (actualMethodStart > 0 && content[actualMethodStart - 1] !== '\n') {
-                actualMethodStart--;
+            if (braceStart === -1) {
+                continue; // 方法体开始括号未找到
             }
 
-            const annotationBlock = this.getAnnotationBlock(content, actualMethodStart);
+            // 从方法体开始位置向前扫描，找到 { 之前的内容
+            // 注意：需要区分方法注解和参数注解（如 @FormParam），只收集 public/private/protected 之前的注解
+            const annotationBlock = this.findMethodAnnotationBlock(content, braceStart);
             if (!annotationBlock) {
                 continue;
             }
 
-            // 计算注解块在content中的起始位置
-            const annotationBlockStart = content.indexOf(annotationBlock, actualMethodStart - annotationBlock.length);
+            // 计算注解块在 content 中的起始位置
+            const annotationBlockStart = content.indexOf(annotationBlock, Math.max(0, braceStart - annotationBlock.length - 500));
 
             const methodEndpoints = this.parseJaxRsAnnotations(
                 annotationBlock,
@@ -115,8 +114,8 @@ export class JaxRsParser {
                 // 计算正确的行号
                 const line = this.getLineNumber(content, absolutePosition);
 
-                const pathMatch = annotationBlock.match(/@Path\s*\(\s*"([^"]+)"\s*\)/);
-                const methodPath = pathMatch ? pathMatch[1].replace(/\s+/g, '') : '';
+                // 查找方法级别的 @Path（取最后一个，避免匹配到类级 @Path）
+                const methodPath = this.extractMethodPath(annotationBlock);
 
                 endpoints.push(this.createEndpoint(
                     httpMethod.method,
@@ -130,6 +129,68 @@ export class JaxRsParser {
         }
 
         return endpoints;
+    }
+
+    /**
+     * 从方法体 { 向前扫描，收集方法级注解（@GET/@POST/@Path 等）。
+     * 跳过参数注解（@PathParam/@FormParam 等）。
+     *
+     * 策略：从 { 向前扫描，连续收集 @ 行，跳过非 @ 行（方法签名、参数），
+     * 遇到 }（上一方法体结束）或 class（类声明）时停止。
+     */
+    private findMethodAnnotationBlock(content: string, braceIndex: number): string | null {
+        let scanPos = braceIndex;
+        while (scanPos > 0 && content[scanPos - 1] !== '\n') {
+            scanPos--;
+        }
+
+        const methodAnnotations: string[] = [];
+
+        while (scanPos > 0) {
+            const prevNewlineIndex = scanPos - 1;
+            if (prevNewlineIndex < 0) { break; }
+
+            let prevLineStart = prevNewlineIndex;
+            while (prevLineStart > 0 && content[prevLineStart - 1] !== '\n') {
+                prevLineStart--;
+            }
+
+            const prevLine = content.substring(prevLineStart, prevNewlineIndex).trim();
+
+            if (prevLine === '') {
+                // 空行：如果已收集到注解，停止；否则继续
+                if (methodAnnotations.length > 0) { break; }
+                scanPos = prevLineStart;
+                continue;
+            }
+
+            // 方法体闭括号 → 停止（防止跨到上一方法）
+            if (prevLine === '}' || prevLine.startsWith('} ')) { break; }
+
+            // 类声明 → 停止
+            if (/\b(class|interface|object)\b/.test(prevLine)) { break; }
+
+            // return 语句 → 停止（方法体内容）
+            if (prevLine.startsWith('return ')) { break; }
+
+            if (prevLine.startsWith('@')) {
+                // 注解行：跳过参数注解
+                if (/@(Path|Query|Form|Header)Param\s*\(/.test(prevLine)) {
+                    scanPos = prevLineStart;
+                    continue;
+                }
+                // 方法级注解，收集
+                methodAnnotations.unshift(content.substring(prevLineStart, prevNewlineIndex));
+                scanPos = prevLineStart;
+            } else {
+                // 非注解非空行（方法签名行、返回类型行等）→ 跳过，继续向前
+                scanPos = prevLineStart;
+                continue;
+            }
+        }
+
+        if (methodAnnotations.length === 0) { return null; }
+        return methodAnnotations.join('\n');
     }
 
     private getAnnotationBlock(content: string, methodIndex: number): string | null {
@@ -160,6 +221,11 @@ export class JaxRsParser {
                 break;
             }
 
+            // 安全检查：遇到 class/interface 声明，说明已经回溯到类级别注解，停止
+            if (/\b(class|interface|object)\b/.test(prevLine)) {
+                break;
+            }
+
             // 前一行是注解行，继续向前查找
             startIndex = prevLineStart;
         }
@@ -170,6 +236,19 @@ export class JaxRsParser {
             return null;
         }
         return block;
+    }
+
+    /**
+     * 提取方法级别的 @Path（取最后一个，避免匹配类级 @Path）
+     */
+    private extractMethodPath(annotationBlock: string): string {
+        const pattern = /@Path\s*\(\s*"([^"]+)"\s*\)/g;
+        let match: RegExpExecArray | null;
+        let lastPath = '';
+        while ((match = pattern.exec(annotationBlock)) !== null) {
+            lastPath = match[1].replace(/\s+/g, '');
+        }
+        return lastPath;
     }
 
     private combinePath(classPath: string, methodPath: string): string {

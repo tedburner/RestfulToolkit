@@ -97,7 +97,8 @@ export class SpringParameterParser {
             'PathVariable',
             'RequestBody',
             'RequestPart',
-            'ModelAttribute'
+            'ModelAttribute',
+            'RequestHeader'
         ];
 
         for (const ann of annotations) {
@@ -176,6 +177,7 @@ export class SpringParameterParser {
             case 'RequestBody': return 'body';
             case 'RequestPart': return 'form';
             case 'ModelAttribute': return 'form';
+            case 'RequestHeader': return 'header';
             default: return 'query';
         }
     }

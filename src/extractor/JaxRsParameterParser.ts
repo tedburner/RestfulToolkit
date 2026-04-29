@@ -62,7 +62,7 @@ export class JaxRsParameterParser {
             { name: 'PathParam', source: 'path' as const },
             { name: 'QueryParam', source: 'query' as const },
             { name: 'FormParam', source: 'form' as const },
-            { name: 'HeaderParam', source: 'query' as const },
+            { name: 'HeaderParam', source: 'header' as const },
         ];
 
         for (const ann of jaxRsAnnotations) {

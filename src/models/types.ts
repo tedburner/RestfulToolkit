@@ -30,7 +30,7 @@ export interface SearchQuery {
 export interface EndpointParameter {
     name: string;
     type: string;
-    source: 'path' | 'query' | 'body' | 'form';
+    source: 'path' | 'query' | 'body' | 'form' | 'header';
     originalCaseName: string;
     isRequired: boolean;
     defaultValue?: string;

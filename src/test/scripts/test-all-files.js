@@ -9,15 +9,15 @@
  *
  * 运行方法：从项目根目录运行
  *   cd F:\Project\person\restful-toolkit
- *   node test-project/scripts/test-all-files.js
+ *   node src/test/scripts/test-all-files.js
  */
 
 const fs = require('fs');
 const path = require('path');
 
 // 从脚本位置计算项目根目录
-const scriptDir = __dirname; // test-project/scripts/
-const projectRoot = path.resolve(scriptDir, '../..'); // 向上两级到项目根目录
+const scriptDir = __dirname; // src/test/scripts/
+const projectRoot = path.resolve(scriptDir, '../../..'); // 向上三级到项目根目录
 
 // 使用绝对路径加载模块
 const { AnnotationParser } = require(path.join(projectRoot, 'dist/parsers/AnnotationParser'));

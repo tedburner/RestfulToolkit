@@ -14,6 +14,10 @@ export interface I18nLabels {
     parseError: string;
     notOnMethod: string;
     notRestFile: string;
+    urlCopied: string;
+    curlCopied: string;
+    urlCopyError: string;
+    curlCopyError: string;
 }
 
 const zhLabels: I18nLabels = {
@@ -29,7 +33,11 @@ const zhLabels: I18nLabels = {
     cancel: '取消',
     parseError: '参数解析失败: {0}',
     notOnMethod: '请将光标放在接口方法上',
-    notRestFile: '未检测到 REST 端点'
+    notRestFile: '未检测到 REST 端点',
+    urlCopied: '✓ URL 已复制到剪贴板',
+    curlCopied: '✓ cURL 命令已复制到剪贴板',
+    urlCopyError: '无法生成 URL',
+    curlCopyError: '无法生成 cURL 命令'
 };
 
 const enLabels: I18nLabels = {
@@ -45,7 +53,11 @@ const enLabels: I18nLabels = {
     cancel: 'Cancel',
     parseError: 'Failed to parse parameters: {0}',
     notOnMethod: 'Please place cursor on an endpoint method',
-    notRestFile: 'No REST endpoint detected'
+    notRestFile: 'No REST endpoint detected',
+    urlCopied: '✓ URL copied to clipboard',
+    curlCopied: '✓ cURL command copied to clipboard',
+    urlCopyError: 'Failed to generate URL',
+    curlCopyError: 'Failed to generate cURL command'
 };
 
 export function getLabels(): I18nLabels {

@@ -37,7 +37,22 @@ export class ParameterExtractor {
             parameters = this.jaxRsParser.parseMethodParameters(methodInfo.signature);
         }
 
-        if (parameters.length === 0) { return null; }
+        // 无参数时仍可提取端点信息（用于 Copy URL / cURL）
+        if (parameters.length === 0) {
+            // 解析 @RequestBody 参数的 DTO 字段
+            const dtoFields = await this.resolveDtoFields(parameters);
+
+            const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework);
+
+            return {
+                httpMethod,
+                contentType,
+                path: methodInfo.fullPath,
+                parameters: [],
+                framework,
+                dtoFields
+            };
+        }
 
         // 检测 HTTP 方法和内容类型
         const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework);
@@ -48,7 +63,7 @@ export class ParameterExtractor {
         return {
             httpMethod,
             contentType,
-            path: methodInfo.path || '',
+            path: methodInfo.fullPath,
             parameters,
             framework,
             dtoFields
@@ -73,7 +88,9 @@ export class ParameterExtractor {
     private findMethodAtPosition(text: string, cursorLine: number): {
         signature: string;
         annotations: string;
-        path: string;
+        methodPath: string;
+        classPath: string;
+        fullPath: string;
     } | null {
         const lines = text.split('\n');
 
@@ -108,10 +125,15 @@ export class ParameterExtractor {
             if (lines[j].includes(')')) {
                 const methodMatch = sigText.match(/((?:public|private|protected)[^{]*\)\s*)\{?/s);
                 if (methodMatch) {
+                    const methodPath = this.extractPathFromAnnotations(annotationLines.join('\n'));
+                    const classPath = this.findClassLevelPath(lines, declLine);
+                    const fullPath = this.concatenatePaths(classPath, methodPath);
                     return {
                         signature: [...annotationLines, methodMatch[1]].join('\n'),
                         annotations: annotationLines.join('\n'),
-                        path: this.extractPathFromAnnotations(annotationLines.join('\n'))
+                        methodPath,
+                        classPath,
+                        fullPath
                     };
                 }
                 break;
@@ -119,6 +141,65 @@ export class ParameterExtractor {
         }
 
         return null;
+    }
+
+    /**
+     * 向前搜索类级别的 @RequestMapping / @Path 注解
+     */
+    private findClassLevelPath(lines: string[], methodDeclLine: number): string {
+        // 向前找类声明行（class 或 object 关键字）
+        let classLine = -1;
+        for (let i = methodDeclLine - 1; i >= 0; i--) {
+            const line = lines[i].trim();
+            if (/\b(class|object)\b/.test(line)) {
+                classLine = i;
+                break;
+            }
+            // 遇到 package 或 import 语句，停止
+            if (/^(package|import)\b/.test(line)) { break; }
+        }
+        if (classLine === -1) { return ''; }
+
+        // 从类声明行向前找注解
+        for (let i = classLine - 1; i >= 0; i--) {
+            const line = lines[i].trim();
+            if (line.startsWith('@')) {
+                const path = this.extractClassPath(line);
+                if (path) { return path; }
+            } else if (line.length > 0 && !line.startsWith('@')) {
+                // 非注解非空行，停止
+                break;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * 从单行注解中提取路径
+     */
+    private extractClassPath(annotationLine: string): string | null {
+        const patterns = [
+            /@(?:Request|Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?"([^"]+)"/,
+            /@Path\s*\(\s*"([^"]+)"/,
+        ];
+        for (const pattern of patterns) {
+            const match = annotationLine.match(pattern);
+            if (match) { return match[1]; }
+        }
+        return null;
+    }
+
+    /**
+     * 拼接类级路径和方法级路径，去除重复斜杠
+     */
+    private concatenatePaths(classPath: string, methodPath: string): string {
+        if (!classPath) { return methodPath; }
+        if (!methodPath) { return classPath; }
+
+        const base = classPath.endsWith('/') ? classPath.slice(0, -1) : classPath;
+        const suffix = methodPath.startsWith('/') ? methodPath.slice(1) : methodPath;
+        return `${base}/${suffix}`;
     }
 
     private extractPathFromAnnotations(annotations: string): string {

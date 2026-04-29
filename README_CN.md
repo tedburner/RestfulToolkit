@@ -19,6 +19,9 @@
 - 📋 **复制参数**：右键菜单支持 URL Params、JSON Body、Form Data、x-www-form-urlencoded 格式复制接口参数
 - 🔀 **命名转换**：自动检测或切换驼峰/蛇形命名风格
 - 📦 **DTO 展开**：嵌套 DTO 字段自动展开（最多 3 层）
+- 🔗 **复制完整 URL**：一键复制完整端点 URL（含 Base URL + 完整路径 + 查询参数）
+- 📡 **复制为 cURL**：一键复制 cURL 命令（含方法、URL、请求头、请求体），可直接导入 Postman/Bruno/Insomnia
+- ⚙️ **Base URL 自动检测**：自动从 `application.yml` / `application.properties` 读取端口和 context-path
 
 ## 支持的框架
 
@@ -125,6 +128,7 @@ RestfulToolkit 支持两个级别的配置：
 | `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | 排除扫描的 glob 模式 |
 | `maxResults` | `number` | `100` | 显示的最大搜索结果数 |
 | `copyNameFormat` | `string` | `"camelCase"` | 复制参数的默认命名格式（`"camelCase"` 或 `"snake_case"`） |
+| `baseUrl` | `string` | `"http://localhost:8080"` | 生成 URL 和 cURL 命令的 Base URL，支持自动检测 |
 
 ### 复制参数
 
@@ -140,11 +144,27 @@ RestfulToolkit 支持两个级别的配置：
 4. 选择命名风格（自动检测，可切换驼峰/蛇形）
 
 **支持的注解**：
-- **Spring**：`@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestPart`, `@ModelAttribute`
-- **JAX-RS**：`@PathParam`, `@QueryParam`, `@FormParam`
+- **Spring**：`@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestPart`, `@ModelAttribute`, `@RequestHeader`
+- **JAX-RS**：`@PathParam`, `@QueryParam`, `@FormParam`, `@HeaderParam`
 - **JSON**：`@JsonProperty`, `@JsonAlias`, `@JSONField`, `@JsonNaming`
 
 **DTO 展开**：`@RequestBody` 和 `@ModelAttribute` 参数自动展开嵌套 DTO 字段（最多 3 层）。
+
+### 复制完整 URL
+
+在 Controller 方法上右键选择「复制完整 URL」：
+
+- 输出：`http://localhost:8080/api/users/{id}?keyword=`
+- Base URL 从 VS Code 设置、项目配置、自动检测或默认值获取
+- 路径参数保留 `{占位符}` 形式，方便手动替换
+
+### 复制为 cURL
+
+在 Controller 方法上右键选择「复制为 cURL 命令」：
+
+- 输出包含：HTTP 方法、完整 URL、请求头（来自 `@RequestHeader`/`@HeaderParam`）、请求体（含 DTO 展开）
+- 可直接导入 Postman、Bruno、Insomnia
+- 示例：`curl -X POST 'http://localhost:8080/api/users' -H 'Content-Type: application/json' -d '{"name": "", "email": ""}'`
 
 ## 已知限制
 
@@ -207,6 +227,13 @@ RestfulToolkit 支持两个级别的配置：
 - [ ] HTTP 请求测试（类似 Postman 的功能）
 - [ ] 服务树视图
 - [ ] 更好的继承和配置类支持
+
+### v0.0.4 已完成
+- [x] 复制完整 URL（Base URL + 完整路径 + 查询参数）
+- [x] 复制为 cURL（方法、URL、请求头、请求体，支持 Postman 导入）
+- [x] Base URL 自动检测（application.yml / application.properties）
+- [x] 请求头参数解析（@RequestHeader / @HeaderParam）
+- [x] 复制命令中类级路径拼接
 
 ### v0.0.3 已完成
 - [x] 复制接口参数（JSON Body、URL Params、Form Data、x-www-form-urlencoded）

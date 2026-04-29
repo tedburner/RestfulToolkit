@@ -77,4 +77,12 @@ public class TestResource {
     public String health() {
         return "OK";
     }
+
+    @GET
+    @Path("/auth")
+    public String auth(
+            @HeaderParam("Authorization") String token,
+            @HeaderParam("X-Correlation-Id") String correlationId) {
+        return "Auth: " + token;
+    }
 }

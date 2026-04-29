@@ -180,7 +180,15 @@ public class TestController {
         return "OK";
     }
 
-    // ========== 尾随斜杠 ==========
+    // ========== @RequestHeader 测试 ==========
+
+    @GetMapping("/header")
+    public String withHeader(
+            @RequestHeader("X-Api-Key") String apiKey,
+            @RequestHeader(value = "X-Request-Id", defaultValue = "unknown") String requestId,
+            @RequestParam("keyword") String keyword) {
+        return "Header: " + apiKey;
+    }
 
     @GetMapping("/trailing/")
     public String trailingSlash() {

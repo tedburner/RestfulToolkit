@@ -98,4 +98,25 @@ suite('SpringParameterParser Test Suite', () => {
         );
         assert.strictEqual(params.length, 0);
     });
+
+    test('Should parse @RequestHeader', () => {
+        const params = parser.parseMethodParameters(
+            'public String get(@RequestHeader("X-Api-Key") String apiKey) {}'
+        );
+        assert.strictEqual(params.length, 1);
+        assert.strictEqual(params[0].name, 'X-Api-Key');
+        assert.strictEqual(params[0].source, 'header');
+        assert.strictEqual(params[0].type, 'String');
+    });
+
+    test('Should parse @RequestHeader with defaultValue', () => {
+        const params = parser.parseMethodParameters(
+            'public String get(@RequestHeader(value = "Accept", defaultValue = "application/json") String accept) {}'
+        );
+        assert.strictEqual(params.length, 1);
+        assert.strictEqual(params[0].name, 'Accept');
+        assert.strictEqual(params[0].source, 'header');
+        assert.strictEqual(params[0].isRequired, false);
+        assert.strictEqual(params[0].defaultValue, 'application/json');
+    });
 });

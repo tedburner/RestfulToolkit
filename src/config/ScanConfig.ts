@@ -9,6 +9,7 @@ export interface ScanConfig {
     scanPaths: string[];
     excludePaths: string[];
     maxResults: number;
+    baseUrl?: string;
 }
 
 /**
@@ -40,7 +41,8 @@ export const DEFAULT_CONFIG: ScanConfig = {
 export const CONFIG_KEYS = {
     scanPaths: 'restfulToolkit.scanPaths',
     excludePaths: 'restfulToolkit.excludePaths',
-    maxResults: 'restfulToolkit.maxResults'
+    maxResults: 'restfulToolkit.maxResults',
+    baseUrl: 'restfulToolkit.baseUrl'
 } as const;
 
 /**

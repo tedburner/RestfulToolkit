@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { DEFAULT_CONFIG, CONFIG_KEYS, PROJECT_CONFIG_FILE, ScanConfig } from './ScanConfig';
 import { Logger } from '../utils/Logger';
+import { BaseUrlResolver } from '../utils/BaseUrlResolver';
 
 /**
  * 配置管理器
@@ -74,15 +75,18 @@ export class ConfigManager {
         const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit');
 
         // 获取 VS Code settings（如果有用户自定义）
+        // 注意：getConfiguration 已绑定前缀 'restfulToolkit'，此处用短键名
         const vsCodeScanPaths = vsCodeConfig.get<string[]>(CONFIG_KEYS.scanPaths);
         const vsCodeExcludePaths = vsCodeConfig.get<string[]>(CONFIG_KEYS.excludePaths);
         const vsCodeMaxResults = vsCodeConfig.get<number>(CONFIG_KEYS.maxResults);
+        const vsCodeBaseUrl = vsCodeConfig.get<string>('baseUrl');
 
         // 构建最终配置
         const config: ScanConfig = {
             scanPaths: vsCodeScanPaths ?? this.projectConfig?.scanPaths ?? DEFAULT_CONFIG.scanPaths,
             excludePaths: vsCodeExcludePaths ?? this.projectConfig?.excludePaths ?? DEFAULT_CONFIG.excludePaths,
-            maxResults: vsCodeMaxResults ?? this.projectConfig?.maxResults ?? DEFAULT_CONFIG.maxResults
+            maxResults: vsCodeMaxResults ?? this.projectConfig?.maxResults ?? DEFAULT_CONFIG.maxResults,
+            baseUrl: vsCodeBaseUrl ?? this.projectConfig?.baseUrl
         };
 
         this.logger.info(`Effective scan config: scanPaths=${JSON.stringify(config.scanPaths)}`);
@@ -95,6 +99,31 @@ export class ConfigManager {
      */
     static getDefaultConfig(): ScanConfig {
         return DEFAULT_CONFIG;
+    }
+
+    /**
+     * 获取 Base URL，按优先级回退：
+     * 1. VS Code 设置
+     * 2. 项目配置文件
+     * 3. 自动检测 application.yml / application.properties
+     * 4. 默认 "http://localhost:8080"
+     */
+    getBaseUrl(): string {
+        const scanConfig = this.getScanConfig();
+        if (scanConfig.baseUrl) { return scanConfig.baseUrl; }
+
+        // 自动检测
+        if (this.workspaceFolder) {
+            const resolver = new BaseUrlResolver();
+            const autoDetected = resolver.resolve(this.workspaceFolder);
+            if (autoDetected) {
+                const url = `http://${autoDetected.host}:${autoDetected.port}${autoDetected.contextPath}`;
+                this.logger.info(`Auto-detected base URL: ${url}`);
+                return url;
+            }
+        }
+
+        return 'http://localhost:8080';
     }
 
     /**

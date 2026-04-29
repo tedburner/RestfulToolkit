@@ -7,6 +7,8 @@ import { SearchUI } from './ui/SearchUI';
 import { ConfigManager } from './config/ConfigManager';
 import { ScanStateManager } from './cache/ScanStateManager';
 import { CopyEndpointParametersCommand } from './commands/CopyEndpointParametersCommand';
+import { CopyUrlCommand } from './commands/CopyUrlCommand';
+import { CopyCurlCommand } from './commands/CopyCurlCommand';
 
 let cache: EndpointCache;
 let scanner: FileScanner;
@@ -142,10 +144,30 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    const copyUrlCommand = vscode.commands.registerCommand(
+        'restfulToolkit.copyUrl',
+        async () => {
+            logger.info('Copy URL command executed');
+            const cmd = new CopyUrlCommand();
+            await cmd.execute();
+        }
+    );
+
+    const copyCurlCommand = vscode.commands.registerCommand(
+        'restfulToolkit.copyCurl',
+        async () => {
+            logger.info('Copy as cURL command executed');
+            const cmd = new CopyCurlCommand();
+            await cmd.execute();
+        }
+    );
+
     context.subscriptions.push(searchCommand);
     context.subscriptions.push(refreshCommand);
     context.subscriptions.push(createConfigCommand);
     context.subscriptions.push(copyCommand);
+    context.subscriptions.push(copyUrlCommand);
+    context.subscriptions.push(copyCurlCommand);
     context.subscriptions.push(scanner);
     context.subscriptions.push(watcher);
     context.subscriptions.push(logger);

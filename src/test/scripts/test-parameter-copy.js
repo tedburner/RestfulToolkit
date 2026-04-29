@@ -8,14 +8,14 @@
  * - 验证 @JsonProperty、@JsonNaming、@JsonAlias 注解
  *
  * 运行方法：从项目根目录运行
- *   node test-project/scripts/test-parameter-copy.js
+ *   node src/test/scripts/test-parameter-copy.js
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const scriptDir = __dirname;
-const projectRoot = path.resolve(scriptDir, '../..');
+const projectRoot = path.resolve(scriptDir, '../../..');
 process.chdir(projectRoot);
 
 // 加载模块

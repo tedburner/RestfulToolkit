@@ -19,6 +19,9 @@ A VS Code extension for searching and navigating RESTful API endpoints in Java/K
 - 📋 **Copy Parameters**: Right-click context menu to copy endpoint parameters in URL Params, JSON Body, Form Data, or x-www-form-urlencoded format
 - 🔀 **Naming Transform**: Auto-detect or toggle between camelCase and snake_case
 - 📦 **DTO Expansion**: Nested DTO field resolution up to 3 levels deep
+- 🔗 **Copy Full URL**: One-click copy of complete endpoint URL (base URL + full path + query params)
+- 📡 **Copy as cURL**: One-click copy of cURL command (method, URL, headers, body), directly importable to Postman/Bruno/Insomnia
+- ⚙️ **Base URL Auto-detect**: Auto-detect port and context-path from `application.yml` / `application.properties`
 
 ## Supported Frameworks
 
@@ -125,6 +128,7 @@ Create `.restful-toolkit.json` in your project root for per-project customizatio
 | `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | Glob patterns to exclude from scanning |
 | `maxResults` | `number` | `100` | Maximum number of search results to display |
 | `copyNameFormat` | `string` | `"camelCase"` | Default name format for copied parameters (`"camelCase"` or `"snake_case"`) |
+| `baseUrl` | `string` | `"http://localhost:8080"` | Base URL for generated URLs and cURL commands. Supports auto-detect from application.yml |
 
 ### Copy Parameters
 
@@ -140,11 +144,27 @@ Right-click in a controller method to copy endpoint parameters:
 4. Choose naming convention (auto-detected, or toggle camelCase/snake_case)
 
 **Supported Annotations**:
-- **Spring**: `@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestPart`, `@ModelAttribute`
-- **JAX-RS**: `@PathParam`, `@QueryParam`, `@FormParam`
+- **Spring**: `@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestPart`, `@ModelAttribute`, `@RequestHeader`
+- **JAX-RS**: `@PathParam`, `@QueryParam`, `@FormParam`, `@HeaderParam`
 - **JSON**: `@JsonProperty`, `@JsonAlias`, `@JSONField`, `@JsonNaming`
 
 **DTO Expansion**: `@RequestBody` and `@ModelAttribute` parameters automatically expand nested DTO fields (up to 3 levels deep).
+
+### Copy Full URL
+
+Right-click on a controller method and select "Copy Full URL":
+
+- Output: `http://localhost:8080/api/users/{id}?keyword=`
+- Base URL is resolved from VS Code settings, project config, auto-detect, or default
+- Path parameters remain as `{placeholders}` for easy replacement
+
+### Copy as cURL
+
+Right-click on a controller method and select "Copy as cURL":
+
+- Output includes: HTTP method, full URL, headers (from `@RequestHeader`/`@HeaderParam`), and request body (with DTO expansion)
+- Directly importable into Postman, Bruno, and Insomnia
+- Example: `curl -X POST 'http://localhost:8080/api/users' -H 'Content-Type: application/json' -d '{"name": "", "email": ""}'`
 
 ## Known Limitations
 
@@ -207,6 +227,13 @@ Future enhancements:
 - [ ] HTTP request testing (Postman-like features)
 - [ ] Services tree view
 - [ ] Better support for inheritance and configuration classes
+
+### Completed in v0.0.4
+- [x] Copy Full URL (base URL + full path + query params)
+- [x] Copy as cURL (method, URL, headers, body — Postman importable)
+- [x] Base URL auto-detection from application.yml / application.properties
+- [x] Header parameter parsing (@RequestHeader / @HeaderParam)
+- [x] Class-level path concatenation in copy commands
 
 ### Completed in v0.0.3
 - [x] Copy endpoint parameters (JSON Body, URL Params, Form Data, x-www-form-urlencoded)
