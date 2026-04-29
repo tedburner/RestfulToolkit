@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { EndpointCopyInfo, EndpointParameter } from '../models/types';
 import { SpringParameterParser } from './SpringParameterParser';
 import { JaxRsParameterParser } from './JaxRsParameterParser';
-import { DtoFieldExtractor } from './DtoFieldExtractor';
+import { DtoFieldExtractor, PRIMITIVE_TYPES } from './DtoFieldExtractor';
 import { Logger } from '../utils/Logger';
 
 export class ParameterExtractor {
@@ -94,15 +94,39 @@ export class ParameterExtractor {
     } | null {
         const lines = text.split('\n');
 
-        // Step 1: 从光标位置向前找方法声明行（含 visibility 关键字的行）
+        // Step 1: 找方法声明行。策略 A 向前扫描，策略 B 向后扫描作为兜底。
         let declLine = -1;
+        let braceDepth = 0;
         for (let i = cursorLine; i >= 0; i--) {
             const line = lines[i].trim();
             if (/\b(public|private|protected)\b/.test(line)) {
                 declLine = i;
                 break;
             }
-            if (line === '}' || line.startsWith('} ')) { break; }
+            if (line === '') { continue; }
+            if (line.startsWith('@')) { continue; }
+            if (line.startsWith('{') || line.endsWith('{') || line.startsWith('return ') || line.startsWith('throw ')) {
+                braceDepth++;
+                continue;
+            }
+            if (line === '}' || line.startsWith('} ')) {
+                if (braceDepth > 0) { braceDepth--; continue; }
+                break;
+            }
+        }
+
+        // 策略 B: 向后扫描
+        if (declLine === -1) {
+            for (let i = cursorLine; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (/\b(public|private|protected)\b/.test(line)) {
+                    declLine = i;
+                    break;
+                }
+                // 遇到 } 说明已经越过当前方法区域，停止
+                if (line === '}' || line.startsWith('} ')) { break; }
+                if (line.startsWith('{')) { break; }
+            }
         }
         if (declLine === -1) { return null; }
 
@@ -118,25 +142,36 @@ export class ParameterExtractor {
             // 空行跳过
         }
 
-        // Step 3: 从声明行向后收集完整方法签名（到 ')' 为止）
+        // Step 3: 从声明行向后收集完整方法签名（括号深度匹配）
         let sigText = '';
+        let parenDepth = 0;
+        let foundOpenParen = false;
         for (let j = declLine; j < lines.length; j++) {
-            sigText += lines[j];
-            if (lines[j].includes(')')) {
-                const methodMatch = sigText.match(/((?:public|private|protected)[^{]*\)\s*)\{?/s);
-                if (methodMatch) {
-                    const methodPath = this.extractPathFromAnnotations(annotationLines.join('\n'));
-                    const classPath = this.findClassLevelPath(lines, declLine);
-                    const fullPath = this.concatenatePaths(classPath, methodPath);
-                    return {
-                        signature: [...annotationLines, methodMatch[1]].join('\n'),
-                        annotations: annotationLines.join('\n'),
-                        methodPath,
-                        classPath,
-                        fullPath
-                    };
+            sigText += (sigText ? '\n' : '') + lines[j];
+            for (const ch of lines[j]) {
+                if (ch === '(') { parenDepth++; foundOpenParen = true; }
+                else if (ch === ')') {
+                    parenDepth--;
+                    if (foundOpenParen && parenDepth === 0) {
+                        // 找到方法参数的闭合 ')'，截取到此位置
+                        const matchEnd = sigText.lastIndexOf(')') + 1;
+                        const sigUpToClose = sigText.substring(0, matchEnd);
+                        const methodMatch = sigUpToClose.match(/((?:public|private|protected)[^{]*\)\s*)/s);
+                        if (methodMatch) {
+                            const methodPath = this.extractPathFromAnnotations(annotationLines.join('\n'));
+                            const classPath = this.findClassLevelPath(lines, declLine);
+                            const fullPath = this.concatenatePaths(classPath, methodPath);
+                            return {
+                                signature: [...annotationLines, methodMatch[1]].join('\n'),
+                                annotations: annotationLines.join('\n'),
+                                methodPath,
+                                classPath,
+                                fullPath
+                            };
+                        }
+                        return null;
+                    }
                 }
-                break;
             }
         }
 
@@ -275,13 +310,6 @@ export class ParameterExtractor {
      * 判断是否为基本类型（无需展开 DTO）。
      */
     private isPrimitiveType(type: string): boolean {
-        const primitives = [
-            'String', 'Integer', 'Long', 'Short', 'Byte', 'Float', 'Double',
-            'Boolean', 'int', 'long', 'short', 'byte', 'float', 'double',
-            'boolean', 'char', 'Character', 'BigDecimal', 'BigInteger',
-            'Date', 'LocalDate', 'LocalDateTime', 'ZonedDateTime',
-            'MultipartFile', 'File', 'InputStream', 'byte[]'
-        ];
-        return primitives.includes(type);
+        return PRIMITIVE_TYPES.includes(type);
     }
 }

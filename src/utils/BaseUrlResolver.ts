@@ -87,12 +87,9 @@ export class BaseUrlResolver {
 
     /**
      * 按 Spring Boot 优先级收集配置文件：
-     * 1. bootstrap.properties
-     * 2. bootstrap.yml / bootstrap.yaml
-     * 3. application.properties
-     * 4. application.yml / application.yaml
-     * 5. application-{profile}.properties（字母序）
-     * 6. application-{profile}.yml / application-{profile}.yaml（字母序）
+     * 1. application.properties / application.yml（最低优先级）
+     * 2. bootstrap.properties / bootstrap.yml（Spring Cloud，高优先级）
+     * 3. application-{profile}.*（按字母序，最高优先级，覆盖前面的）
      *
      * 后面的值覆盖前面的。
      */
@@ -102,21 +99,17 @@ export class BaseUrlResolver {
             const entries = fs.readdirSync(resourcesDir, { withFileTypes: true });
             const names = new Set(entries.filter(e => e.isFile()).map(e => e.name));
 
-            // 1. bootstrap.properties（最高优先级）
-            if (names.has('bootstrap.properties')) {files.push(path.join(resourcesDir, 'bootstrap.properties'));}
-
-            // 2. bootstrap.yml / bootstrap.yaml
-            if (names.has('bootstrap.yml')) {files.push(path.join(resourcesDir, 'bootstrap.yml'));}
-            if (names.has('bootstrap.yaml')) {files.push(path.join(resourcesDir, 'bootstrap.yaml'));}
-
-            // 3. application.properties
+            // application.*（基础配置）
             if (names.has('application.properties')) {files.push(path.join(resourcesDir, 'application.properties'));}
-
-            // 4. application.yml / application.yaml
             if (names.has('application.yml')) {files.push(path.join(resourcesDir, 'application.yml'));}
             if (names.has('application.yaml')) {files.push(path.join(resourcesDir, 'application.yaml'));}
 
-            // 5-6. application-{profile}.* （字母序，覆盖前面的）
+            // bootstrap.*（Spring Cloud，优先级高于 application）
+            if (names.has('bootstrap.properties')) {files.push(path.join(resourcesDir, 'bootstrap.properties'));}
+            if (names.has('bootstrap.yml')) {files.push(path.join(resourcesDir, 'bootstrap.yml'));}
+            if (names.has('bootstrap.yaml')) {files.push(path.join(resourcesDir, 'bootstrap.yaml'));}
+
+            // application-{profile}.*（最高优先级）
             const profileFiles: string[] = [];
             for (const name of names) {
                 if (/^application-(?!yml$|yaml$|properties$).+\.(yml|yaml|properties)$/.test(name)) {
@@ -191,32 +184,31 @@ export class BaseUrlResolver {
      * 从 YAML 中提取指定键下的块
      */
     private extractYamlBlock(content: string, key: string): string | null {
-        // 匹配 key: 后面的内容，直到同级或更高级的键
-        const pattern = new RegExp(`(?:^|\\n)(\\s*)${key}:\\s*(.*)\\n(([\\s]*.*\\n)*?)`, 'm');
-        const match = pattern.exec(content);
-        if (!match) {return null;}
-
-        const indent = match[1] || '';
-        const inlineValue = match[2] || '';
-
-        // 如果 key: 后有内联值（如 server: port: 8080 不常见但可能存在）
-        if (inlineValue.trim() && !inlineValue.includes('\n')) {
-            return inlineValue.trim();
-        }
-
-        // 提取子块内容
-        const fullMatch = match[0];
-        const lines = fullMatch.split('\n');
+        const lines = content.split('\n');
+        let keyIndent: number | null = null;
         const blockLines: string[] = [];
+        let foundKey = false;
 
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i];
-            if (line === '') { blockLines.push(line); continue; }
-            // 子块必须比 key 的缩进更深
-            const lineIndent = line.match(/^(\s*)/)?.[1] || '';
-            if (lineIndent.length > indent.length) {
+        for (const line of lines) {
+            if (!foundKey) {
+                // 找 key: 行
+                const match = line.match(new RegExp(`^(\\s*)${key}:\\s*(.*)$`));
+                if (!match) { continue; }
+                keyIndent = match[1].length;
+                foundKey = true;
+                const inlineValue = match[2].trim();
+                // 内联值（如 server: port: 8080）
+                if (inlineValue) { return inlineValue; }
+                continue;
+            }
+            // 找到 key 后，收集所有更深缩进的行
+            if (line.trim() === '') { blockLines.push(line); continue; }
+            const indentMatch = line.match(/^(\s*)/);
+            const lineIndent = indentMatch ? indentMatch[1].length : 0;
+            if (lineIndent > keyIndent!) {
                 blockLines.push(line);
             } else {
+                // 同级或更浅缩进 → 块结束
                 break;
             }
         }

@@ -2,7 +2,7 @@
   "name": "restful-toolkit",
   "displayName": "RestfulToolkit",
   "description": "VS Code extension for searching and navigating RESTful API endpoints in Java/Kotlin Spring and JAX-RS projects",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "kiturone",
   "icon": "icon.png",
   "engines": {

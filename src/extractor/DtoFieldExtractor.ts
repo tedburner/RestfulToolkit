@@ -2,6 +2,17 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { DtoField } from '../models/types';
 
+/**
+ * 基本类型列表，无需展开 DTO 字段。
+ */
+export const PRIMITIVE_TYPES = [
+    'String', 'Integer', 'Long', 'Short', 'Byte', 'Float', 'Double',
+    'Boolean', 'int', 'long', 'short', 'byte', 'float', 'double',
+    'boolean', 'char', 'Character', 'BigDecimal', 'BigInteger',
+    'Date', 'LocalDate', 'LocalDateTime', 'ZonedDateTime',
+    'MultipartFile', 'File', 'InputStream', 'byte[]'
+];
+
 export class DtoFieldExtractor {
     private readonly maxDepth = 3;
 
@@ -217,16 +228,9 @@ export class DtoFieldExtractor {
     }
 
     private isPrimitiveType(type: string): boolean {
-        const primitives = [
-            'String', 'Integer', 'Long', 'Short', 'Byte', 'Float', 'Double',
-            'Boolean', 'int', 'long', 'short', 'byte', 'float', 'double',
-            'boolean', 'char', 'Character', 'BigDecimal', 'BigInteger',
-            'Date', 'LocalDate', 'LocalDateTime', 'ZonedDateTime',
-            'MultipartFile', 'File', 'InputStream', 'byte[]'
-        ];
-        if (primitives.includes(type)) { return true; }
+        if (PRIMITIVE_TYPES.includes(type)) { return true; }
         const genericBase = type.replace(/<[^>]+>/, '');
-        return primitives.includes(genericBase);
+        return PRIMITIVE_TYPES.includes(genericBase);
     }
 
     private extractGenericTypes(type: string): string[] {

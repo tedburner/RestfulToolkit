@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Class-level Path Concatenation / 类级路径拼接**: Copy commands now correctly concatenate class-level `@RequestMapping`/`@Path` with method-level paths. 复制命令现在正确拼接类级 `@RequestMapping`/`@Path` 与方法级路径。
 - **New test cases / 新增测试**: UrlGenerator tests (5 cases), CurlConverter tests (5 cases), BaseUrlResolver tests (5 cases), Spring `@RequestHeader` tests (2 cases), JAX-RS `@HeaderParam` tests (1 case).
 
+### Fixed / 修复
+
+- **Method Declaration Location / 方法声明定位**: Fixed `ParameterExtractor.findMethodAtPosition` using dual-strategy scan (forward + backward fallback) to correctly locate method declaration when cursor is on annotation lines after previous method's closing brace. 修复方法声明定位，使用双策略扫描（向前 + 向后兜底），正确识别光标在上一方法结束后的注解行场景。
+- **Bracket Depth Matching / 括号深度匹配**: Fixed method signature extraction to use character-level parenthesis depth tracking, avoiding false matches from `@RequestHeader("...")` annotations. 修复方法签名提取，使用字符级括号深度跟踪，避免 `@RequestHeader("...")` 注解误匹配。
+- **BaseUrlResolver Config Priority / 配置文件优先级**: Fixed Spring Cloud config file priority order (application → bootstrap → application-{profile}) and rewrote `extractYamlBlock` with line-by-line scanning to fix nested block parsing. 修复 Spring Cloud 配置文件优先级顺序，并重写 YAML 块解析逻辑。
+- **Duplicate Primitive Types / 重复基本类型列表**: Extracted shared `PRIMITIVE_TYPES` constant to eliminate duplication between `ParameterExtractor` and `DtoFieldExtractor`. 提取共享 `PRIMITIVE_TYPES` 常量，消除两个类中的重复列表。
+
 ## [0.0.3] - 2026-04-27
 
 ### Fixed / 修复

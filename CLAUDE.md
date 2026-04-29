@@ -31,7 +31,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 
 **URL/cURL 自动化测试**:
 - **运行**: `node src/test/scripts/test-copy-url-curl.js`
-- **覆盖**: 107 个测试（URL 生成、cURL 转换、Base URL 解析、Header 端到端）
+- **覆盖**: 108 个测试（URL 生成、cURL 转换、Base URL 解析、Header 端到端）
 
 **VS Code功能测试**:
 - 详见 `docs/TESTING_GUIDE.md`
@@ -164,8 +164,10 @@ vsce publish patch
 
 ### Base URL 解析 (`src/utils/BaseUrlResolver.ts`)
 - 自动检测 `application.yml` / `application.properties` 中的 `server.port` 和 `server.servlet.context-path`
-- 跳过占位符值（如 `${SERVER_PORT}`）
-- 最小可行方案：只读纯值，复杂情况静默跳过
+- 支持 `bootstrap.yml` / `bootstrap.properties`（Spring Cloud，优先级高于 application）
+- 支持 `application-{profile}.yml` 多环境配置覆盖
+- 支持占位符解析：`${SERVER_PORT:8080}` → `8080`
+- 配置文件优先级：application（基础）→ bootstrap（高）→ application-{profile}（最高）
 
 ## OpenSpec 工作流
 

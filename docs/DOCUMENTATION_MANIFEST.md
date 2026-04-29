@@ -9,11 +9,13 @@
 - `src/extractor/CurlConverter.ts` — cURL 命令生成
 - `src/commands/CopyUrlCommand.ts` — 复制完整 URL 命令
 - `src/commands/CopyCurlCommand.ts` — 复制 cURL 命令
-- `src/utils/BaseUrlResolver.ts` — Base URL 自动检测
+- `src/utils/BaseUrlResolver.ts` — Base URL 自动检测（支持 bootstrap.yml、多环境 profile、占位符解析）
 - `src/test/extractor/UrlGenerator.test.ts` — URL 生成测试（5 用例）
 - `src/test/extractor/CurlConverter.test.ts` — cURL 生成测试（5 用例）
-- `src/test/utils/BaseUrlResolver.test.ts` — Base URL 检测测试（5 用例）
+- `src/test/utils/BaseUrlResolver.test.ts` — Base URL 检测测试（18 用例）
 - `package.nls.json` / `package.nls.zh-cn.json` — 新增 copyUrl/copyCurl 命令标题
+- `src/extractor/ParameterExtractor.ts` — 增强 `findMethodAtPosition` 双策略扫描、括号深度签名匹配
+- `src/extractor/DtoFieldExtractor.ts` — 提取 `PRIMITIVE_TYPES` 共享常量
 
 ---
 
@@ -69,13 +71,15 @@ restful-toolkit/
 ├── test-project/ (完整测试项目)
 │   ├── README.md            # 测试项目说明
 │   ├── TEST-COVERAGE-CHECKLIST.md # 测试覆盖清单
-│   ├── scripts/             # 测试脚本
-│   │   ├── test-all-files.js     # 端点验证脚本（49端点）
-│   │   └── test-parameter-copy.js # 参数复制批量测试（75测试）
 │   └── src/main/            # 测试Controller + DTO
 │       └── java/com/example/
 │           ├── controller/  # TestController, TestResource, FormController
 │           └── dto/         # UserDto, OrderDto, AddressDto, SnakeCaseDto, AliasDto, LoginForm
+│
+├── src/test/scripts/ (自动化测试脚本)
+│   ├── test-all-files.js         # 端点验证脚本（49端点）
+│   ├── test-parameter-copy.js    # 参数复制批量测试（75测试）
+│   └── test-copy-url-curl.js     # URL/cURL 自动化测试（108测试）
 │
 ├── openspec/ (OpenSpec规范 - 保持不变)
 │   └── changes/restful-toolkit/
@@ -109,7 +113,7 @@ restful-toolkit/
 
 **运行**: `npm test`
 
-### 自动化验证 - 2个脚本 ✅
+### 自动化验证 - 3个脚本 ✅
 
 **位置**: `src/test/scripts/`
 
@@ -117,7 +121,7 @@ restful-toolkit/
 |------|------|------|
 | test-all-files.js | 49个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
 | test-parameter-copy.js | 75个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node src/test/scripts/test-parameter-copy.js` |
-| test-copy-url-curl.js | 107个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
+| test-copy-url-curl.js | 108个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
 
 ---
 
@@ -144,15 +148,14 @@ restful-toolkit/
 | superpowers/plans/2026-04-27-endpoint-parameter-copy.md | 参数复制功能实现计划 |
 | superpowers/specs/2026-04-27-endpoint-parameter-copy-design.md | 参数复制功能设计规格 |
 
-### test-project目录 (2个 + 脚本 + 测试代码) ✅
+### test-project目录 (2个 + 测试代码) ✅
 
 | 文档 | 说明 |
 |------|------|
 | README.md | 测试项目说明 |
 | TEST-COVERAGE-CHECKLIST.md | 测试覆盖清单 |
-| scripts/test-parameter-copy.js | 参数复制批量测试（75个） |
 
-**测试 Controller**（3个）：TestController（Spring 26端点）、TestResource（JAX-RS 9端点）、FormController（@ModelAttribute）
+**测试 Controller**（3个）：TestController（Spring 26端点）、TestResource（JAX-RS 10端点）、FormController（@ModelAttribute）
 **测试 DTO**（6个）：UserDto, OrderDto, AddressDto, SnakeCaseDto, AliasDto, LoginForm
 
 ### openspec目录 (14个) - 保持不变 ✅
@@ -207,8 +210,8 @@ restful-toolkit/
 | 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
 | docs 文档 | 5个（CONFIG_SYSTEM, DOCUMENTATION_MANIFEST, INCREMENTAL_SCAN, TESTING_GUIDE, screenshot.png） |
 | 源代码模块 | 19个（含 extractor/ 8、commands/ 3、utils/ 3） |
-| 单元测试 | 9+ Mocha 测试 |
-| 自动化脚本 | 2个（49端点验证 + 75参数复制测试） |
+| 单元测试 | 11+ Mocha 测试（含 BaseUrlResolver 18 用例） |
+| 自动化脚本 | 3个（49端点验证 + 75参数复制 + 108 URL/cURL） |
 | 测试 Controller | 3个（Spring 26 + JAX-RS 9 + Form） |
 | 测试 DTO | 6个 |
 
