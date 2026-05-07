@@ -2,11 +2,62 @@
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
 [![Version](https://img.shields.io/badge/version-0.0.4-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Downloads](https://img.shields.io/badge/downloads-44-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **[English Documentation](README.md)** | **中文文档**
 
 一个用于搜索和导航 Java/Kotlin Spring 和 JAX-RS 项目中 RESTful API 端点的 VS Code 扩展。
+
+## 为什么需要 RestfulToolkit？
+
+在中大型 Spring Boot 或 JAX-RS 项目中，查找 API 端点是一个日常痛点：
+
+- **没有统一入口**：路由分散在数十个 `@RestController` 类和方法中——你只能手动搜索文件或 grep 注解。
+- **缺少全局概览**：没有内置方式能快速查看"这个项目暴露了哪些端点"。
+- **API 测试准备繁琐**：从 Controller 注解手动拼写请求体、表单数据或 cURL 命令浪费时间。
+
+RestfulToolkit 通过扫描项目中所有 `@RequestMapping` / `@Path` 注解，将它们索引为可搜索数据库，让你在一个快速选择面板中完成搜索、跳转、复制和测试——**零配置即可使用**。
+
+## 目标用户
+
+- **Java / Kotlin 后端开发者**：使用 Spring MVC、Spring Boot 或 JAX-RS 框架开发
+- **QA / API 测试人员**：需要快速查找端点并生成 cURL / JSON 请求体用于测试
+- **代码审查者**：想快速审计所有暴露的 API 路由，而不必逐个打开 Controller 文件
+
+## 核心功能亮点
+
+### 🔍 一个面板搜索所有端点
+
+按 URL 路径、类名、方法名或 HTTP 方法模糊搜索。点击即跳转到 Controller 方法——再也不用 Ctrl+Shift+F 逐个 grep。
+
+### 📋 智能参数复制
+
+右键任意端点 → 以 **URL Params**、**JSON Body**、**Form Data** 或 **x-www-form-urlencoded** 格式复制参数。嵌套 DTO 字段自动展开至 3 层，驼峰/蛇形命名自动检测。
+
+### 📡 一键生成 cURL
+
+生成开箱即用的 cURL 命令（HTTP 方法 + URL + 请求头 + 请求体含 DTO 展开），可直接导入 Postman、Bruno 或 Insomnia。
+
+### ⚡ 零配置，实时同步
+
+自动从 `application.yml` / `application.properties` 检测 Base URL。监听文件变更实时更新端点缓存——装好就能用。
+
+### 完整功能列表
+
+| 功能 | 说明 |
+|------|------|
+| 快速搜索 | 按路径、类、方法、HTTP 方法模糊搜索 |
+| 即时导航 | 一键跳转到 Controller 定义 |
+| 实时更新 | 文件变更时自动扫描并更新缓存 |
+| 可视化标识 | 颜色编码的 HTTP 方法图标 |
+| 复制参数 | URL Params / JSON Body / Form Data / x-www-form-urlencoded |
+| 复制完整 URL | Base URL + 路径 + 查询参数 |
+| 复制为 cURL | 方法 + URL + 请求头 + 请求体，可直接导入 Postman |
+| Base URL 自动检测 | 从 application.yml / properties 读取端口和 context-path |
+| 命名转换 | 驼峰 / 蛇形命名自动检测 |
+| DTO 展开 | 嵌套 DTO 字段自动解析至 3 层 |
+| 可配置 | 自定义扫描路径和排除模式 |
 
 ## 功能特性
 

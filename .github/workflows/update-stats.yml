@@ -1,0 +1,36 @@
+name: Update VS Code Marketplace Stats
+
+on:
+  schedule:
+    - cron: '30 2 * * *'  # 每天 UTC 02:30（北京时间 ~10:30）
+  workflow_dispatch:     # 也支持手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  update-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Update README stats
+        run: node scripts/update-marketplace-stats.js
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet README.md README_CN.md; then
+            echo "No stats changes, skipping commit"
+          else
+            git add README.md README_CN.md
+            git commit -m ":chart_with_upwards_trend: Update VS Code marketplace stats"
+            git push
+          fi

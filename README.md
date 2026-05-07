@@ -2,25 +2,62 @@
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
 [![Version](https://img.shields.io/badge/version-0.0.4-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Downloads](https://img.shields.io/badge/downloads-44-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **English Documentation** | **[中文文档](README_CN.md)**
 
 A VS Code extension for searching and navigating RESTful API endpoints in Java/Kotlin Spring and JAX-RS projects.
 
-## Features
+## Why RestfulToolkit?
 
-- 🔍 **Quick Search**: Fuzzy search for REST endpoints by path, class name, method name, or HTTP method
-- 🎯 **Instant Navigation**: Jump to controller method definition with one click
-- 🚀 **Real-time Updates**: Auto-scan and update endpoint cache on file change
-- 🎨 **Visual Indicators**: Color-coded HTTP method icons (GET=green, POST=blue, PUT=yellow, DELETE=red, PATCH=purple)
-- 📋 **Copy Parameters**: Right-click to copy endpoint parameters in URL Params, JSON Body, Form Data, or x-www-form-urlencoded format
-- 🔗 **Copy Full URL**: One-click copy of complete endpoint URL (base URL + full path + query params)
-- 📡 **Copy as cURL**: One-click copy of cURL command (method, URL, headers, body), directly importable to Postman/Bruno/Insomnia
-- ⚙️ **Base URL Auto-detect**: Auto-detect port and context-path from `application.yml` / `application.properties`
-- 🔀 **Naming Transform**: Auto-detect or toggle between camelCase and snake_case
-- 📦 **DTO Expansion**: Nested DTO field resolution up to 3 levels deep
-- ⚙️ **Configurable**: Customizable scan paths and exclusion patterns
+In medium-to-large Spring Boot or JAX-RS projects, finding API endpoints is a daily pain:
+
+- **No unified entry point**: Routes are scattered across dozens of `@RestController` classes and methods — you have to manually search files or grep annotations.
+- **No quick overview**: There is no built-in way to see "what endpoints does this project expose" at a glance.
+- **API testing setup is tedious**: Writing request bodies, form data, or cURL commands by hand from controller annotations wastes time.
+
+RestfulToolkit solves this by scanning all `@RequestMapping` / `@Path` annotations in your project, indexing them into a searchable database, and letting you jump, copy, or test endpoints from a single quick-pick panel — **zero configuration required**.
+
+## Who is it for?
+
+- **Java / Kotlin backend developers** working on Spring MVC, Spring Boot, or JAX-RS projects
+- **QA / API testers** who need to quickly find endpoints and generate cURL / JSON payloads for testing
+- **Code reviewers** who want to audit all exposed API routes without opening every controller file
+
+## Core Features
+
+### 🔍 One-Panel Endpoint Search
+
+Fuzzy search by URL path, class name, method name, or HTTP method. Click to jump directly to the controller method — no more Ctrl+Shift+F grepping.
+
+### 📋 Smart Parameter Copy
+
+Right-click any endpoint → copy its parameters as **URL Params**, **JSON Body**, **Form Data**, or **x-www-form-urlencoded**. Nested DTO fields are auto-expanded up to 3 levels deep, with camelCase / snake_case auto-detection.
+
+### 📡 One-Click cURL Generation
+
+Generate a ready-to-use cURL command (HTTP method + URL + headers + body with DTO expansion) that can be directly imported into Postman, Bruno, or Insomnia.
+
+### ⚡ Zero Config, Real-Time Sync
+
+Auto-detects `application.yml` / `application.properties` for base URL. Watches file changes and updates the endpoint cache in real time. Works out of the box — just install and search.
+
+### Full Feature List
+
+| Feature | Description |
+|---------|-------------|
+| Quick Search | Fuzzy search by path, class, method, or HTTP method |
+| Instant Navigation | Jump to controller definition with one click |
+| Real-time Updates | Auto-scan and update cache on file change |
+| Visual Indicators | Color-coded HTTP method icons |
+| Copy Parameters | URL Params / JSON Body / Form Data / x-www-form-urlencoded |
+| Copy Full URL | Base URL + path + query params |
+| Copy as cURL | Method + URL + headers + body, Postman-importable |
+| Base URL Auto-detect | Port and context-path from application.yml / properties |
+| Naming Transform | camelCase / snake_case auto-detect |
+| DTO Expansion | Nested DTO field resolution up to 3 levels |
+| Configurable | Custom scan paths and exclusion patterns |
 
 ## Supported Frameworks
 
