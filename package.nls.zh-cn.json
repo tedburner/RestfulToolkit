@@ -5,5 +5,7 @@
   "command.copyEndpointParameters.title": "复制接口参数",
   "menu.copyEndpointParameters.title": "复制接口参数",
   "command.copyUrl.title": "复制完整 URL",
-  "command.copyCurl.title": "复制为 cURL 命令"
+  "command.copyCurl.title": "复制为 cURL 命令",
+  "command.jsonToClass.title": "JSON 转 DTO 类",
+  "menu.jsonToClass.title": "JSON 转 DTO 类"
 }

@@ -61,6 +61,11 @@
         "command": "restfulToolkit.copyCurl",
         "title": "%command.copyCurl.title%",
         "category": "RestfulToolkit"
+      },
+      {
+        "command": "restfulToolkit.jsonToClass",
+        "title": "%command.jsonToClass.title%",
+        "category": "RestfulToolkit"
       }
     ],
     "keybindings": [
@@ -133,6 +138,11 @@
           "command": "restfulToolkit.copyCurl",
           "when": "editorLangId =~ /java|kotlin/",
           "group": "1_copy@3"
+        },
+        {
+          "command": "restfulToolkit.jsonToClass",
+          "when": "editorLangId =~ /java|kotlin|json/ || resourceExtname == .json",
+          "group": "1_copy@4"
         }
       ]
     }

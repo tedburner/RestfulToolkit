@@ -18,6 +18,15 @@ export interface I18nLabels {
     curlCopied: string;
     urlCopyError: string;
     curlCopyError: string;
+    jsonToClassTitle: string;
+    jsonToClassLanguage: string;
+    jsonToClassClassName: string;
+    jsonToClassPackageName: string;
+    jsonToClassJava: string;
+    jsonToClassKotlin: string;
+    jsonToClassNoClipboard: string;
+    jsonToClassInvalidJson: string;
+    jsonToClassSuccess: string;
 }
 
 const zhLabels: I18nLabels = {
@@ -37,7 +46,16 @@ const zhLabels: I18nLabels = {
     urlCopied: '✓ URL 已复制到剪贴板',
     curlCopied: '✓ cURL 命令已复制到剪贴板',
     urlCopyError: '无法生成 URL',
-    curlCopyError: '无法生成 cURL 命令'
+    curlCopyError: '无法生成 cURL 命令',
+    jsonToClassTitle: 'JSON 转 DTO 类',
+    jsonToClassLanguage: '选择目标语言',
+    jsonToClassClassName: '类名',
+    jsonToClassPackageName: '包名',
+    jsonToClassJava: 'Java',
+    jsonToClassKotlin: 'Kotlin',
+    jsonToClassNoClipboard: '请先复制 JSON 到剪贴板，或在编辑器中选中 JSON 内容',
+    jsonToClassInvalidJson: '内容不是有效的 JSON 格式',
+    jsonToClassSuccess: '✓ DTO 类文件已生成'
 };
 
 const enLabels: I18nLabels = {
@@ -57,7 +75,16 @@ const enLabels: I18nLabels = {
     urlCopied: '✓ URL copied to clipboard',
     curlCopied: '✓ cURL command copied to clipboard',
     urlCopyError: 'Failed to generate URL',
-    curlCopyError: 'Failed to generate cURL command'
+    curlCopyError: 'Failed to generate cURL command',
+    jsonToClassTitle: 'JSON to DTO Class',
+    jsonToClassLanguage: 'Select target language',
+    jsonToClassClassName: 'Class name',
+    jsonToClassPackageName: 'Package name',
+    jsonToClassJava: 'Java',
+    jsonToClassKotlin: 'Kotlin',
+    jsonToClassNoClipboard: 'Please copy JSON to clipboard or select JSON in editor first',
+    jsonToClassInvalidJson: 'Content is not valid JSON format',
+    jsonToClassSuccess: '✓ DTO class file generated'
 };
 
 export function getLabels(): I18nLabels {

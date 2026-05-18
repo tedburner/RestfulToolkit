@@ -6,6 +6,12 @@ export function toSnakeCase(name: string): string {
         .replace(/^_/, '');
 }
 
+export function toPascalCase(name: string): string {
+    if (!name) { return name; }
+    const camel = toCamelCase(name);
+    return camel.charAt(0).toUpperCase() + camel.slice(1);
+}
+
 export function toCamelCase(name: string): string {
     if (!name) { return name; }
     return name

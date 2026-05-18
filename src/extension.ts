@@ -9,6 +9,7 @@ import { ScanStateManager } from './cache/ScanStateManager';
 import { CopyEndpointParametersCommand } from './commands/CopyEndpointParametersCommand';
 import { CopyUrlCommand } from './commands/CopyUrlCommand';
 import { CopyCurlCommand } from './commands/CopyCurlCommand';
+import { JsonToClassCommand } from './commands/JsonToClassCommand';
 
 let cache: EndpointCache;
 let scanner: FileScanner;
@@ -162,12 +163,22 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
+    const jsonToClassCommand = vscode.commands.registerCommand(
+        'restfulToolkit.jsonToClass',
+        async () => {
+            logger.info('JSON to DTO Class command executed');
+            const cmd = new JsonToClassCommand();
+            await cmd.execute();
+        }
+    );
+
     context.subscriptions.push(searchCommand);
     context.subscriptions.push(refreshCommand);
     context.subscriptions.push(createConfigCommand);
     context.subscriptions.push(copyCommand);
     context.subscriptions.push(copyUrlCommand);
     context.subscriptions.push(copyCurlCommand);
+    context.subscriptions.push(jsonToClassCommand);
     context.subscriptions.push(scanner);
     context.subscriptions.push(watcher);
     context.subscriptions.push(logger);

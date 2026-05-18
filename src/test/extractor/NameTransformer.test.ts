@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { toSnakeCase, toCamelCase } from '../../extractor/NameTransformer';
+import { toSnakeCase, toCamelCase, toPascalCase } from '../../extractor/NameTransformer';
 
 suite('NameTransformer Test Suite', () => {
     suite('toSnakeCase', () => {
@@ -51,6 +51,32 @@ suite('NameTransformer Test Suite', () => {
 
         test('Should handle empty string', () => {
             assert.strictEqual(toCamelCase(''), '');
+        });
+    });
+
+    suite('toPascalCase', () => {
+        test('Should convert snake_case to PascalCase', () => {
+            assert.strictEqual(toPascalCase('user_name'), 'UserName');
+        });
+
+        test('Should convert multiple underscores', () => {
+            assert.strictEqual(toPascalCase('first_middle_name'), 'FirstMiddleName');
+        });
+
+        test('Should handle single word', () => {
+            assert.strictEqual(toPascalCase('user'), 'User');
+        });
+
+        test('Should handle already PascalCase', () => {
+            assert.strictEqual(toPascalCase('UserName'), 'UserName');
+        });
+
+        test('Should handle leading underscore', () => {
+            assert.strictEqual(toPascalCase('_user_name'), 'UserName');
+        });
+
+        test('Should handle empty string', () => {
+            assert.strictEqual(toPascalCase(''), '');
         });
     });
 });
