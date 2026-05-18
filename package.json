@@ -63,8 +63,8 @@
         "category": "RestfulToolkit"
       },
       {
-        "command": "restfulToolkit.jsonToClass",
-        "title": "%command.jsonToClass.title%",
+        "command": "restfulToolkit.jsonToClassInFolder",
+        "title": "%command.jsonToClassInFolder.title%",
         "category": "RestfulToolkit"
       }
     ],
@@ -138,11 +138,13 @@
           "command": "restfulToolkit.copyCurl",
           "when": "editorLangId =~ /java|kotlin/",
           "group": "1_copy@3"
-        },
+        }
+      ],
+      "explorer/context": [
         {
-          "command": "restfulToolkit.jsonToClass",
-          "when": "editorLangId =~ /java|kotlin|json/ || resourceExtname == .json",
-          "group": "1_copy@4"
+          "command": "restfulToolkit.jsonToClassInFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "2_workspace@1"
         }
       ]
     }

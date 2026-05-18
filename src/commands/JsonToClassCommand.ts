@@ -11,19 +11,19 @@ export class JsonToClassCommand {
         this.generator = new JsonClassGenerator();
     }
 
-    async execute(): Promise<void> {
-        const labels = getLabels();
+    // Explorer folder context menu entry
+    async executeInFolder(targetFolderUri: vscode.Uri): Promise<void> {
         const json = await this.getJsonInput();
 
         if (!json) {
-            vscode.window.showWarningMessage(labels.jsonToClassNoClipboard);
+            vscode.window.showWarningMessage(getLabels().jsonToClassNoClipboard);
             return;
         }
 
         try {
             JSON.parse(json);
         } catch {
-            vscode.window.showErrorMessage(labels.jsonToClassInvalidJson);
+            vscode.window.showErrorMessage(getLabels().jsonToClassInvalidJson);
             return;
         }
 
@@ -33,17 +33,73 @@ export class JsonToClassCommand {
         const className = await this.inputClassName(json);
         if (!className) { return; }
 
-        const packageName = await this.inputPackageName();
+        // Derive package name from folder path
+        const derivedName = this.derivePackageName(targetFolderUri.fsPath);
+        // Allow user to edit the derived package name
+        const packageName = await this.editPackageName(derivedName);
         if (!packageName) { return; }
 
         try {
             const code = this.generator.generate(json, className, packageName, language);
-            await this.saveFile(code, className, language);
-            vscode.window.showInformationMessage(labels.jsonToClassSuccess);
+            await this.writeToFile(code, className, packageName, language, targetFolderUri);
+            vscode.window.showInformationMessage(getLabels().jsonToClassSuccess);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to generate DTO class: ${message}`);
         }
+    }
+
+    // Derive Java package name from folder path
+    // Looks for /java/ or /kotlin/ in the path and extracts the package portion
+    private derivePackageName(folderPath: string): string {
+        // Normalize to forward slashes for matching
+        const normalized = folderPath.replace(/\\/g, '/');
+
+        // Match: .../java/com/example/dto  or  .../kotlin/com/example/dto
+        const javaMatch = normalized.match(/\/java\/(.+)$/);
+        if (javaMatch) {
+            return javaMatch[1].replace(/\//g, '.');
+        }
+
+        const kotlinMatch = normalized.match(/\/kotlin\/(.+)$/);
+        if (kotlinMatch) {
+            return kotlinMatch[1].replace(/\//g, '.');
+        }
+
+        // Fallback: use the last path segment
+        const segments = normalized.split('/').filter(s => s.length > 0);
+        if (segments.length > 0) {
+            return segments[segments.length - 1];
+        }
+
+        return '';
+    }
+
+    private async editPackageName(defaultName: string): Promise<string | undefined> {
+        const labels = getLabels();
+        return vscode.window.showInputBox({
+            prompt: labels.jsonToClassPackageName,
+            value: defaultName,
+            validateInput: (input) => {
+                if (!input || !input.trim()) { return 'Package name cannot be empty'; }
+                if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/.test(input)) { return 'Invalid package name'; }
+                return null;
+            }
+        });
+    }
+
+    // Write file directly to target folder (no save dialog)
+    private async writeToFile(code: string, className: string, _packageName: string, language: TargetLanguage, folderUri: vscode.Uri): Promise<void> {
+        const extension = language === 'java' ? 'java' : 'kt';
+        const fileName = `${className}.${extension}`;
+        const fileUri = vscode.Uri.joinPath(folderUri, fileName);
+
+        console.log(`[JsonToClass] writing to: ${fileUri.fsPath}`);
+
+        await vscode.workspace.fs.writeFile(fileUri, new TextEncoder().encode(code));
+
+        const doc = await vscode.workspace.openTextDocument(fileUri);
+        await vscode.window.showTextDocument(doc);
     }
 
     private async getJsonInput(): Promise<string | undefined> {
@@ -94,40 +150,4 @@ export class JsonToClassCommand {
         });
     }
 
-    private async inputPackageName(): Promise<string | undefined> {
-        const labels = getLabels();
-        return vscode.window.showInputBox({
-            prompt: labels.jsonToClassPackageName,
-            value: 'com.example.dto',
-            validateInput: (input) => {
-                if (!input || !input.trim()) { return 'Package name cannot be empty'; }
-                if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/.test(input)) { return 'Invalid package name'; }
-                return null;
-            }
-        });
-    }
-
-    private async saveFile(code: string, className: string, language: TargetLanguage): Promise<void> {
-        const extension = language === 'java' ? 'java' : 'kt';
-        const fileName = `${className}.${extension}`;
-
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        const defaultUri = workspaceFolders && workspaceFolders.length > 0
-            ? vscode.Uri.joinPath(workspaceFolders[0].uri, fileName)
-            : vscode.Uri.file(fileName);
-
-        const saveUri = await vscode.window.showSaveDialog({
-            defaultUri,
-            filters: { [language === 'java' ? 'Java' : 'Kotlin']: [extension] },
-            saveLabel: 'Save DTO Class'
-        });
-
-        if (!saveUri) { return; }
-
-        const content = new TextEncoder().encode(code);
-        await vscode.workspace.fs.writeFile(saveUri, content);
-
-        const doc = await vscode.workspace.openTextDocument(saveUri);
-        await vscode.window.showTextDocument(doc);
-    }
 }

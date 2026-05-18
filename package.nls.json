@@ -6,6 +6,5 @@
   "menu.copyEndpointParameters.title": "Copy Endpoint Parameters",
   "command.copyUrl.title": "Copy Full URL",
   "command.copyCurl.title": "Copy as cURL",
-  "command.jsonToClass.title": "JSON to DTO Class",
-  "menu.jsonToClass.title": "JSON to DTO Class"
+  "command.jsonToClassInFolder.title": "Generate DTO Class from JSON"
 }

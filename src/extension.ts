@@ -163,12 +163,12 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    const jsonToClassCommand = vscode.commands.registerCommand(
-        'restfulToolkit.jsonToClass',
-        async () => {
-            logger.info('JSON to DTO Class command executed');
+    const jsonToClassInFolderCommand = vscode.commands.registerCommand(
+        'restfulToolkit.jsonToClassInFolder',
+        async (folderUri: vscode.Uri) => {
+            logger.info('JSON to DTO Class in folder executed: ' + folderUri.fsPath);
             const cmd = new JsonToClassCommand();
-            await cmd.execute();
+            await cmd.executeInFolder(folderUri);
         }
     );
 
@@ -178,7 +178,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(copyCommand);
     context.subscriptions.push(copyUrlCommand);
     context.subscriptions.push(copyCurlCommand);
-    context.subscriptions.push(jsonToClassCommand);
+    context.subscriptions.push(jsonToClassInFolderCommand);
     context.subscriptions.push(scanner);
     context.subscriptions.push(watcher);
     context.subscriptions.push(logger);
