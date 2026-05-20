@@ -37,12 +37,15 @@ export const DEFAULT_CONFIG: ScanConfig = {
 
 /**
  * 配置键名（对应 package.json 的 contributes.configuration）
+ *
+ * 注意：这些键名不带 'restfulToolkit.' 前缀，
+ * 因为 vscode.workspace.getConfiguration('restfulToolkit') 已经绑定了前缀。
  */
 export const CONFIG_KEYS = {
-    scanPaths: 'restfulToolkit.scanPaths',
-    excludePaths: 'restfulToolkit.excludePaths',
-    maxResults: 'restfulToolkit.maxResults',
-    baseUrl: 'restfulToolkit.baseUrl'
+    scanPaths: 'scanPaths',
+    excludePaths: 'excludePaths',
+    maxResults: 'maxResults',
+    baseUrl: 'baseUrl'
 } as const;
 
 /**
@@ -51,16 +54,3 @@ export const CONFIG_KEYS = {
  * 用户可以在项目根目录创建此文件自定义扫描配置
  */
 export const PROJECT_CONFIG_FILE = '.restful-toolkit.json';
-
-/**
- * 获取用户配置（优先级）
- *
- * 优先级顺序：
- * 1. VS Code workspace settings（最高）
- * 2. 项目配置文件 .restful-toolkit.json
- * 3. 默认配置（最低）
- */
-export function getScanConfig(): ScanConfig {
-    // 这里只是定义函数，实际逻辑在 FileScanner 或专门的 ConfigManager 中实现
-    return DEFAULT_CONFIG;
-}

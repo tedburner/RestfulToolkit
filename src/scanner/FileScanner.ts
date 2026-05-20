@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import { AnnotationParser } from '../parsers/AnnotationParser';
 import { EndpointCache } from '../cache/EndpointCache';
 import { Logger } from '../utils/Logger';
 import { ConfigManager } from '../config/ConfigManager';
 import { ScanStateManager } from '../cache/ScanStateManager';
+import { TextProcessor } from '../utils/TextProcessor';
 
 export class FileScanner implements vscode.Disposable {
     private annotationParser: AnnotationParser;
@@ -15,6 +15,11 @@ export class FileScanner implements vscode.Disposable {
     private statusBarItem: vscode.StatusBarItem;
     private scanPromise: Promise<void> | null = null;
     private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
+
+    private lastProgressUpdate: number = 0;
+    private progressThrottleMs = 200;
+    private scanConcurrency = 15;
+    private scannedCount: number = 0;
 
     constructor(cache: EndpointCache) {
         this.annotationParser = new AnnotationParser();
@@ -80,19 +85,18 @@ export class FileScanner implements vscode.Disposable {
 
         this.showProgress('正在扫描项目...', 0, 0);
 
-        let totalFiles = 0;
-        let scannedFiles = 0;
-        let skippedFiles = 0;
-        let filesWithEndpoints = 0;
-
-        // 统计每个模式找到的文件数
+        // 一次性收集所有文件（避免重复调用 findFiles）
+        const excludePattern = `{${excludePatterns.join(',')}}`;
+        const allFiles: vscode.Uri[] = [];
         const patternFileCounts: Map<string, number> = new Map();
 
         for (const pattern of scanPatterns) {
-            const files = await vscode.workspace.findFiles(pattern, `{${excludePatterns.join(',')}}`);
+            const files = await vscode.workspace.findFiles(pattern, excludePattern);
             patternFileCounts.set(pattern, files.length);
-            totalFiles += files.length;
+            allFiles.push(...files);
         }
+
+        const totalFiles = allFiles.length;
 
         this.logger.info(`Files found per pattern: ${Array.from(patternFileCounts.entries()).map(([p, c]) => `${p}:${c}`).join(', ')}`);
         this.logger.info(`Total files to scan: ${totalFiles}`);
@@ -104,53 +108,66 @@ export class FileScanner implements vscode.Disposable {
             return;
         }
 
-        for (const pattern of scanPatterns) {
-            const files = await vscode.workspace.findFiles(pattern, `{${excludePatterns.join(',')}}`);
+        // 过滤需要扫描的文件（并发检查 mtime）
+        const candidates = allFiles.filter(f => !/[/\\]\.git([/\\]|$)/.test(f.fsPath));
 
-            for (const file of files) {
-                const filePath = file.fsPath;
-
-                // 跳过 .git 目录下的文件
-                if (/[/\\]\.git([/\\]|$)/.test(filePath)) {
-                    this.logger.warning(`Skipping abnormal file: ${filePath}`);
-                    continue;
-                }
-
-                // 增量扫描：检查是否需要扫描
-                if (!forceFullScan && !this.scanStateManager.needsScan(filePath)) {
-                    skippedFiles++;
-                    this.logger.info(`Skipped (unchanged): ${filePath}`);
-                    continue;
-                }
-
-                // 清除旧缓存（如果之前有扫描过）
-                const previousEndpoints = this.cache.getByFile(filePath);
-                if (previousEndpoints.length > 0) {
-                    this.cache.removeByFile(filePath);
-                }
-
-                const endpointCountBefore = this.cache.size();
-                await this.scanFile(file);
-                const endpointCountAfter = this.cache.size();
-
-                const endpointsFound = endpointCountAfter - endpointCountBefore;
-                if (endpointsFound > 0) {
-                    filesWithEndpoints++;
-                    this.logger.info(`Found ${endpointsFound} endpoints in: ${filePath}`);
-                }
-
-                // 记录扫描结果
-                this.scanStateManager.recordScan(filePath, endpointsFound);
-
-                scannedFiles++;
-                this.showProgress('正在扫描项目...', scannedFiles, totalFiles);
-            }
+        let filesToScan: { file: vscode.Uri; mtime: number }[];
+        let skippedFiles: number;
+        if (!forceFullScan) {
+            const results = await Promise.all(
+                candidates.map(async (file) => ({
+                    file,
+                    ...await this.scanStateManager.needsScan(file.fsPath)
+                }))
+            );
+            const scanned = results
+                .filter(r => r.needsScan)
+                .map(r => ({ file: r.file, mtime: r.mtime! }));
+            filesToScan = scanned;
+            skippedFiles = candidates.length - scanned.length;
+        } else {
+            filesToScan = candidates.map(f => ({ file: f, mtime: 0 }));
+            skippedFiles = 0;
         }
+
+        // 并发扫描
+        this.scannedCount = 0;
+        let filesWithEndpoints = 0;
+
+        const scanOneFile = async (entry: { file: vscode.Uri; mtime: number }): Promise<void> => {
+            const filePath = entry.file.fsPath;
+
+            // 清除旧缓存（如果之前有扫描过）
+            const previousEndpoints = this.cache.getByFile(filePath);
+            if (previousEndpoints.length > 0) {
+                this.cache.removeByFile(filePath);
+            }
+
+            const endpointCountBefore = this.cache.size();
+            await this.scanFile(entry.file);
+            const endpointCountAfter = this.cache.size();
+
+            const endpointsFound = endpointCountAfter - endpointCountBefore;
+            if (endpointsFound > 0) {
+                filesWithEndpoints++;
+                this.logger.info(`Found ${endpointsFound} endpoints in: ${filePath}`);
+            }
+
+            // 记录扫描结果，复用 needsScan 阶段获取的 mtime
+            await this.scanStateManager.recordScan(filePath, endpointsFound, entry.mtime || Date.now());
+
+            this.scannedCount++;
+            this.showProgressThrottled('正在扫描项目...', this.scannedCount, filesToScan.length);
+        };
+
+        // 使用并发控制执行扫描
+        await this.runWithConcurrency(filesToScan.map(f => () => scanOneFile(f)), this.scanConcurrency);
 
         // 保存扫描状态
         this.scanStateManager.saveState();
 
         const endpointCount = this.cache.size();
+        const scannedFiles = filesToScan.length;
         this.logger.info(`Scan complete. Mode: ${forceFullScan ? 'FULL' : 'INCREMENTAL'}, Scanned ${scannedFiles} files, Skipped ${skippedFiles} files, ${filesWithEndpoints} files with endpoints, total ${endpointCount} endpoints`);
 
         const message = skippedFiles > 0
@@ -164,6 +181,24 @@ export class FileScanner implements vscode.Disposable {
         }, 3000);
     }
 
+    /**
+     * 并发控制执行器
+     */
+    private async runWithConcurrency(tasks: (() => Promise<void>)[], concurrency: number): Promise<void> {
+        let index = 0;
+        const worker = async () => {
+            while (index < tasks.length) {
+                const currentIndex = index++;
+                await tasks[currentIndex]();
+            }
+        };
+        const workers = Array.from(
+            { length: Math.min(concurrency, tasks.length) },
+            () => worker()
+        );
+        await Promise.all(workers);
+    }
+
     async scanFile(uri: vscode.Uri): Promise<void> {
         try {
             const filePath = uri.fsPath;
@@ -172,8 +207,8 @@ export class FileScanner implements vscode.Disposable {
                 return;
             }
 
-            // 强制从磁盘读取最新内容，避免VS Code缓存问题
-            const content = fs.readFileSync(filePath, 'utf-8');
+            // 异步读取文件内容，避免阻塞 Extension Host
+            const content = await TextProcessor.readFileText(uri);
 
             const endpoints = this.annotationParser.parseFile(content, filePath);
 
@@ -223,6 +258,18 @@ export class FileScanner implements vscode.Disposable {
             this.statusBarItem.text = `RestfulToolkit: ${message} (${progress} 文件)`;
             this.statusBarItem.show();
         }
+    }
+
+    /**
+     * 节流版状态栏更新：避免每个文件都触发 UI 重绘
+     */
+    private showProgressThrottled(message: string, current: number, total: number): void {
+        const now = Date.now();
+        if (now - this.lastProgressUpdate < this.progressThrottleMs && current < total) {
+            return;
+        }
+        this.lastProgressUpdate = now;
+        this.showProgress(message, current, total);
     }
 
     /**

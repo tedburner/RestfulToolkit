@@ -156,4 +156,56 @@ suite('JsonClassGenerator Test Suite', () => {
             assert.ok(!result.includes('private'));
         });
     });
+
+    suite('Lombok mode', () => {
+        test('Should generate @Data annotation on root class and skip getters/setters', () => {
+            const json = JSON.stringify({ name: 'test' });
+            const result = generator.generate(json, 'UserDto', 'com.example', 'java', true);
+
+            assert.ok(result.includes('@Data'));
+            assert.ok(result.includes('import lombok.Data;'));
+            assert.ok(!result.includes('getName()'), 'Should not generate getter');
+            assert.ok(!result.includes('setName(String name)'), 'Should not generate setter');
+        });
+
+        test('Should generate @Data on nested static classes without getters/setters', () => {
+            const json = JSON.stringify({
+                user: { name: 'test', age: 25 }
+            });
+            const result = generator.generate(json, 'OrderDto', 'com.example', 'java', true);
+
+            const dataCount = (result.match(/@Data/g) || []).length;
+            assert.strictEqual(dataCount, 2, 'Should have 2 @Data annotations (root + nested)');
+            assert.ok(!result.includes('getAge()'), 'Should not generate getter in nested class');
+        });
+
+        test('Should not generate @Data when useLombok is false', () => {
+            const json = JSON.stringify({ name: 'test' });
+            const result = generator.generate(json, 'UserDto', 'com.example', 'java', false);
+
+            assert.ok(!result.includes('@Data'), 'Should not contain @Data');
+            assert.ok(!result.includes('import lombok.Data;'), 'Should not import lombok.Data');
+            assert.ok(result.includes('getName()'));
+            assert.ok(result.includes('setName(String name)'));
+        });
+
+        test('Should generate getters/setters in nested classes when useLombok is false', () => {
+            const json = JSON.stringify({
+                user: { name: 'test', age: 25 }
+            });
+            const result = generator.generate(json, 'OrderDto', 'com.example', 'java', false);
+
+            assert.ok(result.includes('getAge()'), 'Should generate getter in nested class');
+            assert.ok(result.includes('setAge(Long age)'), 'Should generate setter in nested class');
+            assert.ok(!result.includes('@Data'));
+        });
+
+        test('Default behavior (no 5th arg) should not use Lombok', () => {
+            const json = JSON.stringify({ name: 'test' });
+            const result = generator.generate(json, 'UserDto', 'com.example', 'java');
+
+            assert.ok(!result.includes('@Data'));
+            assert.ok(result.includes('getName()'));
+        });
+    });
 });

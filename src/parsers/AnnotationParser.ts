@@ -2,6 +2,7 @@ import { RestEndpoint } from '../models/types';
 import { SpringMvcParser } from './SpringMvcParser';
 import { JaxRsParser } from './JaxRsParser';
 import { Logger } from '../utils/Logger';
+import { TextProcessor } from '../utils/TextProcessor';
 
 export class AnnotationParser {
     private springMvcParser: SpringMvcParser;
@@ -22,25 +23,29 @@ export class AnnotationParser {
                 content = this.preprocessKotlin(content);
             }
 
+            const sanitized = TextProcessor.sanitize(content);
+            const lineIndex = TextProcessor.buildLineIndex(content);
+
             const classPattern = /(class|interface)\s+(\w+)/g;
             let classMatch;
 
-            while ((classMatch = classPattern.exec(content)) !== null) {
+            while ((classMatch = classPattern.exec(sanitized)) !== null) {
                 const className = classMatch[2];
                 const classStartIndex = classMatch.index;
 
-                const classBlock = this.extractClassBlock(content, classStartIndex);
-                if (!classBlock) {
+                const blockRange = this.extractClassBlock(sanitized, classStartIndex);
+                if (!blockRange) {
                     continue;
                 }
 
-                // 计算类块在文件中的起始位置（绝对位置）
-                const classBlockStartIndex = content.indexOf(classBlock);
-                // 计算类块起始行号（文件中的绝对行号）
-                const classBlockStartLine = content.substring(0, classBlockStartIndex).split('\n').length;
+                const classBlock = content.substring(blockRange.startIndex, blockRange.endIndex);
+                const classBlockSanitized = sanitized.substring(blockRange.startIndex, blockRange.endIndex);
 
-                const springEndpoints = this.parseSpringMvc(classBlock, className, filePath, classBlockStartLine);
-                const jaxRsEndpoints = this.parseJaxRs(classBlock, className, filePath, classBlockStartLine);
+                const classBlockStartLine = TextProcessor.getLineNumber(lineIndex, blockRange.startIndex);
+                const classBlockLineIndex = TextProcessor.buildLineIndex(classBlock);
+
+                const springEndpoints = this.parseSpringMvc(classBlock, className, filePath, classBlockStartLine, classBlockLineIndex);
+                const jaxRsEndpoints = this.parseJaxRs(classBlock, classBlockSanitized, className, filePath, classBlockStartLine, classBlockLineIndex);
 
                 endpoints.push(...springEndpoints, ...jaxRsEndpoints);
             }
@@ -53,15 +58,11 @@ export class AnnotationParser {
         return endpoints;
     }
 
-    private parseSpringMvc(content: string, className: string, filePath: string, classBlockStartLine: number): RestEndpoint[] {
+    private parseSpringMvc(content: string, className: string, filePath: string, classBlockStartLine: number, classBlockLineIndex: number[]): RestEndpoint[] {
         try {
             const classPath = this.springMvcParser.parseClassLevelPath(content);
-            const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath);
-
-            // 将类块内的相对行号转换为文件绝对行号
-            endpoints.forEach(ep => {
-                ep.line = classBlockStartLine + ep.line - 1;
-            });
+            const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath, classBlockLineIndex);
+            this.adjustLineNumbers(endpoints, classBlockStartLine);
 
             if (classPath && endpoints.length > 0) {
                 this.logger.info(`Class ${className}: @RequestMapping("${classPath}") → ${endpoints.length} endpoints`);
@@ -73,15 +74,11 @@ export class AnnotationParser {
         }
     }
 
-    private parseJaxRs(content: string, className: string, filePath: string, classBlockStartLine: number): RestEndpoint[] {
+    private parseJaxRs(content: string, sanitizedContent: string, className: string, filePath: string, classBlockStartLine: number, classBlockLineIndex: number[]): RestEndpoint[] {
         try {
             const classPath = this.jaxRsParser.parseClassLevelPath(content);
-            const endpoints = this.jaxRsParser.parseMethodAnnotations(content, className, classPath, filePath);
-
-            // 将类块内的相对行号转换为文件绝对行号
-            endpoints.forEach(ep => {
-                ep.line = classBlockStartLine + ep.line - 1;
-            });
+            const endpoints = this.jaxRsParser.parseMethodAnnotations(content, sanitizedContent, className, classPath, filePath, classBlockLineIndex);
+            this.adjustLineNumbers(endpoints, classBlockStartLine);
 
             return endpoints;
         } catch (error) {
@@ -91,17 +88,25 @@ export class AnnotationParser {
         }
     }
 
+    private adjustLineNumbers(endpoints: RestEndpoint[], offset: number): void {
+        endpoints.forEach(ep => {
+            ep.line = offset + ep.line - 1;
+        });
+    }
+
     private preprocessKotlin(content: string): string {
         let processed = content;
 
         processed = processed.replace(/@(\w+)"([^"]+)"/g, '@$1("$2")');
 
-        processed = processed.replace(/\$\{[^}]+\}/g, '${...}');
-
         return processed;
     }
 
-    private extractClassBlock(content: string, startIndex: number): string | null {
+    /**
+     * 提取类代码块的范围。
+     * 返回类块在文本中的起始和结束索引。
+     */
+    private extractClassBlock(content: string, startIndex: number): { startIndex: number; endIndex: number } | null {
         // 向前查找，包含类定义前的所有注解
         let actualStartIndex = startIndex;
 
@@ -159,13 +164,13 @@ export class AnnotationParser {
             return null; // 没有找到类块的开始括号
         }
 
-        // 从第一个 { 开始计算括号深度
+        // 从第一个 { 开始计算括号深度（在净化文本上执行，字符串/注释中的括号已被清除）
         const braceDepth = { value: 0 };
         let endIndex = actualStartIndex;
         let foundOpenBrace = false;
 
-        for (let i = firstBraceIndex; i < content.length; i++) {
-            const char = content[i];
+        for (let j = firstBraceIndex; j < content.length; j++) {
+            const char = content[j];
 
             if (char === '{') {
                 braceDepth.value++;
@@ -173,7 +178,7 @@ export class AnnotationParser {
             } else if (char === '}') {
                 braceDepth.value--;
                 if (foundOpenBrace && braceDepth.value === 0) {
-                    endIndex = i + 1;
+                    endIndex = j + 1;
                     break;
                 }
             }
@@ -183,6 +188,6 @@ export class AnnotationParser {
             return null;
         }
 
-        return content.substring(actualStartIndex, endIndex);
+        return { startIndex: actualStartIndex, endIndex };
     }
 }

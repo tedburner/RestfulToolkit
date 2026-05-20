@@ -23,9 +23,16 @@ export function inferTypeFromValue(value: unknown, language: TargetLanguage): st
     return 'Object';
 }
 
-export function getImportStatements(language: TargetLanguage): string {
+export function getImportStatements(language: TargetLanguage, useLombok = false): string {
     if (language === 'java') {
-        return 'import com.fasterxml.jackson.annotation.JsonProperty;\nimport java.util.List;';
+        const lines = [
+            'import com.fasterxml.jackson.annotation.JsonProperty;',
+            'import java.util.List;'
+        ];
+        if (useLombok) {
+            lines.push('import lombok.Data;');
+        }
+        return lines.join('\n');
     }
     return 'import com.fasterxml.jackson.annotation.JsonProperty';
 }

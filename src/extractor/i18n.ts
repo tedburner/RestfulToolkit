@@ -27,6 +27,7 @@ export interface I18nLabels {
     jsonToClassNoClipboard: string;
     jsonToClassInvalidJson: string;
     jsonToClassSuccess: string;
+    jsonToClassLombok: string;
 }
 
 const zhLabels: I18nLabels = {
@@ -55,7 +56,8 @@ const zhLabels: I18nLabels = {
     jsonToClassKotlin: 'Kotlin',
     jsonToClassNoClipboard: '请先复制 JSON 到剪贴板，或在编辑器中选中 JSON 内容',
     jsonToClassInvalidJson: '内容不是有效的 JSON 格式',
-    jsonToClassSuccess: '✓ DTO 类文件已生成'
+    jsonToClassSuccess: '✓ DTO 类文件已生成',
+    jsonToClassLombok: '是否使用 Lombok'
 };
 
 const enLabels: I18nLabels = {
@@ -84,7 +86,8 @@ const enLabels: I18nLabels = {
     jsonToClassKotlin: 'Kotlin',
     jsonToClassNoClipboard: 'Please copy JSON to clipboard or select JSON in editor first',
     jsonToClassInvalidJson: 'Content is not valid JSON format',
-    jsonToClassSuccess: '✓ DTO class file generated'
+    jsonToClassSuccess: '✓ DTO class file generated',
+    jsonToClassLombok: 'Use Lombok'
 };
 
 export function getLabels(): I18nLabels {

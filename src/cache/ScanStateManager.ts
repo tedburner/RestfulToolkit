@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import { Logger } from '../utils/Logger';
 
 /**
@@ -64,68 +63,50 @@ export class ScanStateManager {
     }
 
     /**
-     * 判断文件是否需要重新扫描
+     * 判断文件是否需要重新扫描（异步版本，避免阻塞 Extension Host）
      *
      * @returns true 需要扫描，false 不需要
      */
-    needsScan(filePath: string): boolean {
-        // 检查文件是否存在
-        if (!fs.existsSync(filePath)) {
-            this.logger.info(`File not found: ${filePath}, removing from records`);
-            this.removeRecord(filePath);
-            return false;
-        }
+    async needsScan(filePath: string): Promise<{ needsScan: boolean; mtime?: number }> {
+        const uri = vscode.Uri.file(filePath);
 
-        const record = this.scanRecords.get(filePath);
-
-        // 没有记录，需要扫描
-        if (!record) {
-            this.logger.info(`No previous scan record for: ${filePath}`);
-            return true;
-        }
-
-        // 获取文件当前修改时间
         try {
-            const stats = fs.statSync(filePath);
-            const currentModifiedTime = stats.mtimeMs;
+            const stat = await vscode.workspace.fs.stat(uri);
+            const record = this.scanRecords.get(filePath);
 
-            // 文件修改时间变化，需要重新扫描
-            if (currentModifiedTime > record.lastModifiedTime) {
-                this.logger.info(`File modified since last scan: ${filePath}`);
-                return true;
+            if (!record) {
+                this.logger.info(`No previous scan record for: ${filePath}`);
+                return { needsScan: true, mtime: stat.mtime };
             }
 
-            // 文件未修改，跳过扫描
-            this.logger.info(`File unchanged, skipping: ${filePath} (last scan: ${new Date(record.lastScanTime).toLocaleString()})`);
-            return false;
+            if (stat.mtime > record.lastModifiedTime) {
+                this.logger.info(`File modified since last scan: ${filePath}`);
+                return { needsScan: true, mtime: stat.mtime };
+            }
 
-        } catch (error) {
-            const err = error as Error;
-            this.logger.warning(`Failed to check file stats: ${filePath}, ${err.message}`);
-            return true;  // 无法判断，保守策略：扫描
+            this.logger.info(`File unchanged, skipping: ${filePath} (last scan: ${new Date(record.lastScanTime).toLocaleString()})`);
+            return { needsScan: false, mtime: stat.mtime };
+
+        } catch {
+            this.logger.info(`File not found or inaccessible: ${filePath}, removing from records`);
+            this.removeRecord(filePath);
+            return { needsScan: false };
         }
     }
 
     /**
-     * 记录文件扫描结果
+     * 记录文件扫描结果（异步版本）
      */
-    recordScan(filePath: string, endpointCount: number): void {
-        try {
-            const stats = fs.statSync(filePath);
-            const record: FileScanRecord = {
-                filePath,
-                lastScanTime: Date.now(),
-                lastModifiedTime: stats.mtimeMs,
-                endpointCount
-            };
+    async recordScan(filePath: string, endpointCount: number, mtime: number): Promise<void> {
+        const record: FileScanRecord = {
+            filePath,
+            lastScanTime: Date.now(),
+            lastModifiedTime: mtime,
+            endpointCount
+        };
 
-            this.scanRecords.set(filePath, record);
-            this.logger.info(`Recorded scan for ${filePath}: ${endpointCount} endpoints`);
-
-        } catch (error) {
-            const err = error as Error;
-            this.logger.error(`Failed to record scan for ${filePath}: ${err.message}`);
-        }
+        this.scanRecords.set(filePath, record);
+        this.logger.info(`Recorded scan for ${filePath}: ${endpointCount} endpoints`);
     }
 
     /**
