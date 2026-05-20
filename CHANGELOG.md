@@ -7,19 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.5] - 2026-05-19
 
-- **Added**: Concurrent file scanning with 15 workers and throttled progress bar / 并发文件扫描（默认 15 并发）+ 进度条节流
-- **Added**: `TextProcessor` utility for code sanitization, line index precomputation, and O(log N) line number lookup / `TextProcessor` 工具类
-- **Added**: Lombok option for JSON-to-DTO generation — `@Data` mode or auto-generate getter/setter / JSON 转 DTO 支持 Lombok 选项
-- **Changed**: Parsers use sanitized text for brace matching — eliminated false matches from string/annotation content / 解析器使用净化文本进行括号匹配
-- **Changed**: Line number calculation upgraded from O(N) to O(log N) binary search / 行号计算升级为 O(log N) 二分查找
-- **Changed**: All synchronous `fs` I/O replaced with async `vscode.workspace.fs` APIs / 同步文件操作替换为异步 API
-- **Changed**: Search ranking improved — exact word matches ranked higher, VS Code QuickPick built-in fuzzy matching removed / 搜索排序优化：完整单词匹配优先
-- **Changed**: Code cleanup — removed dead code, redundant imports, `CONFIG_KEYS` prefix, duplicate methods / 代码清理：移除死代码、重复方法、简化配置
-- **Changed**: `EndpointCache.search` accepts `maxResults` parameter / `EndpointCache.search` 接受 maxResults 参数
+- **Added**: Concurrent file scanning with 15 workers and throttled progress bar
+- **Added**: `TextProcessor` utility for code sanitization, line index precomputation, and O(log N) line number lookup
+- **Added**: Lombok option for JSON-to-DTO generation — `@Data` mode or auto-generate getter/setter
+- **Changed**: Parsers use sanitized text for brace matching — eliminated false matches from string/annotation content
+- **Changed**: Line number calculation upgraded from O(N) to O(log N) binary search
+- **Changed**: All synchronous `fs` I/O replaced with async `vscode.workspace.fs` APIs
+- **Changed**: Search ranking improved — exact word matches ranked higher, VS Code QuickPick built-in fuzzy matching removed
+- **Changed**: Code cleanup — removed dead code, redundant imports, `CONFIG_KEYS` prefix, duplicate methods
+- **Changed**: `EndpointCache.search` accepts `maxResults` parameter
 
 ---
 
-- **新增**: 并发文件扫描（默认 15 并发）+ 进度条节流，大幅缩短大型项目扫描时间
+- **新增**: 并发文件扫描（默认 15 并发）+ 进度条节流
 - **新增**: `TextProcessor` 工具类：代码净化、换行符索引预计算、O(log N) 行号查找
 - **新增**: JSON 转 DTO 支持 Lombok 选项 — 可选择 `@Data` 注解或自动生成 getter/setter
 - **优化**: 解析器使用净化文本进行括号匹配，消除字符串/注释内容干扰
