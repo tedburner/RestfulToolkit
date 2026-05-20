@@ -15,8 +15,6 @@ export class SearchUI {
     async show(): Promise<void> {
         const quickPick = vscode.window.createQuickPick();
         quickPick.placeholder = '搜索 REST 端点 (路径、类名、方法名、HTTP 方法)';
-        quickPick.matchOnDescription = true;
-        quickPick.matchOnDetail = true;
 
         const allEndpoints = this.cache.getAll();
 
@@ -26,6 +24,7 @@ export class SearchUI {
             return;
         }
 
+        // 初始显示全部端点（未输入搜索时）
         const items = allEndpoints.map(endpoint => this.createQuickPickItem(endpoint));
         quickPick.items = items;
 
@@ -90,19 +89,13 @@ export class SearchUI {
             return endpoints.map(endpoint => this.createQuickPickItem(endpoint));
         }
 
-        const searchResults = this.cache.search({ text: query });
-
         const maxResults = vscode.workspace
             .getConfiguration('restfulToolkit')
             .get<number>('maxResults', 100);
 
-        if (searchResults.length > maxResults) {
-            vscode.window.showInformationMessage(
-                `显示前 ${maxResults} 个结果，共找到 ${searchResults.length} 个匹配`
-            );
-        }
+        const searchResults = this.cache.search({ text: query }, maxResults);
 
-        return searchResults.slice(0, maxResults).map(endpoint => this.createQuickPickItem(endpoint));
+        return searchResults.map(endpoint => this.createQuickPickItem(endpoint));
     }
 
     private async openEndpoint(item: EndpointQuickPickItem): Promise<void> {

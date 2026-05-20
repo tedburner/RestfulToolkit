@@ -30,6 +30,9 @@ export class JsonToClassCommand {
         const language = await this.selectLanguage();
         if (!language) { return; }
 
+        // Only ask for Lombok when Java is selected
+        const useLombok = language === 'java' ? await this.selectLombok() : false;
+
         const className = await this.inputClassName(json);
         if (!className) { return; }
 
@@ -40,7 +43,7 @@ export class JsonToClassCommand {
         if (!packageName) { return; }
 
         try {
-            const code = this.generator.generate(json, className, packageName, language);
+            const code = this.generator.generate(json, className, packageName, language, useLombok);
             await this.writeToFile(code, className, packageName, language, targetFolderUri);
             vscode.window.showInformationMessage(getLabels().jsonToClassSuccess);
         } catch (error) {
@@ -120,6 +123,18 @@ export class JsonToClassCommand {
             { placeHolder: labels.jsonToClassLanguage }
         );
         return choice?.value;
+    }
+
+    private async selectLombok(): Promise<boolean> {
+        const labels = getLabels();
+        const choice = await vscode.window.showQuickPick(
+            [
+                { label: '✓ 使用', description: '使用 Lombok @Data 注解', value: true },
+                { label: '✗ 不使用', description: '自动生成 getter/setter 方法', value: false }
+            ],
+            { placeHolder: labels.jsonToClassLombok }
+        );
+        return choice?.value ?? false;
     }
 
     private async inputClassName(json: string): Promise<string | undefined> {

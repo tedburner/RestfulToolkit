@@ -1,5 +1,6 @@
 import { RestEndpoint, HttpMethod } from '../models/types';
 import { Logger } from '../utils/Logger';
+import { TextProcessor } from '../utils/TextProcessor';
 
 export class JaxRsParser {
     private logger: Logger;
@@ -19,7 +20,17 @@ export class JaxRsParser {
         return null;
     }
 
-    parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string): RestEndpoint[] {
+    /**
+     * 解析方法级别的 JAX-RS 注解。
+     *
+     * @param content 原始类块内容（用于提取注解文本和路径值）
+     * @param sanitizedContent 净化后的类块内容（用于括号匹配，避免字符串/注释干扰）
+     * @param className 类名
+     * @param classPath 类级别 @Path 路径
+     * @param filePath 文件路径
+     * @param lineIndex 预计算的换行符索引数组（用于快速行号计算）
+     */
+    parseMethodAnnotations(content: string, sanitizedContent: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[]): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
         // 使用更准确的方法匹配：先找方法签名，然后用括号深度匹配方法体
@@ -30,10 +41,10 @@ export class JaxRsParser {
             const methodName = methodMatch[1];
             const signatureStartIndex = methodMatch.index;
 
-            // 找到方法体的第一个 { 和最后一个 }
+            // 在净化文本上查找方法体的 { 和 }，避免字符串/注释中的括号干扰
             let braceStart = -1;
-            for (let i = signatureStartIndex; i < content.length; i++) {
-                if (content[i] === '{') {
+            for (let i = signatureStartIndex; i < sanitizedContent.length; i++) {
+                if (sanitizedContent[i] === '{') {
                     braceStart = i;
                     break;
                 }
@@ -43,13 +54,13 @@ export class JaxRsParser {
                 continue; // 方法体开始括号未找到
             }
 
-            // 计算括号深度找到方法体结束
+            // 在净化文本上计算括号深度找到方法体结束
             let braceDepth = 1;
             let braceEnd = braceStart + 1;
-            while (braceEnd < content.length && braceDepth > 0) {
-                if (content[braceEnd] === '{') {
+            while (braceEnd < sanitizedContent.length && braceDepth > 0) {
+                if (sanitizedContent[braceEnd] === '{') {
                     braceDepth++;
-                } else if (content[braceEnd] === '}') {
+                } else if (sanitizedContent[braceEnd] === '}') {
                     braceDepth--;
                 }
                 braceEnd++;
@@ -76,7 +87,8 @@ export class JaxRsParser {
                 className,
                 methodName,
                 filePath,
-                content
+                content,
+                lineIndex
             );
 
             endpoints.push(...methodEndpoints);
@@ -92,7 +104,8 @@ export class JaxRsParser {
         className: string,
         methodName: string,
         filePath: string,
-        content: string
+        content: string,
+        lineIndex?: number[]
     ): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
@@ -111,8 +124,10 @@ export class JaxRsParser {
                 const httpMethodIndexInBlock = match.index!;
                 // 计算在原始content中的绝对位置
                 const absolutePosition = annotationBlockStart + httpMethodIndexInBlock;
-                // 计算正确的行号
-                const line = this.getLineNumber(content, absolutePosition);
+                // 使用快速行号计算
+                const line = lineIndex
+                    ? TextProcessor.getLineNumber(lineIndex, absolutePosition)
+                    : TextProcessor.getLineNumberFallback(content, absolutePosition);
 
                 // 查找方法级别的 @Path（取最后一个，避免匹配到类级 @Path）
                 const methodPath = this.extractMethodPath(annotationBlock);
@@ -193,51 +208,6 @@ export class JaxRsParser {
         return methodAnnotations.join('\n');
     }
 
-    private getAnnotationBlock(content: string, methodIndex: number): string | null {
-        // methodIndex 指向方法签名行的起始位置（行首）
-        // 向前查找所有注解行
-        let startIndex = methodIndex;
-        const endIndex = methodIndex;
-
-        // 向前查找注解行
-        while (startIndex > 0) {
-            // 找到当前行前面的换行符（前一行的结尾）
-            const prevNewlineIndex = startIndex - 1;
-            if (prevNewlineIndex < 0) {
-                break;
-            }
-
-            // 找到前一行的开始位置
-            let prevLineStart = prevNewlineIndex;
-            while (prevLineStart > 0 && content[prevLineStart - 1] !== '\n') {
-                prevLineStart--;
-            }
-
-            // 获取前一行的内容（不包含换行符）
-            const prevLine = content.substring(prevLineStart, prevNewlineIndex).trim();
-
-            // 如果前一行不是注解行（不以 @ 开头），停止查找
-            if (prevLine === '' || !prevLine.startsWith('@')) {
-                break;
-            }
-
-            // 安全检查：遇到 class/interface 声明，说明已经回溯到类级别注解，停止
-            if (/\b(class|interface|object)\b/.test(prevLine)) {
-                break;
-            }
-
-            // 前一行是注解行，继续向前查找
-            startIndex = prevLineStart;
-        }
-
-        // 返回从 startIndex 到 endIndex 的内容（所有注解行）
-        const block = content.substring(startIndex, endIndex);
-        if (!block.trim().startsWith('@')) {
-            return null;
-        }
-        return block;
-    }
-
     /**
      * 提取方法级别的 @Path（取最后一个，避免匹配类级 @Path）
      */
@@ -290,10 +260,5 @@ export class JaxRsParser {
             line,
             framework: 'JAX-RS'
         };
-    }
-
-    private getLineNumber(content: string, index: number): number {
-        const lines = content.substring(0, index).split('\n');
-        return lines.length;
     }
 }

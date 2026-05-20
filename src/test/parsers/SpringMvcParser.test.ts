@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { SpringMvcParser } from '../../parsers/SpringMvcParser';
+import { TextProcessor } from '../../utils/TextProcessor';
 
 suite('SpringMvcParser Test Suite', () => {
     let parser: SpringMvcParser;
@@ -356,5 +357,43 @@ public class UserController {
         assert.strictEqual(endpoints.length, 2);
         assert.strictEqual(endpoints[0].path, '/path1');
         assert.strictEqual(endpoints[1].path, '/path2');
+    });
+
+    test('Should use lineIndex for correct line number calculation', () => {
+        const content = `
+            public class UserController {
+                @GetMapping("/line1")
+                public User method1() {}
+
+                @PostMapping("/line2")
+                public User method2() {}
+            }
+        `;
+        const lineIndex = TextProcessor.buildLineIndex(content);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java', lineIndex);
+
+        assert.strictEqual(endpoints.length, 2);
+
+        const getIdx = content.indexOf('@GetMapping');
+        const expectedLine1 = TextProcessor.getLineNumberFallback(content, getIdx);
+        assert.strictEqual(endpoints[0].line, expectedLine1, `@GetMapping 应在第 ${expectedLine1} 行`);
+
+        const postIdx = content.indexOf('@PostMapping');
+        const expectedLine2 = TextProcessor.getLineNumberFallback(content, postIdx);
+        assert.strictEqual(endpoints[1].line, expectedLine2, `@PostMapping 应在第 ${expectedLine2} 行`);
+    });
+
+    test('Should handle annotation with path variable in string without false parenthesis match', () => {
+        // 净化后字符串中的括号被清除，避免干扰方法体括号匹配
+        const content = `
+            public class UserController {
+                @GetMapping(value = "/users", produces = MediaType.APPLICATION_JSON_VALUE)
+                public User getWithAnnotation() { return null; }
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/users');
+        assert.strictEqual(endpoints[0].methodName, 'getWithAnnotation');
     });
 });

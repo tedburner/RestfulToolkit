@@ -230,4 +230,27 @@ suite('EndpointCache Test Suite', () => {
         const all = cache.getAll();
         assert.strictEqual(all.length, 2);
     });
+
+    test('Should limit results with maxResults parameter', () => {
+        for (let i = 0; i < 10; i++) {
+            cache.add({
+                method: 'GET',
+                path: `/api/users/${i}`,
+                className: 'UserController',
+                methodName: `getUser${i}`,
+                file: `UserController${i}.java`,
+                line: i,
+                framework: 'Spring'
+            });
+        }
+
+        const all = cache.search({ text: 'user' });
+        assert.strictEqual(all.length, 10);
+
+        const limited = cache.search({ text: 'user' }, 3);
+        assert.strictEqual(limited.length, 3);
+
+        const limitedDefault = cache.search({ text: 'user' }, 100);
+        assert.strictEqual(limitedDefault.length, 10);
+    });
 });

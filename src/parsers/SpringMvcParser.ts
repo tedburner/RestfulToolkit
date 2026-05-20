@@ -1,7 +1,16 @@
 import { RestEndpoint, HttpMethod } from '../models/types';
 import { Logger } from '../utils/Logger';
+import { TextProcessor } from '../utils/TextProcessor';
 
 export class SpringMvcParser {
+    private static readonly httpMethodMap: ReadonlyMap<string, HttpMethod> = new Map([
+        ['GetMapping', 'GET'],
+        ['PostMapping', 'POST'],
+        ['PutMapping', 'PUT'],
+        ['DeleteMapping', 'DELETE'],
+        ['PatchMapping', 'PATCH'],
+    ]);
+
     private logger: Logger;
 
     constructor() {
@@ -28,7 +37,7 @@ export class SpringMvcParser {
         return null;
     }
 
-    parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string): RestEndpoint[] {
+    parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[]): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
         // 新方法：直接查找 REST 注解，然后提取方法和注解
@@ -67,7 +76,9 @@ export class SpringMvcParser {
                 }
 
                 // 计算注解起始行号（直接从注解的 @ 符号位置计算）
-                const line = this.getLineNumber(content, annotationIndex);
+                const line = lineIndex
+                    ? TextProcessor.getLineNumber(lineIndex, annotationIndex)
+                    : TextProcessor.getLineNumberFallback(content, annotationIndex);
                 const methodEndpoints = this.parseAnnotationText(
                     annotationText,
                     classPath || '',
@@ -162,18 +173,7 @@ export class SpringMvcParser {
         const annotationName = annotationNameMatch[1];
 
         // 根据注解名称确定 HTTP 方法
-        let httpMethod: HttpMethod | null = null;
-        if (annotationName === 'GetMapping') {
-            httpMethod = 'GET';
-        } else if (annotationName === 'PostMapping') {
-            httpMethod = 'POST';
-        } else if (annotationName === 'PutMapping') {
-            httpMethod = 'PUT';
-        } else if (annotationName === 'DeleteMapping') {
-            httpMethod = 'DELETE';
-        } else if (annotationName === 'PatchMapping') {
-            httpMethod = 'PATCH';
-        }
+        const httpMethod = SpringMvcParser.httpMethodMap.get(annotationName) ?? null;
 
         // 提取路径（支持多种格式）
         // 重要：先匹配路径数组，再匹配单路径（避免误匹配其他数组参数）
@@ -311,10 +311,5 @@ export class SpringMvcParser {
             line,
             framework: 'Spring'
         };
-    }
-
-    private getLineNumber(content: string, index: number): number {
-        const lines = content.substring(0, index).split('\n');
-        return lines.length;
     }
 }

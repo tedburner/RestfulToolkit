@@ -20,7 +20,7 @@ export class JsonClassGenerator {
     private nestedClasses: ClassDef[] = [];
     private nameCounter: Map<string, number> = new Map();
 
-    generate(json: string, className: string, packageName: string, language: TargetLanguage): string {
+    generate(json: string, className: string, packageName: string, language: TargetLanguage, useLombok = false): string {
         const parsed = JSON.parse(json);
         this.nestedClasses = [];
         this.nameCounter = new Map();
@@ -28,7 +28,7 @@ export class JsonClassGenerator {
         const rootDef = this.analyzeObject(parsed, className, 0);
 
         if (language === 'java') {
-            return this.renderJava(rootDef, packageName);
+            return this.renderJava(rootDef, packageName, useLombok);
         }
         return this.renderKotlin(rootDef, packageName);
     }
@@ -113,34 +113,44 @@ export class JsonClassGenerator {
         return result || 'field';
     }
 
-    private renderJava(root: ClassDef, packageName: string): string {
+    private renderJava(root: ClassDef, packageName: string, useLombok: boolean): string {
         const lines: string[] = [];
         lines.push(`package ${packageName};`);
         lines.push('');
-        lines.push(getImportStatements('java'));
+        lines.push(getImportStatements('java', useLombok));
         lines.push('');
+        if (useLombok) {
+            lines.push('@Data');
+        }
         lines.push(`public class ${root.name} {`);
         lines.push('');
 
         this.renderJavaFields(lines, root.fields);
-        this.renderJavaGettersSetters(lines, root.fields);
+        if (!useLombok) {
+            this.renderJavaGettersSetters(lines, root.fields);
+        }
 
         const nested = root.fields.filter(f => f.isNested && f.nestedClass).map(f => f.nestedClass!);
-        this.renderJavaNestedClasses(lines, nested, '    ');
+        this.renderJavaNestedClasses(lines, nested, '    ', useLombok);
 
         lines.push('}');
         return lines.join('\n');
     }
 
-    private renderJavaNestedClasses(lines: string[], classes: ClassDef[], indent: string) {
+    private renderJavaNestedClasses(lines: string[], classes: ClassDef[], indent: string, useLombok: boolean) {
         for (const nc of classes) {
+            if (useLombok) {
+                lines.push(`${indent}@Data`);
+            }
             lines.push(`${indent}public static class ${nc.name} {`);
             lines.push('');
             this.renderJavaFields(lines, nc.fields, `${indent}    `);
-            this.renderJavaGettersSetters(lines, nc.fields, `${indent}    `);
+            if (!useLombok) {
+                this.renderJavaGettersSetters(lines, nc.fields, `${indent}    `);
+            }
             const deeperNested = nc.fields.filter(f => f.isNested && f.nestedClass).map(f => f.nestedClass!);
             if (deeperNested.length > 0) {
-                this.renderJavaNestedClasses(lines, deeperNested, `${indent}    `);
+                this.renderJavaNestedClasses(lines, deeperNested, `${indent}    `, useLombok);
             }
             lines.push(`${indent}}`);
             lines.push('');

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import { DtoField } from '../models/types';
+import { TextProcessor } from '../utils/TextProcessor';
 
 /**
  * 基本类型列表，无需展开 DTO 字段。
@@ -35,7 +35,8 @@ export class DtoFieldExtractor {
         visited.add(dtoTypeName);
 
         try {
-            const content = fs.readFileSync(files[0].fsPath, 'utf-8');
+            // 异步读取文件内容，避免阻塞 Extension Host
+            const content = await TextProcessor.readFileText(files[0]);
             return await this.resolveNestedFields(content, visited, depth + 1);
         } catch {
             return [];
