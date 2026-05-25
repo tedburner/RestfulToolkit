@@ -69,6 +69,17 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - VS Code搜索: 扩展视图搜索 "RestfulToolkit"
 - 通常5-10分钟后可见
 
+**发布后检查清单** — `vsce publish` 只自动更新 `package.json`，以下文件需手动同步版本号：
+
+| 文件 | 位置 | 示例 |
+|------|------|------|
+| `README.md` | shields.io 徽章 | `version-0.0.5-green` |
+| `README_CN.md` | shields.io 徽章 | `version-0.0.5-green` |
+| `CHANGELOG.md` | 版本标题 | `## [0.0.5] - 2026-05-19` |
+| `docs/DOCUMENTATION_MANIFEST.md` | 版本引用 | 文档清单中的版本号 |
+
+> 快速查找旧版本号：`grep -r "0\.0\.<old>" --include="*.md" README.md README_CN.md CHANGELOG.md docs/`
+
 **首次发布**:
 ```bash
 # 1. 登录publisher（保存PAT）
