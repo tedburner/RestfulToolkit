@@ -3,6 +3,7 @@ import { AnnotationParser } from '../parsers/AnnotationParser';
 import { EndpointCache } from '../cache/EndpointCache';
 import { Logger } from '../utils/Logger';
 import { ConfigManager } from '../config/ConfigManager';
+import { getLabels } from '../extractor/i18n';
 import { ScanStateManager } from '../cache/ScanStateManager';
 import { TextProcessor } from '../utils/TextProcessor';
 
@@ -83,7 +84,7 @@ export class FileScanner implements vscode.Disposable {
             this.logger.info(`Previous scan: ${stats.totalFiles} files, ${stats.totalEndpoints} endpoints, last scan: ${new Date(stats.lastScanTime).toLocaleString()}`);
         }
 
-        this.showProgress('正在扫描项目...', 0, 0);
+        this.showProgress(getLabels().scanProgress, 0, 0);
 
         // 一次性收集所有文件（避免重复调用 findFiles）
         const excludePattern = `{${excludePatterns.join(',')}}`;
@@ -104,7 +105,7 @@ export class FileScanner implements vscode.Disposable {
         if (totalFiles === 0) {
             this.logger.info('No files found to scan');
             this.logger.warning('Possible reasons: 1) No Java/Kotlin files in workspace 2) All files excluded 3) Workspace folder not set correctly');
-            this.showProgress('扫描完成，未找到文件', 0, 0, true);
+            this.showProgress(getLabels().scanNoFiles, 0, 0, true);
             return;
         }
 
@@ -157,7 +158,7 @@ export class FileScanner implements vscode.Disposable {
             await this.scanStateManager.recordScan(filePath, endpointsFound, entry.mtime || Date.now());
 
             this.scannedCount++;
-            this.showProgressThrottled('正在扫描项目...', this.scannedCount, filesToScan.length);
+            this.showProgressThrottled(getLabels().scanProgress, this.scannedCount, filesToScan.length);
         };
 
         // 使用并发控制执行扫描
@@ -170,9 +171,10 @@ export class FileScanner implements vscode.Disposable {
         const scannedFiles = filesToScan.length;
         this.logger.info(`Scan complete. Mode: ${forceFullScan ? 'FULL' : 'INCREMENTAL'}, Scanned ${scannedFiles} files, Skipped ${skippedFiles} files, ${filesWithEndpoints} files with endpoints, total ${endpointCount} endpoints`);
 
+        const labels = getLabels();
         const message = skippedFiles > 0
-            ? `扫描完成（增量模式），扫描 ${scannedFiles} 文件，跳过 ${skippedFiles} 未修改文件，共找到 ${endpointCount} 个 REST 端点`
-            : `扫描完成，共找到 ${endpointCount} 个 REST 端点`;
+            ? labels.scanCompleteIncremental.replace('{0}', String(scannedFiles)).replace('{1}', String(skippedFiles)).replace('{2}', String(endpointCount))
+            : labels.scanCompleteFull.replace('{0}', String(endpointCount));
 
         this.showProgress(message, totalFiles, totalFiles, true);
 
@@ -232,7 +234,12 @@ export class FileScanner implements vscode.Disposable {
 
         const timer = setTimeout(() => {
             this.debounceTimers.delete(filePath);
-            this.scanFile(uri).catch(err => this.logger.error(`Debounced scan failed: ${uri.fsPath}`, err));
+            (async () => {
+                if (this.scanPromise) {
+                    await this.scanPromise;
+                }
+                await this.scanFile(uri);
+            })().catch(err => this.logger.error(`Debounced scan failed: ${uri.fsPath}`, err));
         }, delay);
 
         this.debounceTimers.set(filePath, timer);
@@ -255,7 +262,7 @@ export class FileScanner implements vscode.Disposable {
             this.statusBarItem.show();
         } else {
             const progress = total > 0 ? `${current}/${total}` : '';
-            this.statusBarItem.text = `RestfulToolkit: ${message} (${progress} 文件)`;
+            this.statusBarItem.text = getLabels().statusBarProgress.replace('{0}', message).replace('{1}', progress);
             this.statusBarItem.show();
         }
     }

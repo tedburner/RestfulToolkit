@@ -163,4 +163,68 @@ public class UserController {
         const pathIdx = sanitized.lastIndexOf('@Path');
         assert.strictEqual(TextProcessor.getLineNumber(lineIndex, pathIdx), 4);
     });
+
+    // ===== sanitize({ preserveStrings: true }) =====
+
+    test('preserveStrings: should keep string content while blanking comments', () => {
+        const input = '@JsonProperty("email_addr") // comment';
+        const result = TextProcessor.sanitize(input, { preserveStrings: true });
+        assert.ok(result.includes('email_addr'), 'String content should be preserved');
+        assert.ok(!result.includes('comment'), 'Comment should be blanked');
+    });
+
+    test('preserveStrings: should preserve single-quoted chars', () => {
+        const input = "char c = 'x'; // comment";
+        const result = TextProcessor.sanitize(input, { preserveStrings: true });
+        assert.ok(result.includes("'x'"), 'Single-quoted char should be preserved');
+        assert.ok(!result.includes('comment'), 'Comment should be blanked');
+    });
+
+    test('preserveStrings: should handle escaped quotes inside preserved strings', () => {
+        const input = 'String s = "say \\"hi\\"";';
+        const result = TextProcessor.sanitize(input, { preserveStrings: true });
+        assert.ok(result.includes('say'), 'Content should be preserved');
+        assert.ok(result.includes('hi'), 'Inner content should be preserved');
+    });
+
+    test('preserveStrings: should blank block comments but keep nearby strings', () => {
+        const input = '/* block */ "keep"';
+        const result = TextProcessor.sanitize(input, { preserveStrings: true });
+        assert.ok(!result.includes('block'), 'Block comment should be blanked');
+        assert.ok(result.includes('keep'), 'String after comment should be preserved');
+    });
+
+    test('preserveStrings: output should have same length as input', () => {
+        const input = '@JsonProperty("name") /* comment */ "value"';
+        const result = TextProcessor.sanitize(input, { preserveStrings: true });
+        assert.strictEqual(result.length, input.length);
+    });
+
+    // ===== buildPotentialFQNs() =====
+
+    test('buildPotentialFQNs: should match explicit import', () => {
+        const text = 'package com.example.controller;\nimport com.example.dto.UserDto;\npublic class Foo {}';
+        const result = TextProcessor.buildPotentialFQNs(text, 'UserDto');
+        assert.ok(result.includes('com.example.dto.UserDto'), 'Should find explicit import');
+        assert.ok(result.includes('com.example.controller.UserDto'), 'Should include same-package fallback');
+    });
+
+    test('buildPotentialFQNs: should expand wildcard import', () => {
+        const text = 'package com.example.controller;\nimport com.example.model.*;\npublic class Foo {}';
+        const result = TextProcessor.buildPotentialFQNs(text, 'OrderDto');
+        assert.ok(result.includes('com.example.model.OrderDto'), 'Should expand wildcard');
+        assert.ok(result.includes('com.example.controller.OrderDto'), 'Should include same-package fallback');
+    });
+
+    test('buildPotentialFQNs: should return empty when no package or imports', () => {
+        const text = 'public class Foo {}';
+        const result = TextProcessor.buildPotentialFQNs(text, 'Bar');
+        assert.deepStrictEqual(result, []);
+    });
+
+    test('buildPotentialFQNs: explicit import takes priority over wildcard', () => {
+        const text = 'package com.example;\nimport com.example.dto.UserDto;\nimport com.example.model.*;\npublic class Foo {}';
+        const result = TextProcessor.buildPotentialFQNs(text, 'UserDto');
+        assert.strictEqual(result[0], 'com.example.dto.UserDto', 'Explicit import should be first');
+    });
 });

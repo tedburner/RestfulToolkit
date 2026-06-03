@@ -161,4 +161,11 @@ export class ScanStateManager {
     hasHistory(): boolean {
         return this.scanRecords.size > 0;
     }
+
+    static reset(): void {
+        if (ScanStateManager.instance) {
+            ScanStateManager.instance.clearAll();
+            ScanStateManager.instance = undefined as unknown as ScanStateManager;
+        }
+    }
 }

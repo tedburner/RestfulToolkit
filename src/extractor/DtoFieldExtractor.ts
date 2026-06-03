@@ -16,7 +16,12 @@ export const PRIMITIVE_TYPES = [
 export class DtoFieldExtractor {
     private readonly maxDepth = 3;
 
-    async findDtoFields(dtoTypeName: string, visited: Set<string> = new Set(), depth: number = 0): Promise<DtoField[]> {
+    async findDtoFields(
+        dtoTypeName: string,
+        visited: Set<string> = new Set(),
+        depth: number = 0,
+        parentFQNs?: string[]
+    ): Promise<DtoField[]> {
         if (depth >= this.maxDepth || visited.has(dtoTypeName)) { return []; }
 
         if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
@@ -35,32 +40,61 @@ export class DtoFieldExtractor {
         visited.add(dtoTypeName);
 
         try {
-            // 异步读取文件内容，避免阻塞 Extension Host
-            const content = await TextProcessor.readFileText(files[0]);
-            return await this.resolveNestedFields(content, visited, depth + 1);
+            let selectedFile = files[0];
+            if (files.length > 1 && parentFQNs && parentFQNs.length > 0) {
+                for (const fqn of parentFQNs) {
+                    const pathSuffix = fqn.replace(/\./g, '/');
+                    const found = files.find(file => {
+                        const normalized = file.fsPath.replace(/\\/g, '/');
+                        return normalized.endsWith(pathSuffix + '.java') || normalized.endsWith(pathSuffix + '.kt');
+                    });
+                    if (found) {
+                        selectedFile = found;
+                        break;
+                    }
+                }
+            }
+
+            const content = await TextProcessor.readFileText(selectedFile);
+            const sanitized = TextProcessor.sanitize(content, { preserveStrings: true });
+            return await this.resolveNestedFields(sanitized, visited, depth + 1);
         } catch {
             return [];
         }
     }
 
     parseDtoFields(content: string): DtoField[] {
-        return this.parseSync(content);
+        return this.parseFields(TextProcessor.sanitize(content, { preserveStrings: true }));
     }
 
     private async resolveNestedFields(content: string, visited: Set<string>, depth: number): Promise<DtoField[]> {
         if (depth >= this.maxDepth) {
-            return this.parseSync(content);
+            return this.parseFields(content);
         }
 
-        return await this.parseAsync(content, async (typeName: string) => {
-            return await this.findDtoFields(typeName, visited, depth);
-        });
+        const resolveNested = async (typeName: string) => {
+            const potentialFQNs = TextProcessor.buildPotentialFQNs(content, typeName);
+            return await this.findDtoFields(typeName, visited, depth, potentialFQNs);
+        };
+
+        // 先同步解析字段，再异步解析嵌套 DTO
+        const fields = this.parseFields(content);
+        for (const field of fields) {
+            if (!this.isPrimitiveType(field.type)) {
+                const nested = await this.resolveNestedDtoFields(field.type, resolveNested);
+                if (nested && nested.length > 0) {
+                    field.nested = nested;
+                }
+            }
+        }
+        return fields;
     }
 
     /**
-     * 同步解析：仅单层字段，无嵌套。
+     * 统一字段解析：解析 DTO 类的字段列表（同步）。
+     * 嵌套 DTO 解析由调用方（resolveNestedFields）在返回后单独处理。
      */
-    private parseSync(content: string): DtoField[] {
+    private parseFields(content: string): DtoField[] {
         const fields: DtoField[] = [];
         const lines = content.split('\n');
 
@@ -139,105 +173,36 @@ export class DtoFieldExtractor {
         return fields;
     }
 
-    private async parseAsync(
-        content: string,
-        resolveNested: (typeName: string) => Promise<DtoField[] | null>
-    ): Promise<DtoField[]> {
-        const fields: DtoField[] = [];
-        const lines = content.split('\n');
-
-        let inClass = false;
-        let braceDepth = 0;
-        let pendingJsonName: string | null = null;
-        let classNamingStrategy: ((n: string) => string) | null = null;
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-
-            if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
-                continue;
-            }
-
-            if (!inClass) {
-                const jsonNamingMatch = trimmed.match(/@JsonNaming\s*\(\s*([\w.]+)\s*\)/);
-                if (jsonNamingMatch) {
-                    classNamingStrategy = this.resolveNamingStrategy(jsonNamingMatch[1]);
-                }
-            }
-
-            if (!inClass && /\b(class|data class|object)\s+\w+/.test(trimmed)) {
-                inClass = true;
-                braceDepth = 0;
-            }
-
-            if (!inClass) { continue; }
-
-            for (const char of trimmed) {
-                if (char === '{') { braceDepth++; }
-                else if (char === '}') { braceDepth--; }
-            }
-            if (braceDepth <= 0 && trimmed.includes('}')) {
-                inClass = false;
-                continue;
-            }
-
-            const jsonPropMatch = trimmed.match(/@JsonProperty\s*\(\s*["']([^"']+)["']\s*\)/);
-            const jsonFieldMatch = trimmed.match(/@JSONField\s*\(\s*name\s*=\s*["']([^"']+)["']\s*\)/);
-            if (jsonPropMatch) {
-                pendingJsonName = jsonPropMatch[1];
-                continue;
-            }
-            if (jsonFieldMatch) {
-                pendingJsonName = jsonFieldMatch[1];
-                continue;
-            }
-
-            const jsonAliasMatch = trimmed.match(/@JsonAlias\s*\(\s*["']([^"']+)["']\s*\)/)
-                || trimmed.match(/@JsonAlias\s*\(\s*\{\s*["']([^"']+)["']/);
-            if (jsonAliasMatch && !pendingJsonName) {
-                pendingJsonName = jsonAliasMatch[1];
-                continue;
-            }
-
-            const javaFieldMatch = trimmed.match(/(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)\s*[;=]/);
-            const kotlinFieldMatch = trimmed.match(/(?:val|var)\s+(\w+)\s*:\s*(\w+(?:<[^>]+>)?)/);
-
-            if (javaFieldMatch || kotlinFieldMatch) {
-                const type = javaFieldMatch ? javaFieldMatch[1] : kotlinFieldMatch![2];
-                const name = javaFieldMatch ? javaFieldMatch[2] : kotlinFieldMatch![1];
-                const field: DtoField = {
-                    name: pendingJsonName || (classNamingStrategy ? classNamingStrategy(name) : name),
-                    type,
-                    originalName: name
-                };
-                if (!this.isPrimitiveType(type)) {
-                    const nested = await this.resolveNestedDtoFields(type, resolveNested);
-                    if (nested && nested.length > 0) {
-                        field.nested = nested;
-                    }
-                }
-                fields.push(field);
-                pendingJsonName = null;
-            } else {
-                if (!trimmed.startsWith('@') && !trimmed.startsWith('import ') && !trimmed.startsWith('package ')) {
-                    pendingJsonName = null;
-                }
-            }
-        }
-
-        return fields;
-    }
-
     private isPrimitiveType(type: string): boolean {
         if (PRIMITIVE_TYPES.includes(type)) { return true; }
-        const genericBase = type.replace(/<[^>]+>/, '');
+        const angleIndex = type.indexOf('<');
+        const genericBase = angleIndex !== -1 ? type.substring(0, angleIndex).trim() : type;
         return PRIMITIVE_TYPES.includes(genericBase);
     }
 
-    private extractGenericTypes(type: string): string[] {
-        const match = type.match(/<(.+)>/);
-        if (!match) { return []; }
-        return match[1].split(',').map(s => s.trim()).filter(Boolean);
+    private extractGenericTypes(typeStr: string): string[] {
+        const start = typeStr.indexOf('<');
+        const end = typeStr.lastIndexOf('>');
+        if (start === -1 || end === -1 || end <= start) { return []; }
+
+        const inner = typeStr.substring(start + 1, end).trim();
+        const result: string[] = [];
+        let current = '';
+        let depth = 0;
+        for (const char of inner) {
+            if (char === '<') { depth++; }
+            else if (char === '>') { depth--; }
+            else if (char === ',' && depth === 0) {
+                result.push(current.trim());
+                current = '';
+                continue;
+            }
+            current += char;
+        }
+        if (current.trim()) {
+            result.push(current.trim());
+        }
+        return result;
     }
 
     private async resolveNestedDtoFields(

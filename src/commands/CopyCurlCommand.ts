@@ -33,7 +33,7 @@ export class CopyCurlCommand {
                 return;
             }
 
-            const baseUrl = ConfigManager.getInstance().getBaseUrl();
+            const baseUrl = await ConfigManager.getInstance().getBaseUrlAsync(document.uri);
             const curl = this.converter.generate(copyInfo, baseUrl);
 
             await vscode.env.clipboard.writeText(curl);

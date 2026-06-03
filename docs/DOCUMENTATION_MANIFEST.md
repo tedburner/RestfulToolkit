@@ -2,7 +2,17 @@
 
 ## 整理完成 ✅
 
-**整理日期**: 2026-04-20 | **更新日期**: 2026-04-29（v0.0.4 Copy URL/cURL 功能）
+**整理日期**: 2026-04-20 | **更新日期**: 2026-06-02（P0/P1 与中低优先级小修）
+
+**v0.0.6 新增**:
+- `docs/CODE_AUDIT_2026-06-01.md` — 全面代码审查报告，覆盖解析器、缓存/搜索、参数提取、扫描器/配置/工具层，含 6 个严重、5 个高级、12 个中级、16 个低级问题
+- P0/P1 修复：恢复 TypeScript 编译，修复 Spring/JAX-RS 路径解析、搜索正则崩溃、JSON-to-DTO 覆盖确认与 `@JsonProperty` key 转义、项目配置安全校验、缓存计数漂移与扫描竞态
+- 中低优先级小修：搜索输入防抖与实时清空、配置变化重建 watcher、Base URL YAML 层级约束、`maxResults` 约束、搜索 filters 应用、全限定 REST 注解识别、`@RequestMapping` 多 HTTP 方法解析
+- `src/commands/JsonToClassCommand.ts` — JSON 转 DTO 命令（资源管理器文件夹右键）
+- `src/generator/JsonClassGenerator.ts` / `src/generator/JsonTypeMapper.ts` — Java/Kotlin DTO 代码生成与类型映射
+- `src/test/generator/JsonClassGenerator.test.ts` / `src/test/generator/JsonTypeMapper.test.ts` — JSON 转 DTO 单元测试
+- `src/test/scripts/test-json-to-class.js` — JSON 转 DTO 批量验证脚本（86 测试）
+- `src/test/scripts/mock-vscode.js` — Node 自动化脚本使用的最小 VS Code API mock
 
 **v0.0.4 新增**:
 - `src/extractor/UrlGenerator.ts` — 完整 URL 生成
@@ -42,23 +52,26 @@ restful-toolkit/
 │   ├── tsconfig.json        # TypeScript配置
 │   └── webpack.config.js    # Webpack配置
 │
-├── src/ (源代码14个模块)
+├── src/ (源代码16个模块)
 │   ├── extension.ts         # 扩展入口
 │   ├── cache/               # 缓存管理（2模块）
-│   ├── commands/            # 命令（3模块：CopyEndpointParameters, CopyUrl, CopyCurl）
+│   ├── commands/            # 命令（4模块：CopyEndpointParameters, CopyUrl, CopyCurl, JsonToClass）
 │   ├── config/              # 配置管理（2模块）
 │   ├── extractor/           # 参数提取（8模块：FormatConverter, ParameterExtractor, SpringParameterParser, JaxRsParameterParser, DtoFieldExtractor, i18n, UrlGenerator, CurlConverter）
+│   ├── generator/           # JSON 转 DTO 代码生成（2模块：JsonClassGenerator, JsonTypeMapper）
 │   ├── models/              # 数据模型（1模块）
 │   ├── parsers/             # 注解解析（3模块）
 │   ├── scanner/             # 文件扫描（1模块）
 │   ├── ui/                  # 用户界面（1模块）
 │   ├── utils/               # 工具类（3模块：FileWatcher, Logger, BaseUrlResolver）
-│   └── test/                # 单元测试（含 UrlGenerator, CurlConverter, BaseUrlResolver 测试）
+│   └── test/                # 单元测试（含 UrlGenerator, CurlConverter, BaseUrlResolver, JSON-to-DTO 测试）
 │
-├── docs/ (文档6个)
+├── docs/ (文档8个)
 │   ├── CONFIG_SYSTEM.md     # 配置系统文档
 │   ├── DOCUMENTATION_MANIFEST.md # 本清单
 │   ├── INCREMENTAL_SCAN.md  # 增量扫描文档
+│   ├── OPTIMIZATION_PLAN.md # 核心代码优化方案（已完成）
+│   ├── CODE_AUDIT_2026-06-01.md # 代码审查报告（待修复）
 │   ├── TESTING_GUIDE.md     # 测试指南
 │   └── screenshot.png       # 扩展截图演示
 │
@@ -77,9 +90,11 @@ restful-toolkit/
 │           └── dto/         # UserDto, OrderDto, AddressDto, SnakeCaseDto, AliasDto, LoginForm
 │
 ├── src/test/scripts/ (自动化测试脚本)
-│   ├── test-all-files.js         # 端点验证脚本（49端点）
+│   ├── mock-vscode.js            # Node 脚本最小 VS Code API mock
+│   ├── test-all-files.js         # 端点验证脚本（41端点）
 │   ├── test-parameter-copy.js    # 参数复制批量测试（75测试）
-│   └── test-copy-url-curl.js     # URL/cURL 自动化测试（108测试）
+│   ├── test-copy-url-curl.js     # URL/cURL 自动化测试（108测试）
+│   └── test-json-to-class.js     # JSON 转 DTO 自动化测试（86测试）
 │
 ├── openspec/ (OpenSpec规范 - 保持不变)
 │   └── changes/restful-toolkit/
@@ -93,7 +108,7 @@ restful-toolkit/
 
 ## 二、测试脚本结构
 
-### 单元测试（Mocha框架）- 9个文件 ✅
+### 单元测试（Mocha框架）- 13个文件 ✅
 
 **位置**: `src/test/` 目录
 
@@ -110,18 +125,23 @@ restful-toolkit/
 | extractor/SpringParameterParser.test.ts | Spring 参数解析测试 |
 | extractor/JaxRsParameterParser.test.ts | JAX-RS 参数解析测试 |
 | utils/BaseUrlResolver.test.ts | Base URL 自动检测测试（5 用例） |
+| generator/JsonClassGenerator.test.ts | JSON 转 Java/Kotlin DTO 生成测试 |
+| generator/JsonTypeMapper.test.ts | JSON 值到 Java/Kotlin 类型映射测试 |
+| utils/TextProcessor.test.ts | 文本净化与行号索引测试 |
 
 **运行**: `npm test`
 
-### 自动化验证 - 3个脚本 ✅
+### 自动化验证 - 4个脚本 + 1个 mock ✅
 
 **位置**: `src/test/scripts/`
 
 | 脚本 | 说明 | 运行 |
 |------|------|------|
-| test-all-files.js | 49个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
+| test-all-files.js | 41个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
 | test-parameter-copy.js | 75个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node src/test/scripts/test-parameter-copy.js` |
 | test-copy-url-curl.js | 108个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
+| test-json-to-class.js | 86个测试（命名转换、类型推断、Java/Kotlin 生成、边界情况） | `node src/test/scripts/test-json-to-class.js` |
+| mock-vscode.js | 为 Node 自动化脚本提供最小 VS Code API mock | 由脚本自动加载 |
 
 ---
 
@@ -143,6 +163,8 @@ restful-toolkit/
 | TESTING_GUIDE.md | VS Code测试指南 |
 | CONFIG_SYSTEM.md | 配置系统文档 |
 | INCREMENTAL_SCAN.md | 增量扫描文档 |
+| OPTIMIZATION_PLAN.md | 核心代码优化方案（2026-04-19，已完成） |
+| CODE_AUDIT_2026-06-01.md | 代码审查报告（2026-06-01，P0/P1 已在 2026-06-02 优先修复） |
 | DOCUMENTATION_MANIFEST.md | 本清单文档 |
 | screenshot.png | 扩展截图演示 |
 | superpowers/plans/2026-04-27-endpoint-parameter-copy.md | 参数复制功能实现计划 |
@@ -155,8 +177,8 @@ restful-toolkit/
 | README.md | 测试项目说明 |
 | TEST-COVERAGE-CHECKLIST.md | 测试覆盖清单 |
 
-**测试 Controller**（3个）：TestController（Spring 26端点）、TestResource（JAX-RS 10端点）、FormController（@ModelAttribute）
-**测试 DTO**（6个）：UserDto, OrderDto, AddressDto, SnakeCaseDto, AliasDto, LoginForm
+**测试 Controller**（3个）：TestController（Spring 25端点）、TestResource（JAX-RS 11端点）、FormController（@ModelAttribute）
+**测试 DTO**（7个）：UserDto, OrderDto, AddressDto, SnakeCaseDto, AliasDto, LoginForm, NameLombokDTO
 
 ### openspec目录 (14个) - 保持不变 ✅
 
@@ -202,24 +224,26 @@ restful-toolkit/
 
 ## 五、统计
 
-### v0.0.4 当前状态
+### v0.0.6 当前状态
 
 | 类别 | 数量 |
 |------|------|
 | 根目录文档 | 6个（README, README_CN, CHANGELOG, CLAUDE, LICENSE, RELEASE_v0.0.2） |
 | 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
-| docs 文档 | 5个（CONFIG_SYSTEM, DOCUMENTATION_MANIFEST, INCREMENTAL_SCAN, TESTING_GUIDE, screenshot.png） |
-| 源代码模块 | 19个（含 extractor/ 8、commands/ 3、utils/ 3） |
-| 单元测试 | 11+ Mocha 测试（含 BaseUrlResolver 18 用例） |
-| 自动化脚本 | 3个（49端点验证 + 75参数复制 + 108 URL/cURL） |
-| 测试 Controller | 3个（Spring 26 + JAX-RS 9 + Form） |
-| 测试 DTO | 6个 |
+| docs 文档 | 7个（CONFIG_SYSTEM, DOCUMENTATION_MANIFEST, INCREMENTAL_SCAN, OPTIMIZATION_PLAN, CODE_AUDIT_2026-06-01, TESTING_GUIDE, screenshot.png） |
+| 源代码模块 | 22个（含 extractor/ 8、commands/ 4、generator/ 2、utils/ 3） |
+| 单元测试 | 13+ Mocha 测试（含 BaseUrlResolver、TextProcessor、JSON-to-DTO） |
+| 自动化脚本 | 4个（41端点验证 + 75参数复制 + 108 URL/cURL + 86 JSON-to-DTO） |
+| 测试 Controller | 3个（Spring 25 + JAX-RS 11 + Form） |
+| 测试 DTO | 7个 |
 
 ### 历史整理记录
 
 - **v0.0.2 整理**（2026-04-20）：删除8个冗余文档，清理3个冗余脚本，删除4项冗余目录
 - **v0.0.3 更新**（2026-04-27）：新增国际化、参数复制功能、批量测试脚本、规范文档
 - **v0.0.4 更新**（2026-04-29）：新增 Copy URL/cURL、Base URL 检测、请求头解析
+- **v0.0.5 更新**（2026-05-19）：新增并发扫描、TextProcessor、JSON 转 DTO Lombok 选项、异步 I/O 与搜索排序优化
+- **v0.0.6 更新**（2026-06-02）：优先修复代码审查 P0/P1 与中低优先级小问题，恢复编译与本地验证脚本稳定性
 
 ---
 

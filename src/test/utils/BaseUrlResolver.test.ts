@@ -31,6 +31,14 @@ suite('BaseUrlResolver Test Suite', () => {
         assert.strictEqual(result!.port, '9090');
     });
 
+    test('Should resolve Base URL asynchronously through VS Code filesystem', async () => {
+        writeResourceFile('application.yml', 'server:\n  port: 9191\n  servlet:\n    context-path: /async\n');
+        const result = await resolver.resolveAsync(tempDir);
+        assert.ok(result !== null);
+        assert.strictEqual(result!.port, '9191');
+        assert.strictEqual(result!.contextPath, '/async');
+    });
+
     test('Should parse context-path from application.properties', () => {
         writeResourceFile('application.properties', 'server.port=8080\nserver.servlet.context-path=/api/v1\n');
         const result = resolver.resolve(tempDir);
@@ -156,6 +164,12 @@ suite('BaseUrlResolver Test Suite', () => {
         assert.ok(result !== null);
         assert.strictEqual(result!.port, '8080');
         assert.strictEqual(result!.contextPath, '/api');
+    });
+
+    test('Should not read management context-path as server context-path', () => {
+        writeResourceFile('application.yml', 'management:\n  endpoint:\n    context-path: /internal\n');
+        const result = resolver.resolve(tempDir);
+        assert.strictEqual(result, null);
     });
 
     test('Should support multiple modules (multiple resources dirs)', () => {

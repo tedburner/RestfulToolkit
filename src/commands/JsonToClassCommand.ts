@@ -44,8 +44,10 @@ export class JsonToClassCommand {
 
         try {
             const code = this.generator.generate(json, className, packageName, language, useLombok);
-            await this.writeToFile(code, className, packageName, language, targetFolderUri);
-            vscode.window.showInformationMessage(getLabels().jsonToClassSuccess);
+            const didWrite = await this.writeToFile(code, className, packageName, language, targetFolderUri);
+            if (didWrite) {
+                vscode.window.showInformationMessage(getLabels().jsonToClassSuccess);
+            }
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to generate DTO class: ${message}`);
@@ -92,17 +94,38 @@ export class JsonToClassCommand {
     }
 
     // Write file directly to target folder (no save dialog)
-    private async writeToFile(code: string, className: string, _packageName: string, language: TargetLanguage, folderUri: vscode.Uri): Promise<void> {
+    private async writeToFile(code: string, className: string, _packageName: string, language: TargetLanguage, folderUri: vscode.Uri): Promise<boolean> {
         const extension = language === 'java' ? 'java' : 'kt';
         const fileName = `${className}.${extension}`;
         const fileUri = vscode.Uri.joinPath(folderUri, fileName);
 
         console.log(`[JsonToClass] writing to: ${fileUri.fsPath}`);
 
+        if (await this.fileExists(fileUri)) {
+            const choice = await vscode.window.showWarningMessage(
+                `${fileName} already exists. Overwrite it?`,
+                { modal: true },
+                'Overwrite'
+            );
+            if (choice !== 'Overwrite') {
+                return false;
+            }
+        }
+
         await vscode.workspace.fs.writeFile(fileUri, new TextEncoder().encode(code));
 
         const doc = await vscode.workspace.openTextDocument(fileUri);
         await vscode.window.showTextDocument(doc);
+        return true;
+    }
+
+    private async fileExists(uri: vscode.Uri): Promise<boolean> {
+        try {
+            await vscode.workspace.fs.stat(uri);
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     private async getJsonInput(): Promise<string | undefined> {
@@ -129,8 +152,8 @@ export class JsonToClassCommand {
         const labels = getLabels();
         const choice = await vscode.window.showQuickPick(
             [
-                { label: '✓ 使用', description: '使用 Lombok @Data 注解', value: true },
-                { label: '✗ 不使用', description: '自动生成 getter/setter 方法', value: false }
+                { label: labels.lombokUse, description: labels.lombokUseDesc, value: true },
+                { label: labels.lombokSkip, description: labels.lombokSkipDesc, value: false }
             ],
             { placeHolder: labels.jsonToClassLombok }
         );

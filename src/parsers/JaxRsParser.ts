@@ -10,7 +10,7 @@ export class JaxRsParser {
     }
 
     parseClassLevelPath(content: string): string | null {
-        const pattern = /@Path\s*\(\s*"([^"]+)"\s*\)/;
+        const pattern = /@(?:[\w.]+\.)?Path\s*\(\s*"([^"]+)"\s*\)/;
         const match = content.match(pattern);
 
         if (match) {
@@ -37,7 +37,7 @@ export class JaxRsParser {
         const methodSignaturePattern = /(?:public|private|protected)?\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:\w+(?:<[^>]+>)?\s+)+(\w+)\s*\(/g;
         let methodMatch;
 
-        while ((methodMatch = methodSignaturePattern.exec(content)) !== null) {
+        while ((methodMatch = methodSignaturePattern.exec(sanitizedContent)) !== null) {
             const methodName = methodMatch[1];
             const signatureStartIndex = methodMatch.index;
 
@@ -110,11 +110,11 @@ export class JaxRsParser {
         const endpoints: RestEndpoint[] = [];
 
         const httpMethods: { pattern: RegExp; method: HttpMethod }[] = [
-            { pattern: /@GET/, method: 'GET' },
-            { pattern: /@POST/, method: 'POST' },
-            { pattern: /@PUT/, method: 'PUT' },
-            { pattern: /@DELETE/, method: 'DELETE' },
-            { pattern: /@PATCH/, method: 'PATCH' }
+            { pattern: /@(?:[\w.]+\.)?GET\b/, method: 'GET' },
+            { pattern: /@(?:[\w.]+\.)?POST\b/, method: 'POST' },
+            { pattern: /@(?:[\w.]+\.)?PUT\b/, method: 'PUT' },
+            { pattern: /@(?:[\w.]+\.)?DELETE\b/, method: 'DELETE' },
+            { pattern: /@(?:[\w.]+\.)?PATCH\b/, method: 'PATCH' }
         ];
 
         for (const httpMethod of httpMethods) {
@@ -212,7 +212,7 @@ export class JaxRsParser {
      * 提取方法级别的 @Path（取最后一个，避免匹配类级 @Path）
      */
     private extractMethodPath(annotationBlock: string): string {
-        const pattern = /@Path\s*\(\s*"([^"]+)"\s*\)/g;
+        const pattern = /@(?:[\w.]+\.)?Path\s*\(\s*"([^"]+)"\s*\)/g;
         let match: RegExpExecArray | null;
         let lastPath = '';
         while ((match = pattern.exec(annotationBlock)) !== null) {

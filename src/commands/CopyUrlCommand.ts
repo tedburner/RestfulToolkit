@@ -33,7 +33,7 @@ export class CopyUrlCommand {
                 return;
             }
 
-            const baseUrl = ConfigManager.getInstance().getBaseUrl();
+            const baseUrl = await ConfigManager.getInstance().getBaseUrlAsync(document.uri);
             const url = this.generator.generate(copyInfo, baseUrl);
 
             await vscode.env.clipboard.writeText(url);

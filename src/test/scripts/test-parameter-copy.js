@@ -13,6 +13,7 @@
 
 const fs = require('fs');
 const path = require('path');
+require('./mock-vscode');
 
 const scriptDir = __dirname;
 const projectRoot = path.resolve(scriptDir, '../../..');
@@ -196,9 +197,7 @@ const dtoExtractor = new DtoFieldExtractor();
     const addrDto = fs.readFileSync('./test-project/src/main/java/com/example/dto/AddressDto.java', 'utf-8');
     const addrFields = dtoExtractor.parseDtoFields(addrDto);
     assert(addrFields.length === 3, 'AddressDto 字段数', `期望 3 个，实际 ${addrFields.length}`);
-    assert(addrFields.find(f => f.name === 'street'), 'AddressDto street 字段', '未找到 street 字段');
-    assert(addrFields.find(f => f.name === 'city'), 'AddressDto city 字段', '未找到 city 字段');
-    assert(addrFields.find(f => f.name === 'zipCode'), 'AddressDto zipCode 字段', '未找到 zipCode 字段');
+    assert(addrFields.every(f => ['street', 'city', 'zipCode'].includes(f.name)), 'AddressDto 字段名称', `实际: ${addrFields.map(f => f.name).join(', ')}`);
 }
 
 {
@@ -223,6 +222,21 @@ const dtoExtractor = new DtoFieldExtractor();
     assert(fullName && fullName.name === 'full_name', 'AliasDto @JsonProperty 优先于 @JsonAlias', `期望 "full_name"，实际 "${fullName?.name}"`);
     const age = fields.find(f => f.originalName === 'age');
     assert(age && age.name === 'age', 'AliasDto 无注解用原始名', `期望 "age"，实际 "${age?.name}"`);
+}
+
+{
+    // CommentComplexDto — 注释中包含大括号、字符串和伪方法签名，不应影响字段解析
+    const content = fs.readFileSync('./test-project/src/main/java/com/example/dto/CommentComplexDto.java', 'utf-8');
+    const fields = dtoExtractor.parseDtoFields(content);
+    assert(fields.length === 5, 'CommentComplexDto 字段数（注释中的伪字段不应被解析）', `期望 5 个，实际 ${fields.length}`);
+    const userName = fields.find(f => f.originalName === 'userName');
+    assert(userName && userName.name === 'user_name', 'CommentComplexDto @JsonProperty "user_name" 保留', `期望 "user_name"，实际 "${userName?.name}"`);
+    const email = fields.find(f => f.originalName === 'emailAddress');
+    assert(email && email.name === 'email_addr', 'CommentComplexDto @JsonAlias "email_addr" 保留', `期望 "email_addr"，实际 "${email?.name}"`);
+    const isActive = fields.find(f => f.originalName === 'isActive');
+    assert(isActive && isActive.name === 'is_active', 'CommentComplexDto @JsonProperty "is_active" 保留', `期望 "is_active"，实际 "${isActive?.name}"`);
+    const phone = fields.find(f => f.originalName === 'phone');
+    assert(phone && phone.name === 'phone', 'CommentComplexDto 无注解字段用原始名', `期望 "phone"，实际 "${phone?.name}"`);
 }
 
 // ===== 4. FormatConverter 测试 =====

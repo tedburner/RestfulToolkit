@@ -65,7 +65,7 @@ export class Logger {
         this.outputChannel.dispose();
     }
 
-    static resetForTest(): void {
+    static reset(): void {
         if (Logger.instance) {
             Logger.instance.outputChannel.dispose();
             Logger.instance = undefined as unknown as Logger;

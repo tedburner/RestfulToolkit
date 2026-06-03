@@ -39,12 +39,15 @@ export class JaxRsParameterParser {
     private splitParameters(paramSection: string): string[] {
         const params: string[] = [];
         let depth = 0;
+        let parenDepth = 0;
         let current = '';
 
         for (const char of paramSection) {
             if (char === '<') { depth++; }
             else if (char === '>') { depth--; }
-            else if (char === ',' && depth === 0) {
+            else if (char === '(') { parenDepth++; }
+            else if (char === ')') { parenDepth--; }
+            else if (char === ',' && depth === 0 && parenDepth === 0) {
                 params.push(current.trim());
                 current = '';
                 continue;

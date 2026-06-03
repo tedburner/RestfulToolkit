@@ -7,21 +7,28 @@ export class CurlConverter {
     generate(copyInfo: EndpointCopyInfo, baseUrl: string): string {
         const { httpMethod } = copyInfo;
         const url = this.buildUrl(copyInfo, baseUrl);
-        const parts: string[] = [`curl -X ${httpMethod} '${url}'`];
+        const parts: string[] = [`curl -X ${httpMethod} '${this.escapeShellSingleQuote(url)}'`];
 
         // Headers
         const headers = this.buildHeaders(copyInfo);
         for (const header of headers) {
-            parts.push(`  -H '${header}'`);
+            parts.push(`  -H '${this.escapeShellSingleQuote(header)}'`);
         }
 
         // Body
         const body = this.buildBody(copyInfo);
         if (body) {
-            parts.push(`  -d '${body}'`);
+            parts.push(`  -d '${this.escapeShellSingleQuote(body)}'`);
         }
 
         return parts.join(' \\\n');
+    }
+
+    /**
+     * 对单引号值进行 Shell 转义，防止命令注入
+     */
+    private escapeShellSingleQuote(value: string): string {
+        return value.replace(/'/g, "'\\''");
     }
 
     /**
@@ -48,22 +55,27 @@ export class CurlConverter {
      */
     private buildHeaders(copyInfo: EndpointCopyInfo): string[] {
         const headers: string[] = [];
+        const headerParams = copyInfo.parameters.filter(p => p.source === 'header');
 
-        // 根据内容类型添加 Content-Type
-        switch (copyInfo.contentType) {
-            case 'json':
-                headers.push('Content-Type: application/json');
-                break;
-            case 'form-data':
-                headers.push('Content-Type: multipart/form-data');
-                break;
-            case 'x-www-form-urlencoded':
-                headers.push('Content-Type: application/x-www-form-urlencoded');
-                break;
+        // 检查请求参数中是否已指定 Content-Type 头
+        const hasContentType = headerParams.some(p => p.name.toLowerCase() === 'content-type');
+
+        // 根据内容类型添加默认 Content-Type
+        if (!hasContentType) {
+            switch (copyInfo.contentType) {
+                case 'json':
+                    headers.push('Content-Type: application/json');
+                    break;
+                case 'form-data':
+                    headers.push('Content-Type: multipart/form-data');
+                    break;
+                case 'x-www-form-urlencoded':
+                    headers.push('Content-Type: application/x-www-form-urlencoded');
+                    break;
+            }
         }
 
         // 请求头参数
-        const headerParams = copyInfo.parameters.filter(p => p.source === 'header');
         for (const param of headerParams) {
             const value = param.defaultValue || '';
             headers.push(`${param.name}: ${value}`);
@@ -86,11 +98,11 @@ export class CurlConverter {
         }
 
         if (contentType === 'form-data') {
-            return this.buildFormDataBody(parameters);
+            return this.buildFormBody(parameters);
         }
 
         if (contentType === 'x-www-form-urlencoded') {
-            return this.buildFormUrlencodedBody(parameters);
+            return this.buildFormBody(parameters);
         }
 
         return null;
@@ -108,8 +120,8 @@ export class CurlConverter {
             }
         }
 
-        // 降级：简单 JSON
-        const entries = bodyParams.map(p => `"${p.name}": ""`);
+        // 降级：简单 JSON，使用 JSON.stringify 保证 key/value 安全转义
+        const entries = bodyParams.map(p => `${JSON.stringify(p.name)}: ""`);
         return `{${entries.join(', ')}}`;
     }
 
@@ -121,29 +133,21 @@ export class CurlConverter {
     private buildFieldEntry(field: DtoField): string {
         if (field.nested && field.nested.length > 0) {
             const nestedJson = this.buildExpandedJson(field.nested);
-            return `"${field.name}": ${nestedJson}`;
+            return `${JSON.stringify(field.name)}: ${nestedJson}`;
         }
-        return `"${field.name}": ""`;
+        return `${JSON.stringify(field.name)}: ""`;
     }
 
-    private buildFormDataBody(parameters: EndpointCopyInfo['parameters']): string | null {
+    private buildFormBody(parameters: EndpointCopyInfo['parameters']): string | null {
         const fields = this.flattenFormFields(parameters);
         if (fields.length === 0) { return null; }
-        return fields.map(f => `${f}=`).join('&');
-    }
-
-    private buildFormUrlencodedBody(parameters: EndpointCopyInfo['parameters']): string | null {
-        const fields = this.flattenFormFields(parameters);
-        if (fields.length === 0) { return null; }
-        return fields.map(f => `${f}=`).join('&');
+        return fields.map(f => `${encodeURIComponent(f)}=`).join('&');
     }
 
     private flattenFormFields(parameters: EndpointCopyInfo['parameters']): string[] {
         const fields: string[] = [];
         for (const param of parameters) {
             if (param.source === 'form') {
-                // Form 参数的 DTO 字段展开
-                // 注意：实际展开需要 copyInfo.dtoFields，这里简化处理
                 fields.push(param.name);
             } else if (param.source !== 'header' && param.source !== 'path') {
                 fields.push(param.name);
@@ -152,3 +156,4 @@ export class CurlConverter {
         return fields;
     }
 }
+

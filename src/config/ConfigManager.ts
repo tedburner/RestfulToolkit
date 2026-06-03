@@ -5,19 +5,11 @@ import { DEFAULT_CONFIG, CONFIG_KEYS, PROJECT_CONFIG_FILE, ScanConfig } from './
 import { Logger } from '../utils/Logger';
 import { BaseUrlResolver } from '../utils/BaseUrlResolver';
 
-/**
- * 配置管理器
- *
- * 统一管理所有配置来源：
- * - VS Code settings（workspace/user）
- * - 项目配置文件
- * - 默认配置
- */
 export class ConfigManager {
     private static instance: ConfigManager;
     private logger: Logger;
-    private projectConfig: ScanConfig | null = null;
-    private workspaceFolder: string | null = null;
+    private projectConfigs: Map<string, ScanConfig> = new Map();
+    private workspaceFolders: string[] = [];
 
     private constructor() {
         this.logger = Logger.getInstance();
@@ -30,63 +22,106 @@ export class ConfigManager {
         return ConfigManager.instance;
     }
 
-    /**
-     * 设置工作区文件夹
-     */
-    setWorkspaceFolder(folder: string): void {
-        this.workspaceFolder = folder;
-        this.loadProjectConfig();
+    async setWorkspaceFolder(folder: string): Promise<void> {
+        await this.setWorkspaceFolders([folder]);
+    }
+
+    async setWorkspaceFolders(folders: string[]): Promise<void> {
+        this.workspaceFolders = folders;
+        await this.loadProjectConfigs();
     }
 
     /**
-     * 加载项目配置文件（如果存在）
+     * 异步加载项目配置文件，避免阻塞 Extension Host
      */
-    private loadProjectConfig(): void {
-        if (!this.workspaceFolder) {
-            return;
-        }
+    private async loadProjectConfigs(): Promise<void> {
+        this.projectConfigs.clear();
 
-        const configPath = path.join(this.workspaceFolder, PROJECT_CONFIG_FILE);
-
-        if (fs.existsSync(configPath)) {
+        for (const folder of this.workspaceFolders) {
+            const configPath = path.join(folder, PROJECT_CONFIG_FILE);
             try {
-                const content = fs.readFileSync(configPath, 'utf-8');
-                this.projectConfig = JSON.parse(content);
-                this.logger.info(`Loaded project config from ${PROJECT_CONFIG_FILE}`);
-            } catch (error) {
-                const err = error as Error;
-                this.logger.warning(`Failed to load project config: ${err.message}`);
-                this.projectConfig = null;
+                const uri = vscode.Uri.file(configPath);
+                const content = await vscode.workspace.fs.readFile(uri);
+                const text = Buffer.from(content).toString('utf-8');
+                const config = this.validateProjectConfig(this.safeJsonParse(text));
+                if (config) {
+                    this.projectConfigs.set(folder, config);
+                }
+                this.logger.info(`Loaded project config from ${configPath}`);
+            } catch {
+                // 文件不存在或读取失败，跳过
             }
-        } else {
-            this.projectConfig = null;
         }
     }
 
-    /**
-     * 获取完整扫描配置（合并所有来源）
-     *
-     * 优先级：
-     * 1. VS Code workspace settings
-     * 2. 项目配置文件
-     * 3. 默认配置
-     */
+    private safeJsonParse(content: string): unknown {
+        return JSON.parse(content, (key, value) => {
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                return undefined;
+            }
+            return value;
+        });
+    }
+
+    private validateProjectConfig(config: unknown): ScanConfig | null {
+        if (typeof config !== 'object' || config === null) {
+            throw new Error('Project config must be an object');
+        }
+
+        const input = config as Record<string, unknown>;
+        const validated: Partial<ScanConfig> = {};
+
+        if (input.scanPaths !== undefined) {
+            if (!this.isStringArray(input.scanPaths)) {
+                throw new Error('scanPaths must be an array of strings');
+            }
+            validated.scanPaths = input.scanPaths;
+        }
+
+        if (input.excludePaths !== undefined) {
+            if (!this.isStringArray(input.excludePaths)) {
+                throw new Error('excludePaths must be an array of strings');
+            }
+            validated.excludePaths = input.excludePaths;
+        }
+
+        if (input.maxResults !== undefined) {
+            if (typeof input.maxResults !== 'number' || !Number.isFinite(input.maxResults) || input.maxResults <= 0) {
+                throw new Error('maxResults must be a positive number');
+            }
+            validated.maxResults = this.clampMaxResults(input.maxResults);
+        }
+
+        if (input.baseUrl !== undefined) {
+            if (typeof input.baseUrl !== 'string') {
+                throw new Error('baseUrl must be a string');
+            }
+            validated.baseUrl = input.baseUrl;
+        }
+
+        return validated as ScanConfig;
+    }
+
+    private isStringArray(value: unknown): value is string[] {
+        return Array.isArray(value) && value.every(item => typeof item === 'string');
+    }
+
+    private clampMaxResults(value: number): number {
+        return Math.min(1000, Math.max(1, Math.floor(value)));
+    }
+
     getScanConfig(): ScanConfig {
         const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit');
+        const vsCodeScanPaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.scanPaths);
+        const vsCodeExcludePaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.excludePaths);
+        const vsCodeMaxResults = this.getExplicitVsCodeSetting<number>(vsCodeConfig, CONFIG_KEYS.maxResults);
+        const vsCodeBaseUrl = this.getExplicitVsCodeSetting<string>(vsCodeConfig, 'baseUrl');
 
-        // 获取 VS Code settings（如果有用户自定义）
-        // 注意：getConfiguration 已绑定前缀 'restfulToolkit'，此处用短键名
-        const vsCodeScanPaths = vsCodeConfig.get<string[]>(CONFIG_KEYS.scanPaths);
-        const vsCodeExcludePaths = vsCodeConfig.get<string[]>(CONFIG_KEYS.excludePaths);
-        const vsCodeMaxResults = vsCodeConfig.get<number>(CONFIG_KEYS.maxResults);
-        const vsCodeBaseUrl = vsCodeConfig.get<string>('baseUrl');
-
-        // 构建最终配置
         const config: ScanConfig = {
-            scanPaths: vsCodeScanPaths ?? this.projectConfig?.scanPaths ?? DEFAULT_CONFIG.scanPaths,
-            excludePaths: vsCodeExcludePaths ?? this.projectConfig?.excludePaths ?? DEFAULT_CONFIG.excludePaths,
-            maxResults: vsCodeMaxResults ?? this.projectConfig?.maxResults ?? DEFAULT_CONFIG.maxResults,
-            baseUrl: vsCodeBaseUrl ?? this.projectConfig?.baseUrl
+            scanPaths: vsCodeScanPaths ?? this.mergeProjectArrays('scanPaths') ?? DEFAULT_CONFIG.scanPaths,
+            excludePaths: vsCodeExcludePaths ?? this.mergeProjectArrays('excludePaths') ?? DEFAULT_CONFIG.excludePaths,
+            maxResults: this.clampMaxResults(vsCodeMaxResults ?? this.firstProjectValue('maxResults') ?? DEFAULT_CONFIG.maxResults),
+            baseUrl: vsCodeBaseUrl ?? this.firstProjectValue('baseUrl')
         };
 
         this.logger.info(`Effective scan config: scanPaths=${JSON.stringify(config.scanPaths)}`);
@@ -94,28 +129,60 @@ export class ConfigManager {
         return config;
     }
 
-    /**
-     * 获取默认配置（用于 package.json）
-     */
+    private getExplicitVsCodeSetting<T>(config: vscode.WorkspaceConfiguration, key: string): T | undefined {
+        const inspected = config.inspect<T>(key);
+        return inspected?.workspaceFolderValue
+            ?? inspected?.workspaceValue
+            ?? inspected?.globalValue;
+    }
+
+    private getProjectConfigs(): ScanConfig[] {
+        return Array.from(this.projectConfigs.values());
+    }
+
+    private mergeProjectArrays(key: 'scanPaths' | 'excludePaths'): string[] | undefined {
+        const merged: string[] = [];
+        const seen = new Set<string>();
+
+        for (const config of this.getProjectConfigs()) {
+            const values = config[key];
+            if (!values) {
+                continue;
+            }
+
+            for (const value of values) {
+                if (!seen.has(value)) {
+                    seen.add(value);
+                    merged.push(value);
+                }
+            }
+        }
+
+        return merged.length > 0 ? merged : undefined;
+    }
+
+    private firstProjectValue<K extends keyof ScanConfig>(key: K): ScanConfig[K] | undefined {
+        for (const config of this.getProjectConfigs()) {
+            const value = config[key];
+            if (value !== undefined) {
+                return value;
+            }
+        }
+        return undefined;
+    }
+
     static getDefaultConfig(): ScanConfig {
         return DEFAULT_CONFIG;
     }
 
-    /**
-     * 获取 Base URL，按优先级回退：
-     * 1. VS Code 设置
-     * 2. 项目配置文件
-     * 3. 自动检测 application.yml / application.properties
-     * 4. 默认 "http://localhost:8080"
-     */
     getBaseUrl(): string {
         const scanConfig = this.getScanConfig();
         if (scanConfig.baseUrl) { return scanConfig.baseUrl; }
 
-        // 自动检测
-        if (this.workspaceFolder) {
+        const workspaceFolder = this.workspaceFolders[0];
+        if (workspaceFolder) {
             const resolver = new BaseUrlResolver();
-            const autoDetected = resolver.resolve(this.workspaceFolder);
+            const autoDetected = resolver.resolve(workspaceFolder);
             if (autoDetected) {
                 const url = `http://${autoDetected.host}:${autoDetected.port}${autoDetected.contextPath}`;
                 this.logger.info(`Auto-detected base URL: ${url}`);
@@ -126,9 +193,32 @@ export class ConfigManager {
         return 'http://localhost:8080';
     }
 
-    /**
-     * 创建项目配置文件模板
-     */
+    async getBaseUrlAsync(resourceUri?: vscode.Uri): Promise<string> {
+        const scanConfig = this.getScanConfig();
+        if (scanConfig.baseUrl) { return scanConfig.baseUrl; }
+
+        const workspaceFolder = this.getWorkspaceFolderForResource(resourceUri) ?? this.workspaceFolders[0];
+        if (workspaceFolder) {
+            const resolver = new BaseUrlResolver();
+            const autoDetected = await resolver.resolveAsync(workspaceFolder);
+            if (autoDetected) {
+                const url = `http://${autoDetected.host}:${autoDetected.port}${autoDetected.contextPath}`;
+                this.logger.info(`Auto-detected base URL: ${url}`);
+                return url;
+            }
+        }
+
+        return 'http://localhost:8080';
+    }
+
+    private getWorkspaceFolderForResource(resourceUri?: vscode.Uri): string | undefined {
+        if (!resourceUri) {
+            return undefined;
+        }
+
+        return vscode.workspace.getWorkspaceFolder(resourceUri)?.uri.fsPath;
+    }
+
     createProjectConfigTemplate(workspaceFolder: string): void {
         const configPath = path.join(workspaceFolder, PROJECT_CONFIG_FILE);
 
@@ -141,7 +231,7 @@ export class ConfigManager {
             scanPaths: DEFAULT_CONFIG.scanPaths,
             excludePaths: DEFAULT_CONFIG.excludePaths,
             maxResults: DEFAULT_CONFIG.maxResults,
-            _comment: "RestfulToolkit project configuration. Override default scan settings here."
+            _comment: 'RestfulToolkit project configuration. Override default scan settings here.'
         };
 
         try {
@@ -154,5 +244,9 @@ export class ConfigManager {
             const err = error as Error;
             this.logger.error(`Failed to create config template: ${err.message}`);
         }
+    }
+
+    static reset(): void {
+        ConfigManager.instance = undefined as unknown as ConfigManager;
     }
 }

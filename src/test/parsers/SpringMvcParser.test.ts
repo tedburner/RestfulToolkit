@@ -141,6 +141,30 @@ suite('SpringMvcParser Test Suite', () => {
         assert.strictEqual(endpoints[0].path, '/create');
     });
 
+    test('Should parse class-level @RequestMapping when path is not first parameter', () => {
+        const content = `
+            @RestController
+            @RequestMapping(method = RequestMethod.GET, value = "/api/v1")
+            public class UserController {
+                @GetMapping("/users")
+                public List<User> getUsers() {}
+            }
+        `;
+        const classPath = parser.parseClassLevelPath(content);
+        assert.strictEqual(classPath, '/api/v1');
+    });
+
+    test('Should not treat produces value as method path', () => {
+        const content = `
+            public class UserController {
+                @GetMapping(produces = "application/json")
+                public User getUser() {}
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 0);
+    });
+
     test('Should handle path variables in paths', () => {
         const content = `
             public class UserController {
@@ -314,6 +338,69 @@ public class UserController {
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'GET');
         assert.strictEqual(endpoints[0].path, '/search');
+    });
+
+    test('Should parse fully qualified Spring mapping annotations', () => {
+        const content = `
+            @org.springframework.web.bind.annotation.RequestMapping("/api")
+            public class UserController {
+                @org.springframework.web.bind.annotation.GetMapping("/users")
+                public List<User> getUsers() {}
+            }
+        `;
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
+        assert.strictEqual(classPath, '/api');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/api/users');
+    });
+
+    test('Should skip class-level @RequestMapping on interface controllers', () => {
+        const content = `
+            @RequestMapping("/api")
+            public interface UserApi {
+                @GetMapping("/users")
+                List<User> getUsers();
+            }
+        `;
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserApi', classPath, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].method, 'GET');
+        assert.strictEqual(endpoints[0].path, '/api/users');
+        assert.strictEqual(endpoints[0].methodName, 'getUsers');
+    });
+
+    test('Should skip class-level @RequestMapping with long annotation gap before class', () => {
+        const longTag = 'x'.repeat(350);
+        const content = `
+            @RequestMapping("/api")
+            @Tag(name = "${longTag}")
+            public class UserController {
+                @GetMapping("/users")
+                public List<User> getUsers() {}
+            }
+        `;
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].method, 'GET');
+        assert.strictEqual(endpoints[0].path, '/api/users');
+    });
+
+    test('Should parse @RequestMapping method array and static imports', () => {
+        const content = `
+            public class UserController {
+                @RequestMapping(value = "/multi", method = {GET, POST})
+                public User multi() {}
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 2);
+        assert.strictEqual(endpoints[0].method, 'GET');
+        assert.strictEqual(endpoints[1].method, 'POST');
+        assert.strictEqual(endpoints[0].path, '/multi');
+        assert.strictEqual(endpoints[1].path, '/multi');
     });
 
     test('Should handle annotation without parentheses', () => {

@@ -101,15 +101,35 @@ suite('JsonClassGenerator Test Suite', () => {
     });
 
     suite('Snake case JSON keys', () => {
-        // eslint-disable-next-line @typescript-eslint/naming-convention
         test('Should convert snake_case key to camelCase field with @JsonProperty', () => {
-            const json = JSON.stringify({ user_name: 'test', first_name: 'John' });
+            const input: Record<string, string> = {};
+            input['user_name'] = 'test';
+            input['first_name'] = 'John';
+            const json = JSON.stringify(input);
             const result = generator.generate(json, 'UserDto', 'com.example', 'java');
 
             assert.ok(result.includes('@JsonProperty("user_name")'));
             assert.ok(result.includes('private String userName;'));
             assert.ok(result.includes('@JsonProperty("first_name")'));
             assert.ok(result.includes('private String firstName;'));
+        });
+    });
+
+    suite('Escaped JSON keys', () => {
+        test('Should escape JSON keys in Java JsonProperty annotations', () => {
+            const input: Record<string, string> = {};
+            input['bad"key\\slash'] = 'test';
+            const result = generator.generate(JSON.stringify(input), 'UserDto', 'com.example', 'java');
+
+            assert.ok(result.includes('@JsonProperty("bad\\"key\\\\slash")'));
+        });
+
+        test('Should escape JSON keys in Kotlin JsonProperty annotations', () => {
+            const input: Record<string, string> = {};
+            input['bad"key\\slash'] = 'test';
+            const result = generator.generate(JSON.stringify(input), 'UserDto', 'com.example', 'kotlin');
+
+            assert.ok(result.includes('@JsonProperty("bad\\"key\\\\slash")'));
         });
     });
 

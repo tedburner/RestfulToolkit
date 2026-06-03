@@ -13,7 +13,9 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+require('./mock-vscode');
 
 const scriptDir = __dirname;
 const projectRoot = path.resolve(scriptDir, '../../..');
@@ -336,21 +338,24 @@ console.log('\n--- 2. cURL 命令生成 ---');
 // ===== 3. BaseUrlResolver 测试 =====
 console.log('\n--- 3. Base URL 自动检测 ---');
 
-// 创建临时目录（模拟 Spring Boot 项目结构）
-const tmpDir = path.join(projectRoot, 'test-project', 'tmp-baseurl-test');
-const tmpResources = path.join(tmpDir, 'src', 'main', 'resources');
-if (!fs.existsSync(tmpResources)) { fs.mkdirSync(tmpResources, { recursive: true }); }
+const tmpDirs = [];
 
-function writeTmpConfig(filename, content) {
-    fs.writeFileSync(path.join(tmpResources, filename), content);
+function createTmpProject() {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'restful-toolkit-baseurl-'));
+    const tmpResources = path.join(tmpDir, 'src', 'main', 'resources');
+    fs.mkdirSync(tmpResources, { recursive: true });
+    tmpDirs.push(tmpDir);
+    return { tmpDir, tmpResources };
 }
-function removeTmpConfig(filename) {
-    fs.rmSync(path.join(tmpResources, filename), { force: true });
+
+function writeTmpConfig(tmpResources, filename, content) {
+    fs.writeFileSync(path.join(tmpResources, filename), content);
 }
 
 {
     // application.properties → port
-    writeTmpConfig('application.properties', 'server.port=9090\nspring.application.name=myapp\n');
+    const { tmpDir, tmpResources } = createTmpProject();
+    writeTmpConfig(tmpResources, 'application.properties', 'server.port=9090\nspring.application.name=myapp\n');
     const result = baseUrlResolver.resolve(tmpDir);
     assert(result !== null, 'properties 解析 port', '应返回非 null');
     if (result) {
@@ -360,7 +365,8 @@ function removeTmpConfig(filename) {
 
 {
     // application.properties → port + context-path
-    writeTmpConfig('application.properties', 'server.port=8080\nserver.servlet.context-path=/api/v1\n');
+    const { tmpDir, tmpResources } = createTmpProject();
+    writeTmpConfig(tmpResources, 'application.properties', 'server.port=8080\nserver.servlet.context-path=/api/v1\n');
     const result = baseUrlResolver.resolve(tmpDir);
     assert(result !== null, 'properties 解析 context-path', '应返回非 null');
     if (result) {
@@ -371,7 +377,8 @@ function removeTmpConfig(filename) {
 
 {
     // application.yml → port
-    writeTmpConfig('application.yml', 'server:\n  port: 9090\n');
+    const { tmpDir, tmpResources } = createTmpProject();
+    writeTmpConfig(tmpResources, 'application.yml', 'server:\n  port: 9090\n');
     const result = baseUrlResolver.resolve(tmpDir);
     assert(result !== null, 'yml 解析 port', '应返回非 null');
     if (result) {
@@ -381,7 +388,8 @@ function removeTmpConfig(filename) {
 
 {
     // application.yml → port + context-path
-    writeTmpConfig('application.yml', 'server:\n  port: 3000\n  servlet:\n    context-path: /api\n');
+    const { tmpDir, tmpResources } = createTmpProject();
+    writeTmpConfig(tmpResources, 'application.yml', 'server:\n  port: 3000\n  servlet:\n    context-path: /api\n');
     const result = baseUrlResolver.resolve(tmpDir);
     assert(result !== null, 'yml 解析 port + context-path', '应返回非 null');
     if (result) {
@@ -391,9 +399,9 @@ function removeTmpConfig(filename) {
 }
 
 {
-    // 占位符值 → 应跳过（先清理 yml 文件，避免干扰）
-    removeTmpConfig('application.yml');
-    writeTmpConfig('application.properties', 'server.port=${SERVER_PORT:8080}\n');
+    // 占位符值 → 应解析默认值
+    const { tmpDir, tmpResources } = createTmpProject();
+    writeTmpConfig(tmpResources, 'application.properties', 'server.port=${SERVER_PORT:8080}\n');
     const result = baseUrlResolver.resolve(tmpDir);
     // 占位符有默认值 8080，应解析出来
     assert(result !== null, '占位符默认值应解析', `期望非 null，实际: ${JSON.stringify(result)}`);
@@ -404,14 +412,19 @@ function removeTmpConfig(filename) {
 
 {
     // 无配置文件 → 返回 null
-    removeTmpConfig('application.properties');
-    removeTmpConfig('application.yml');
+    const { tmpDir } = createTmpProject();
     const result = baseUrlResolver.resolve(tmpDir);
     assert(result === null, '无配置文件返回 null', `期望 null，实际: ${JSON.stringify(result)}`);
 }
 
 // 清理临时目录
-fs.rmSync(tmpDir, { recursive: true, force: true });
+for (const tmpDir of tmpDirs) {
+    try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch (error) {
+        console.warn(`  ⚠️ 临时目录清理失败: ${tmpDir} (${error.message})`);
+    }
+}
 
 // ===== 4. 命名转换测试 =====
 console.log('\n--- 4. 命名转换 ---');
@@ -437,9 +450,6 @@ console.log('\n--- 5. 无参数端点提取验证 ---');
 
 {
     // 模拟 health 端点的注解和签名
-    const springParser = new SpringParameterParser();
-
-    // 模拟 health 方法：@GetMapping("/health") + public String health()
     const annotations = '@GetMapping("/health")';
     const signature = 'public String health()';
 
@@ -462,7 +472,6 @@ console.log('\n--- 5. 无参数端点提取验证 ---');
 
 {
     // 模拟 JAX-RS health 端点：@GET + @Path("/health")
-    const jaxRsParser = new JaxRsParameterParser();
     const annotations = '@GET\n@Path("/health")';
     const signature = 'public String health()';
 
@@ -475,29 +484,6 @@ console.log('\n--- 5. 无参数端点提取验证 ---');
     else if (/@DELETE\b/.test(annotations)) { httpMethod = 'DELETE'; }
 
     assert(httpMethod === 'GET', 'JAX-RS health HTTP 方法检测', `期望 GET，实际 ${httpMethod}`);
-}
-
-{
-    // 验证类级路径拼接逻辑
-    const classPath = '/api/test';
-    const methodPath = '/health';
-
-    // 模拟 concatenatePaths
-    const base = classPath.endsWith('/') ? classPath.slice(0, -1) : classPath;
-    const suffix = methodPath.startsWith('/') ? methodPath.slice(1) : methodPath;
-    const fullPath = `${base}/${suffix}`;
-
-    assert(fullPath === '/api/test/health', '类级路径 + 方法级路径拼接', `期望 "/api/test/health"，实际 "${fullPath}"`);
-}
-
-{
-    // 验证尾随斜杠端点
-    const classPath = '/api/test';
-    const methodPath = '/trailing/';
-    const base = classPath.endsWith('/') ? classPath.slice(0, -1) : classPath;
-    const suffix = methodPath.startsWith('/') ? methodPath.slice(1) : methodPath;
-    const fullPath = `${base}/${suffix}`;
-    assert(fullPath === '/api/test/trailing/', '尾随斜杠保留', `期望 "/api/test/trailing/"，实际 "${fullPath}"`);
 }
 
 // ===== 6. 完整 URL 生成集成测试（模拟真实场景） =====
@@ -788,6 +774,51 @@ function extractMethodSignature(content, methodName) {
     assertContains(curlResult, "-H 'Authorization: '", 'JAX-RS header cURL 包含 Authorization');
     assertContains(curlResult, "-H 'X-Correlation-Id: '", 'JAX-RS header cURL 包含 X-Correlation-Id');
     assert(!curlResult.includes('?'), 'JAX-RS header cURL 无查询参数', `不应包含 ?，实际: ${curlResult}`);
+}
+
+// ===== 10. 表单 Body 生成验证（合并后的 buildFormBody） =====
+console.log('\n--- 10. 表单 Body 生成 ---');
+
+{
+    // multipart/form-data cURL — file + query 参数混合
+    const info = {
+        httpMethod: 'POST',
+        contentType: 'form-data',
+        path: '/api/data-transfer/documents',
+        parameters: [
+            { name: 'file', type: 'MultipartFile', source: 'form', originalCaseName: 'file', isRequired: true },
+            { name: 'title', type: 'String', source: 'query', originalCaseName: 'title', isRequired: true },
+            { name: 'tags', type: 'String', source: 'query', originalCaseName: 'tags', isRequired: false }
+        ],
+        framework: 'Spring',
+        dtoFields: new Map()
+    };
+    const result = curlConv.generate(info, 'http://localhost:8080');
+    assertContains(result, 'Content-Type: multipart/form-data', 'form-data Content-Type');
+    assertContains(result, '-d', 'form-data 包含 Body');
+    assertContains(result, 'file=', 'form-data body 包含 file');
+    assertContains(result, 'title=', 'form-data body 包含 title');
+    assertContains(result, 'tags=', 'form-data body 包含 tags');
+}
+
+{
+    // x-www-form-urlencoded cURL — query 参数展开为 body
+    const info = {
+        httpMethod: 'POST',
+        contentType: 'x-www-form-urlencoded',
+        path: '/api/data-transfer/profile',
+        parameters: [
+            { name: 'displayName', type: 'String', source: 'query', originalCaseName: 'displayName', isRequired: true },
+            { name: 'bio', type: 'String', source: 'query', originalCaseName: 'bio', isRequired: true }
+        ],
+        framework: 'Spring',
+        dtoFields: new Map()
+    };
+    const result = curlConv.generate(info, 'http://localhost:8080');
+    assertContains(result, 'Content-Type: application/x-www-form-urlencoded', 'form-urlencoded Content-Type');
+    assertContains(result, '-d', 'form-urlencoded 包含 Body');
+    assertContains(result, 'displayName=', 'form-urlencoded body 包含 displayName');
+    assertContains(result, 'bio=', 'form-urlencoded body 包含 bio');
 }
 
 // ===== 汇总 =====

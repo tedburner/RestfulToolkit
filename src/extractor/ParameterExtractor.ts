@@ -4,6 +4,7 @@ import { SpringParameterParser } from './SpringParameterParser';
 import { JaxRsParameterParser } from './JaxRsParameterParser';
 import { DtoFieldExtractor, PRIMITIVE_TYPES } from './DtoFieldExtractor';
 import { Logger } from '../utils/Logger';
+import { TextProcessor } from '../utils/TextProcessor';
 
 export class ParameterExtractor {
     private springParser: SpringParameterParser;
@@ -40,7 +41,7 @@ export class ParameterExtractor {
         // 无参数时仍可提取端点信息（用于 Copy URL / cURL）
         if (parameters.length === 0) {
             // 解析 @RequestBody 参数的 DTO 字段
-            const dtoFields = await this.resolveDtoFields(parameters);
+            const dtoFields = await this.resolveDtoFields(parameters, text);
 
             const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework);
 
@@ -58,7 +59,7 @@ export class ParameterExtractor {
         const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework);
 
         // 解析 @RequestBody 参数的 DTO 字段
-        const dtoFields = await this.resolveDtoFields(parameters);
+        const dtoFields = await this.resolveDtoFields(parameters, text);
 
         return {
             httpMethod,
@@ -93,12 +94,14 @@ export class ParameterExtractor {
         fullPath: string;
     } | null {
         const lines = text.split('\n');
+        const sanitizedText = TextProcessor.sanitize(text);
+        const sanitizedLines = sanitizedText.split('\n');
 
-        // Step 1: 找方法声明行。策略 A 向前扫描，策略 B 向后扫描作为兜底。
+        // Step 1: 找方法声明行。在净化后的内容上做大括号深度计算与扫描。
         let declLine = -1;
         let braceDepth = 0;
         for (let i = cursorLine; i >= 0; i--) {
-            const line = lines[i].trim();
+            const line = sanitizedLines[i].trim();
             if (/\b(public|private|protected)\b/.test(line)) {
                 declLine = i;
                 break;
@@ -117,8 +120,8 @@ export class ParameterExtractor {
 
         // 策略 B: 向后扫描
         if (declLine === -1) {
-            for (let i = cursorLine; i < lines.length; i++) {
-                const line = lines[i].trim();
+            for (let i = cursorLine; i < sanitizedLines.length; i++) {
+                const line = sanitizedLines[i].trim();
                 if (/\b(public|private|protected)\b/.test(line)) {
                     declLine = i;
                     break;
@@ -134,26 +137,28 @@ export class ParameterExtractor {
         const annotationLines: string[] = [];
         for (let i = declLine - 1; i >= 0; i--) {
             const line = lines[i].trim();
-            if (line.startsWith('@')) {
+            const sanitizedLine = sanitizedLines[i].trim();
+            if (sanitizedLine.startsWith('@')) {
                 annotationLines.unshift(line);
-            } else if (line.length > 0) {
+            } else if (sanitizedLine.length > 0) {
                 break; // 非空非注解行，停止
             }
             // 空行跳过
         }
 
-        // Step 3: 从声明行向后收集完整方法签名（括号深度匹配）
+        // Step 3: 从声明行向后收集完整方法签名（使用净化内容进行括号深度匹配，防止字符串/注释干扰）
         let sigText = '';
         let parenDepth = 0;
         let foundOpenParen = false;
         for (let j = declLine; j < lines.length; j++) {
             sigText += (sigText ? '\n' : '') + lines[j];
-            for (const ch of lines[j]) {
+            const sanitizedLine = sanitizedLines[j];
+            for (const ch of sanitizedLine) {
                 if (ch === '(') { parenDepth++; foundOpenParen = true; }
                 else if (ch === ')') {
                     parenDepth--;
                     if (foundOpenParen && parenDepth === 0) {
-                        // 找到方法参数的闭合 ')'，截取到此位置
+                        // 找到方法参数的闭合 ')'，从 sigText（原签名文本）中截取到此位置
                         const matchEnd = sigText.lastIndexOf(')') + 1;
                         const sigUpToClose = sigText.substring(0, matchEnd);
                         const methodMatch = sigUpToClose.match(/((?:public|private|protected)[^{]*\)\s*)/s);
@@ -214,15 +219,7 @@ export class ParameterExtractor {
      * 从单行注解中提取路径
      */
     private extractClassPath(annotationLine: string): string | null {
-        const patterns = [
-            /@(?:Request|Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?"([^"]+)"/,
-            /@Path\s*\(\s*"([^"]+)"/,
-        ];
-        for (const pattern of patterns) {
-            const match = annotationLine.match(pattern);
-            if (match) { return match[1]; }
-        }
-        return null;
+        return this.extractPathFromAnnotationText(annotationLine);
     }
 
     /**
@@ -238,15 +235,22 @@ export class ParameterExtractor {
     }
 
     private extractPathFromAnnotations(annotations: string): string {
-        const patterns = [
-            /@(?:Request|Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?"([^"]+)"/,
-            /@Path\s*\(\s*"([^"]+)"/,
-        ];
-        for (const pattern of patterns) {
-            const match = annotations.match(pattern);
-            if (match) { return match[1]; }
-        }
-        return '';
+        return this.extractPathFromAnnotationText(annotations) || '';
+    }
+
+    private extractPathFromAnnotationText(annotationText: string): string | null {
+        const jaxRsPath = annotationText.match(/@(?:[\w.]+\.)?Path\s*\(\s*["']([^"']+)["']/);
+        if (jaxRsPath) { return jaxRsPath[1]; }
+
+        const mappingMatch = annotationText.match(/@(?:[\w.]+\.)?(?:Request|Get|Post|Put|Delete|Patch)Mapping\s*\(([\s\S]*)\)/);
+        if (!mappingMatch) { return null; }
+
+        const args = mappingMatch[1];
+        const explicitPath = args.match(/(?:^|,)\s*(?:value|path)\s*=\s*["']([^"']+)["']/);
+        if (explicitPath) { return explicitPath[1]; }
+
+        const directPath = args.match(/^\s*["']([^"']+)["']/);
+        return directPath ? directPath[1] : null;
     }
 
     private detectHttpAndContentType(annotations: string, framework: string): {
@@ -256,10 +260,7 @@ export class ParameterExtractor {
         let httpMethod = 'GET';
 
         if (framework === 'Spring') {
-            if (/@PostMapping|method\s*=\s*RequestMethod\.POST/.test(annotations)) { httpMethod = 'POST'; }
-            else if (/@PutMapping|method\s*=\s*RequestMethod\.PUT/.test(annotations)) { httpMethod = 'PUT'; }
-            else if (/@DeleteMapping|method\s*=\s*RequestMethod\.DELETE/.test(annotations)) { httpMethod = 'DELETE'; }
-            else if (/@PatchMapping|method\s*=\s*RequestMethod\.PATCH/.test(annotations)) { httpMethod = 'PATCH'; }
+            httpMethod = this.detectSpringHttpMethod(annotations);
         } else {
             if (/@POST\b/.test(annotations)) { httpMethod = 'POST'; }
             else if (/@PUT\b/.test(annotations)) { httpMethod = 'PUT'; }
@@ -288,17 +289,35 @@ export class ParameterExtractor {
         return { httpMethod, contentType: 'json' };
     }
 
+    private detectSpringHttpMethod(annotations: string): string {
+        if (/@(?:[\w.]+\.)?PostMapping\b/.test(annotations)) { return 'POST'; }
+        if (/@(?:[\w.]+\.)?PutMapping\b/.test(annotations)) { return 'PUT'; }
+        if (/@(?:[\w.]+\.)?DeleteMapping\b/.test(annotations)) { return 'DELETE'; }
+        if (/@(?:[\w.]+\.)?PatchMapping\b/.test(annotations)) { return 'PATCH'; }
+        if (/@(?:[\w.]+\.)?GetMapping\b/.test(annotations)) { return 'GET'; }
+
+        const methodAttr = annotations.match(/(?:^|,|\()\s*method\s*=\s*(?:\{([\s\S]*?)\}|([^,)]+))/);
+        if (!methodAttr) { return 'GET'; }
+
+        const rawValue = methodAttr[1] || methodAttr[2] || '';
+        const methodMatch = rawValue.match(/(?:RequestMethod\.)?(GET|POST|PUT|DELETE|PATCH)\b/);
+        return methodMatch ? methodMatch[1] : 'GET';
+    }
+
     /**
      * 为 @RequestBody 和 @ModelAttribute 参数解析 DTO 字段。
      */
-    private async resolveDtoFields(parameters: EndpointParameter[]): Promise<Map<string, import('../models/types').DtoField[]>> {
+    private async resolveDtoFields(parameters: EndpointParameter[], documentText: string): Promise<Map<string, import('../models/types').DtoField[]>> {
         const dtoFields = new Map<string, import('../models/types').DtoField[]>();
 
         for (const param of parameters) {
             if ((param.source === 'body' || param.source === 'form') && param.type && !this.isPrimitiveType(param.type)) {
-                const fields = await this.dtoExtractor.findDtoFields(param.type);
+                const typeName = param.type;
+                const potentialFQNs = TextProcessor.buildPotentialFQNs(documentText, typeName);
+
+                const fields = await this.dtoExtractor.findDtoFields(typeName, new Set(), 0, potentialFQNs);
                 if (fields.length > 0) {
-                    dtoFields.set(param.type, fields);
+                    dtoFields.set(typeName, fields);
                 }
             }
         }

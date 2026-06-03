@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+require('./mock-vscode');
 
 // 从脚本位置计算项目根目录
 const scriptDir = __dirname; // src/test/scripts/
@@ -27,14 +28,16 @@ process.chdir(projectRoot);
 
 const parser = new AnnotationParser();
 const testDir = './test-project/src/main/java/com/example/controller';
+const resourceDir = './test-project/src/main/java/com/example/resource';
 const kotlinDir = './test-project/src/main/kotlin/com/example';
 
 // 扫描Java和Kotlin文件
 const javaFiles = fs.readdirSync(testDir).filter(f => f.endsWith('.java'));
+const resourceFiles = fs.existsSync(resourceDir) ? fs.readdirSync(resourceDir).filter(f => f.endsWith('.java')) : [];
 const kotlinFiles = fs.readdirSync(kotlinDir).filter(f => f.endsWith('.kt'));
 
 console.log('=== RestfulToolkit 扫描结果验证 ===\n');
-console.log(`📄 扫描文件: ${javaFiles.length} Java + ${kotlinFiles.length} Kotlin = ${javaFiles.length + kotlinFiles.length} 文件\n`);
+console.log(`📄 扫描文件: ${javaFiles.length + resourceFiles.length} Java + ${kotlinFiles.length} Kotlin = ${javaFiles.length + resourceFiles.length + kotlinFiles.length} 文件\n`);
 
 let totalEndpoints = 0;
 let correctLineNumbers = 0;
@@ -44,6 +47,7 @@ let errors = [];
 let springCount = 0;
 let jaxrsCount = 0;
 let kotlinCount = 0;
+const allEndpoints = [];
 
 // 扫描Java文件
 javaFiles.forEach(file => {
@@ -53,6 +57,7 @@ javaFiles.forEach(file => {
   const endpoints = parser.parseFile(content, filePath);
 
   totalEndpoints += endpoints.length;
+  allEndpoints.push(...endpoints);
   console.log(`📄 ${file}: ${endpoints.length} 端点`);
 
   endpoints.forEach(ep => {
@@ -105,6 +110,7 @@ kotlinFiles.forEach(file => {
   const endpoints = parser.parseFile(content, filePath);
 
   totalEndpoints += endpoints.length;
+  allEndpoints.push(...endpoints);
   kotlinCount += endpoints.length;
   console.log(`📄 ${file} (Kotlin): ${endpoints.length} 端点`);
 
@@ -148,24 +154,46 @@ kotlinFiles.forEach(file => {
   console.log('');
 });
 
+// 扫描 Resource 文件（跨包目录）
+resourceFiles.forEach(file => {
+  const filePath = path.join(resourceDir, file);
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n');
+  const endpoints = parser.parseFile(content, filePath);
+
+  totalEndpoints += endpoints.length;
+  allEndpoints.push(...endpoints);
+  console.log(`📄 ${file} (Resource): ${endpoints.length} 端点`);
+
+  endpoints.forEach(ep => {
+    const actualLine = lines[ep.line - 1];
+    const expectedAnnotation = getExpectedAnnotation(ep);
+    const isLineCorrect = actualLine && actualLine.trim().startsWith(expectedAnnotation);
+    const hasPathError = ep.path.includes('//') && !ep.path.includes('//api');
+
+    if (ep.framework === 'Spring') springCount++;
+    else if (ep.framework === 'JAX-RS') jaxrsCount++;
+
+    if (isLineCorrect) {
+      correctLineNumbers++;
+      console.log(`  ✅ [${ep.framework}] ${ep.method} ${ep.path} -> ${ep.className}.${ep.methodName}() (line ${ep.line})`);
+    } else {
+      incorrectLineNumbers++;
+      errors.push({ file, endpoint: `${ep.method} ${ep.path}`, method: `${ep.className}.${ep.methodName}()`, line: ep.line, expected: expectedAnnotation, actual: actualLine ? actualLine.trim().substring(0, 50) : 'LINE_NOT_FOUND' });
+      console.log(`  ❌ [${ep.framework}] ${ep.method} ${ep.path} -> ${ep.className}.${ep.methodName}() (line ${ep.line})`);
+      console.log(`     ⚠️  行号错误：预期以 '${expectedAnnotation}' 开头，实际为 "${errors[errors.length - 1].actual}"`);
+    }
+
+    if (hasPathError) {
+      pathErrors++;
+      console.log(`     ⚠️  路径异常：'${ep.path}'`);
+    }
+  });
+  console.log('');
+});
+
 // 多路径拆分验证
 console.log('=== 多路径拆分验证 ===');
-
-// 重新扫描所有端点用于验证（包括Java和Kotlin）
-const allEndpoints = [];
-javaFiles.forEach(file => {
-  const filePath = path.join(testDir, file);
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const endpoints = parser.parseFile(content, filePath);
-  allEndpoints.push(...endpoints);
-});
-
-kotlinFiles.forEach(file => {
-  const filePath = path.join(kotlinDir, file);
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const endpoints = parser.parseFile(content, filePath);
-  allEndpoints.push(...endpoints);
-});
 
 // 查找同一行号的多个端点
 const lineGroups = {};
@@ -233,6 +261,32 @@ if (kotlinFiles.length > 0) {
 } else {
   console.log('\n⚠️  未找到Kotlin测试文件');
 }
+
+// 跨包 Resource 验证
+const searchableEndpoints = allEndpoints.filter(ep => ep.className === 'SearchableResource');
+console.log('\n=== 跨包 Resource 验证 ===');
+console.log(`📊 SearchableResource 端点数: ${searchableEndpoints.length}`);
+if (searchableEndpoints.length === 4) {
+  console.log('✅ 跨包通配符 import 解析正确，无幽灵端点');
+} else {
+  console.log(`❌ 期望 4 个端点，实际 ${searchableEndpoints.length}（可能注释中的伪签名被误解析）`);
+}
+searchableEndpoints.forEach(ep => {
+  console.log(`   - ${ep.method} ${ep.path} -> ${ep.className}.${ep.methodName}() (line ${ep.line})`);
+});
+
+// camelCase 类名搜索边界验证
+const transferEndpoints = allEndpoints.filter(ep => ep.className === 'DataTransferController');
+console.log('\n=== camelCase 搜索边界验证 ===');
+console.log(`📊 DataTransferController 端点数: ${transferEndpoints.length}`);
+if (transferEndpoints.length === 5) {
+  console.log('✅ 表单端点正确解析（form-data + x-www-form-urlencoded）');
+} else {
+  console.log(`❌ 期望 5 个端点，实际 ${transferEndpoints.length}`);
+}
+transferEndpoints.forEach(ep => {
+  console.log(`   - ${ep.method} ${ep.path} -> ${ep.className}.${ep.methodName}() (line ${ep.line})`);
+});
 
 console.log('\n=== 测试结果汇总 ===');
 console.log(`📊 总端点数: ${totalEndpoints}`);

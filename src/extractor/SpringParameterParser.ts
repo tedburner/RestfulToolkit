@@ -102,8 +102,8 @@ export class SpringParameterParser {
         ];
 
         for (const ann of annotations) {
-            // 带括号的注解: @RequestParam("name")
-            const pattern = new RegExp(`@${ann}\\s*\\(([^)]*)\\)`, 's');
+            // 带括号的注解: @RequestParam("name") - 支持引号和括号内的嵌套，防止嵌套括号截断
+            const pattern = new RegExp(`@${ann}\\s*\\(((?:[^()"']|"[^"]*"|'[^']*')*)\\)`, 's');
             const match = paramStr.match(pattern);
             if (match) {
                 const attrs = match[1];
@@ -121,8 +121,8 @@ export class SpringParameterParser {
                 };
             }
 
-            // 裸注解无括号: @RequestBody
-            const barePattern = new RegExp(`@${ann}\\s+(?=[A-Z])`);
+            // 裸注解无括号: @RequestBody - 支持小写开头基本类型 (如 int, boolean)
+            const barePattern = new RegExp(`@${ann}\\s+(?=[A-Za-z])`);
             const bareMatch = paramStr.match(barePattern);
             if (bareMatch) {
                 return {

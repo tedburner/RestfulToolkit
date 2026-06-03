@@ -5,6 +5,66 @@ All notable changes to RestfulToolkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.6] - 2026-06-02
+
+- **Added**: Multi-word search with AND semantics — `post create` filters by HTTP method then ranks path matches first
+- **Added**: CamelCase acronym search — `dtc` matches `DataTransferController`
+- **Added**: CamelCase word boundary matching restored in endpoint search
+- **Added**: Path-priority sorting — path matches always rank above method/class matches
+- **Added**: `TextProcessor.sanitize({ preserveStrings: true })` option for DTO field extraction
+- **Added**: `TextProcessor.buildPotentialFQNs` shared utility for cross-package import resolution
+- **Added**: New test fixtures: `CommentComplexDto`, `SearchableResource`, `DataTransferController`
+- **Added**: Node-based script mock for VS Code APIs so local validation scripts can run outside the Extension Host
+- **Added**: Full i18n support for all user-facing strings (search, refresh, scan, Lombok prompt)
+- **Fixed**: TypeScript compile failure caused by missing `TextProcessor` import in parameter extraction
+- **Fixed**: Spring path parsing no longer drops class-level paths when `method` appears before `value`/`path`
+- **Fixed**: Spring method annotations no longer treat `produces`/`consumes` strings as endpoint paths
+- **Fixed**: JAX-RS parser ignores method signatures inside comments by matching signatures on sanitized text
+- **Fixed**: Search queries with regex metacharacters no longer crash endpoint search
+- **Fixed**: JSON-to-DTO generation escapes `@JsonProperty` keys and confirms before overwriting existing files
+- **Fixed**: Project config parsing now validates field types and filters prototype pollution keys
+- **Fixed**: Search UI now debounces input and refreshes live cache data when the query is cleared
+- **Fixed**: File watchers rebuild after `restfulToolkit` configuration changes
+- **Fixed**: Base URL YAML parsing no longer treats management `context-path` as server context path
+- **Fixed**: Fully qualified Spring/JAX-RS REST annotations are now recognized
+- **Fixed**: `@RequestMapping(method = {GET, POST})` and static-imported HTTP methods are parsed
+- **Fixed**: Class-level Spring `@RequestMapping` detection now handles interfaces and long annotation gaps without creating duplicate method endpoints
+- **Changed**: Endpoint cache uses flat array cache (`_allEndpoints`) and `_size` counter for O(1) access
+- **Changed**: Base URL auto-detection now has an async VS Code filesystem path for Extension Host operations
+- **Changed**: Project configuration now reloads across multi-root workspaces and workspace folder changes
+- **Changed**: Extension shutdown resets runtime singletons for cleaner hot reloads and test isolation
+- **Changed**: `maxResults` is clamped to 1-1000 and search filters are applied by `EndpointCache`
+- **Changed**: Merged duplicate `buildFormDataBody`/`buildFormUrlencodedBody` into single `buildFormBody`
+- **Changed**: Removed unused `resetForTest()` wrappers from singletons
+
+---
+
+- **新增**: 多词搜索 AND 语义 — `post create` 先过滤 HTTP 方法，再按 path 匹配优先排序
+- **新增**: CamelCase 首字母缩写搜索 — `dtc` 匹配 `DataTransferController`
+- **新增**: CamelCase 单词边界匹配恢复
+- **新增**: 排序优先级 — path 匹配始终排在 method/class 匹配之前
+- **新增**: `TextProcessor.sanitize({ preserveStrings: true })` 选项，用于 DTO 字段提取时保留字符串
+- **新增**: `TextProcessor.buildPotentialFQNs` 共享工具，用于跨包 import 解析
+- **新增**: 测试用例 `CommentComplexDto`、`SearchableResource`、`DataTransferController`
+- **新增**: VS Code API 的 Node 脚本 mock，使本地验证脚本可脱离 Extension Host 运行
+- **新增**: 全部用户可见字符串支持中英文 i18n（搜索、刷新、扫描、Lombok 选项）
+- **修复**: 参数提取缺少 `TextProcessor` 导入导致 TypeScript 编译失败
+- **修复**: Spring 类级路径在 `method` 位于 `value`/`path` 前时丢失
+- **修复**: Spring 方法注解不再把 `produces`/`consumes` 字符串误识别为端点路径
+- **修复**: JAX-RS 解析器在净化文本上匹配方法签名，忽略注释中的伪签名
+- **修复**: 搜索输入正则元字符不再导致端点搜索崩溃
+- **修复**: JSON 转 DTO 会转义 `@JsonProperty` key，并在覆盖同名文件前确认
+- **修复**: 项目配置解析增加字段类型校验并过滤原型污染键
+- **修复**: 搜索 UI 增加输入防抖，清空查询时使用实时缓存数据
+- **修复**: `restfulToolkit` 配置变化后会重建文件监视器
+- **修复**: Base URL YAML 解析不再把 management `context-path` 当成 server context path
+- **修复**: 支持全限定名 Spring/JAX-RS REST 注解
+- **修复**: 支持 `@RequestMapping(method = {GET, POST})` 与静态导入 HTTP 方法
+- **优化**: 端点缓存使用扁平数组缓存（`_allEndpoints`）和 `_size` 计数器，O(1) 访问
+- **优化**: `maxResults` 限制为 1-1000，`EndpointCache` 开始应用搜索过滤器
+- **优化**: 合并重复的 `buildFormDataBody`/`buildFormUrlencodedBody` 为单一 `buildFormBody`
+- **优化**: 移除未使用的 `resetForTest()` 包装方法
+
 ## [0.0.5] - 2026-05-19
 
 - **Added**: Concurrent file scanning with 15 workers and throttled progress bar

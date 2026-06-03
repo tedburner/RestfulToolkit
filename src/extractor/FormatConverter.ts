@@ -6,7 +6,7 @@ export class FormatConverter {
     toUrlParams(info: EndpointCopyInfo, nameTransform?: NameTransformFn): string {
         if (info.parameters.length === 0) { return ''; }
         const names = info.parameters.map(p => nameTransform ? nameTransform(p.name) : p.name);
-        return '?' + names.map(n => `${n}=`).join('&');
+        return '?' + names.map(n => `${encodeURIComponent(n)}=`).join('&');
     }
 
     toJsonBody(info: EndpointCopyInfo, nameTransform?: NameTransformFn): string {
@@ -37,10 +37,10 @@ export class FormatConverter {
 
         if (field.nested && field.nested.length > 0) {
             const nestedJson = this.buildExpandedJson(field.nested, nameTransform);
-            return `"${name}": ${nestedJson}`;
+            return `${JSON.stringify(name)}: ${nestedJson}`;
         }
 
-        return `"${name}": ""`;
+        return `${JSON.stringify(name)}: ""`;
     }
 
     /**
@@ -97,15 +97,15 @@ export class FormatConverter {
                 if (dtoFields && dtoFields.length > 0) {
                     for (const f of dtoFields) {
                         const name = nameTransform ? nameTransform(f.name) : f.name;
-                        result.push(`${name}=`);
+                        result.push(`${encodeURIComponent(name)}=`);
                     }
                 } else {
                     const name = nameTransform ? nameTransform(param.name) : param.name;
-                    result.push(`${name}=`);
+                    result.push(`${encodeURIComponent(name)}=`);
                 }
             } else {
                 const name = nameTransform ? nameTransform(param.name) : param.name;
-                result.push(`${name}=`);
+                result.push(`${encodeURIComponent(name)}=`);
             }
         }
         return result;
@@ -115,8 +115,9 @@ export class FormatConverter {
         if (info.parameters.length === 0) { return '{}'; }
         const entries = info.parameters.map(p => {
             const name = nameTransform ? nameTransform(p.name) : p.name;
-            return `"${name}": ""`;
+            return `${JSON.stringify(name)}: ""`;
         });
         return `{${entries.join(', ')}}`;
     }
 }
+

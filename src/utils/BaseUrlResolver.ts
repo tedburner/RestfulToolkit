@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import * as vscode from 'vscode';
 import { Logger } from './Logger';
 
 /**
@@ -52,12 +53,48 @@ export class BaseUrlResolver {
         };
     }
 
+    async resolveAsync(workspaceFolder: string): Promise<{ host: string; port: string; contextPath: string } | null> {
+        const resourcesDirs = await this.findResourcesDirsAsync(workspaceFolder);
+        if (resourcesDirs.length === 0) { return null; }
+
+        const result: { port: string | null; contextPath: string | null } = { port: null, contextPath: null };
+
+        for (const dir of resourcesDirs) {
+            const files = await this.collectConfigFilesAsync(dir);
+            for (const file of files) {
+                const content = await this.readFileAsync(file);
+                if (!content) { continue; }
+
+                const parsed = file.endsWith('.properties')
+                    ? this.parseProperties(content)
+                    : this.parseYaml(content);
+
+                if (parsed.port) { result.port = parsed.port; }
+                if (parsed.contextPath) { result.contextPath = parsed.contextPath; }
+            }
+        }
+
+        if (!result.port && !result.contextPath) { return null; }
+
+        return {
+            host: 'localhost',
+            port: result.port || '8080',
+            contextPath: result.contextPath || ''
+        };
+    }
+
     /**
      * 查找所有 src/main/resources 目录（支持多模块 Maven/Gradle 项目）
      */
     private findResourcesDirs(root: string): string[] {
         const results: string[] = [];
         this.searchDir(root, root, results, 0);
+        return results;
+    }
+
+    private async findResourcesDirsAsync(root: string): Promise<string[]> {
+        const results: string[] = [];
+        await this.searchDirAsync(root, results, 0);
         return results;
     }
 
@@ -85,51 +122,95 @@ export class BaseUrlResolver {
         return excluded.includes(name);
     }
 
+    private async searchDirAsync(dir: string, results: string[], depth: number): Promise<void> {
+        if (depth > 5) { return; }
+        try {
+            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dir));
+            for (const [name, fileType] of entries) {
+                if (fileType !== vscode.FileType.Directory) {
+                    continue;
+                }
+
+                const fullPath = path.join(dir, name);
+                if (name === 'resources' && dir.endsWith('main')) {
+                    results.push(fullPath);
+                } else if (!this.isExcludedDir(name)) {
+                    await this.searchDirAsync(fullPath, results, depth + 1);
+                }
+            }
+        } catch {
+            // Ignore inaccessible folders.
+        }
+    }
+
     /**
-     * 按 Spring Boot 优先级收集配置文件：
+     * 按 Spring Boot 优先级收集配置文件（共享算法）：
      * 1. application.properties / application.yml（最低优先级）
      * 2. bootstrap.properties / bootstrap.yml（Spring Cloud，高优先级）
      * 3. application-{profile}.*（按字母序，最高优先级，覆盖前面的）
-     *
-     * 后面的值覆盖前面的。
      */
-    private collectConfigFiles(resourcesDir: string): string[] {
+    private buildConfigFileList(names: Set<string>, resourcesDir: string): string[] {
         const files: string[] = [];
-        try {
-            const entries = fs.readdirSync(resourcesDir, { withFileTypes: true });
-            const names = new Set(entries.filter(e => e.isFile()).map(e => e.name));
 
-            // application.*（基础配置）
-            if (names.has('application.properties')) {files.push(path.join(resourcesDir, 'application.properties'));}
-            if (names.has('application.yml')) {files.push(path.join(resourcesDir, 'application.yml'));}
-            if (names.has('application.yaml')) {files.push(path.join(resourcesDir, 'application.yaml'));}
+        // application.*（基础配置）
+        if (names.has('application.properties')) { files.push(path.join(resourcesDir, 'application.properties')); }
+        if (names.has('application.yml')) { files.push(path.join(resourcesDir, 'application.yml')); }
+        if (names.has('application.yaml')) { files.push(path.join(resourcesDir, 'application.yaml')); }
 
-            // bootstrap.*（Spring Cloud，优先级高于 application）
-            if (names.has('bootstrap.properties')) {files.push(path.join(resourcesDir, 'bootstrap.properties'));}
-            if (names.has('bootstrap.yml')) {files.push(path.join(resourcesDir, 'bootstrap.yml'));}
-            if (names.has('bootstrap.yaml')) {files.push(path.join(resourcesDir, 'bootstrap.yaml'));}
+        // bootstrap.*（Spring Cloud，优先级高于 application）
+        if (names.has('bootstrap.properties')) { files.push(path.join(resourcesDir, 'bootstrap.properties')); }
+        if (names.has('bootstrap.yml')) { files.push(path.join(resourcesDir, 'bootstrap.yml')); }
+        if (names.has('bootstrap.yaml')) { files.push(path.join(resourcesDir, 'bootstrap.yaml')); }
 
-            // application-{profile}.*（最高优先级）
-            const profileFiles: string[] = [];
-            for (const name of names) {
-                if (/^application-(?!yml$|yaml$|properties$).+\.(yml|yaml|properties)$/.test(name)) {
-                    profileFiles.push(name);
-                }
+        // application-{profile}.*（最高优先级）
+        const profileFiles: string[] = [];
+        for (const name of names) {
+            if (/^application-(?!yml$|yaml$|properties$).+\.(yml|yaml|properties)$/.test(name)) {
+                profileFiles.push(name);
             }
-            profileFiles.sort();
-            for (const name of profileFiles) {
-                files.push(path.join(resourcesDir, name));
-            }
-        } catch {
-            // 忽略
+        }
+        profileFiles.sort();
+        for (const name of profileFiles) {
+            files.push(path.join(resourcesDir, name));
         }
 
         return files;
     }
 
+    private collectConfigFiles(resourcesDir: string): string[] {
+        try {
+            const entries = fs.readdirSync(resourcesDir, { withFileTypes: true });
+            const names = new Set(entries.filter(e => e.isFile()).map(e => e.name));
+            return this.buildConfigFileList(names, resourcesDir);
+        } catch {
+            return [];
+        }
+    }
+
+    private async collectConfigFilesAsync(resourcesDir: string): Promise<string[]> {
+        try {
+            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(resourcesDir));
+            const names = new Set(entries
+                .filter(([, fileType]) => fileType === vscode.FileType.File)
+                .map(([name]) => name));
+            return this.buildConfigFileList(names, resourcesDir);
+        } catch {
+            return [];
+        }
+    }
+
     private readFile(filePath: string): string | null {
         try {
             return fs.readFileSync(filePath, 'utf-8');
+        } catch {
+            return null;
+        }
+    }
+
+    private async readFileAsync(filePath: string): Promise<string | null> {
+        try {
+            const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+            return Buffer.from(bytes).toString('utf-8');
         } catch {
             return null;
         }
@@ -167,14 +248,10 @@ export class BaseUrlResolver {
             }
         }
 
-        // 兜底：简单正则匹配（处理单行 YAML 或格式不规范的情况）
+        // 兜底：仅允许顶层 server.port，避免误读 management.server.port 等其它层级
         if (!port) {
-            const portMatch = content.match(/port:\s*(.+)$/m);
+            const portMatch = content.match(/^server\.port\s*:\s*(.+)$/m);
             if (portMatch) { port = this.cleanValue(portMatch[1]); }
-        }
-        if (!contextPath) {
-            const ctxMatch = content.match(/context-path:\s*(.+)$/m);
-            if (ctxMatch) { contextPath = this.cleanValue(ctxMatch[1]); }
         }
 
         return { port, contextPath };

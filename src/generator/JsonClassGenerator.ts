@@ -159,7 +159,7 @@ export class JsonClassGenerator {
 
     private renderJavaFields(lines: string[], fields: FieldDef[], indent = '    ') {
         for (const field of fields) {
-            lines.push(`${indent}@JsonProperty("${field.jsonKey}")`);
+            lines.push(`${indent}@JsonProperty(${this.toStringLiteral(field.jsonKey)})`);
             lines.push(`${indent}private ${field.type} ${field.name};`);
             lines.push('');
         }
@@ -188,7 +188,7 @@ export class JsonClassGenerator {
         lines.push(`data class ${root.name}(`);
 
         const constructorFields = root.fields.map(f => {
-            const annotation = `    @JsonProperty("${f.jsonKey}")\n`;
+            const annotation = `    @JsonProperty(${this.toStringLiteral(f.jsonKey)})\n`;
             return `${annotation}    val ${f.name}: ${f.type}`;
         });
 
@@ -208,7 +208,7 @@ export class JsonClassGenerator {
     private renderKotlinNested(lines: string[], classDef: ClassDef, indent: string) {
         lines.push(`${indent}data class ${classDef.name}(`);
         const constructorFields = classDef.fields.map(f => {
-            const annotation = `    @JsonProperty("${f.jsonKey}")\n`;
+            const annotation = `    @JsonProperty(${this.toStringLiteral(f.jsonKey)})\n`;
             return `${indent}${annotation}${indent}    val ${f.name}: ${f.type}`;
         });
         lines.push(constructorFields.join(',\n'));
@@ -219,5 +219,9 @@ export class JsonClassGenerator {
             lines.push('');
             this.renderKotlinNested(lines, nc, indent);
         }
+    }
+
+    private toStringLiteral(value: string): string {
+        return JSON.stringify(value);
     }
 }

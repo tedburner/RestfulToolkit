@@ -198,6 +198,24 @@ suite('JaxRsParser Test Suite', () => {
         assert.strictEqual(endpoints[0].path, '/real');
     });
 
+    test('Should ignore method signatures inside comments', () => {
+        const content = `
+            public class UserController {
+                /*
+                 * Example: public User findById(int id) {
+                 */
+                @GET
+                @Path("/{id}")
+                public User getUser(@PathParam("id") int id) {}
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'UserController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].methodName, 'getUser');
+        assert.strictEqual(endpoints[0].path, '/{id}');
+    });
+
     test('Should handle @Path with braces in string that could confuse matching', () => {
         const content = `
             public class UserController {
@@ -210,5 +228,22 @@ suite('JaxRsParser Test Suite', () => {
         const endpoints = parser.parseMethodAnnotations(content, sanitized, 'UserController', null, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/users/{userId}/orders/{orderId}');
+    });
+
+    test('Should parse fully qualified JAX-RS annotations', () => {
+        const content = `
+            @jakarta.ws.rs.Path("/api")
+            public class UserController {
+                @jakarta.ws.rs.GET
+                @jakarta.ws.rs.Path("/users")
+                public List<User> getUsers() {}
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'UserController', classPath, 'test.java');
+        assert.strictEqual(classPath, '/api');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/api/users');
     });
 });

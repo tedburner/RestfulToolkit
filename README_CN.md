@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.5-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.6-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![Downloads](https://img.shields.io/badge/downloads-124-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -54,9 +54,10 @@ RestfulToolkit 通过扫描项目中所有 `@RequestMapping` / `@Path` 注解，
 | 复制参数 | URL Params / JSON Body / Form Data / x-www-form-urlencoded |
 | 复制完整 URL | Base URL + 路径 + 查询参数 |
 | 复制为 cURL | 方法 + URL + 请求头 + 请求体，可直接导入 Postman |
-| Base URL 自动检测 | 从 application.yml / properties 读取端口和 context-path |
+| Base URL 自动检测 | 从 application.yml / properties 读取端口和 context-path，并按工作区根目录解析 |
 | 命名转换 | 驼峰 / 蛇形命名自动检测 |
 | DTO 展开 | 嵌套 DTO 字段自动解析至 3 层 |
+| JSON 转 DTO | 从选中文本或剪贴板 JSON 生成 Java/Kotlin DTO 类 |
 | 可配置 | 自定义扫描路径和排除模式 |
 
 ## 功能特性
@@ -71,6 +72,7 @@ RestfulToolkit 通过扫描项目中所有 `@RequestMapping` / `@Path` 注解，
 - ⚙️ **Base URL 自动检测**：自动从 `application.yml` / `application.properties` 读取端口和 context-path
 - 🔀 **命名转换**：自动检测或切换驼峰/蛇形命名风格
 - 📦 **DTO 展开**：嵌套 DTO 字段自动展开（最多 3 层）
+- 🧩 **JSON 转 DTO**：从选中文本或剪贴板 JSON 生成 Java/Kotlin DTO 类
 - ⚙️ **可配置**：自定义扫描路径和排除模式
 
 ## 支持的框架
@@ -115,11 +117,11 @@ RestfulToolkit 支持三级配置：
 |--------|------|--------|------|
 | `scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | 扫描文件的 glob 模式 |
 | `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | 排除扫描的 glob 模式 |
-| `maxResults` | `number` | `100` | 显示的最大搜索结果数 |
+| `maxResults` | `number` | `100` | 显示的最大搜索结果数（1-1000） |
 | `copyNameFormat` | `string` | `"camelCase"` | 复制参数的默认命名格式 |
 | `baseUrl` | `string` | `""` | 生成 URL 和 cURL 命令的 Base URL，留空时自动检测 |
 
-**优先级**：VS Code 设置 > 项目根目录 `.restful-toolkit.json` > 默认配置
+**优先级**：VS Code 设置 > 各工作区根目录 `.restful-toolkit.json` > 默认配置
 
 ## 复制命令
 

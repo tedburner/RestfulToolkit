@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.5-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.6-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![Downloads](https://img.shields.io/badge/downloads-124-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -54,9 +54,10 @@ Auto-detects `application.yml` / `application.properties` for base URL. Watches 
 | Copy Parameters | URL Params / JSON Body / Form Data / x-www-form-urlencoded |
 | Copy Full URL | Base URL + path + query params |
 | Copy as cURL | Method + URL + headers + body, Postman-importable |
-| Base URL Auto-detect | Port and context-path from application.yml / properties |
+| Base URL Auto-detect | Port and context-path from application.yml / properties, resolved per workspace folder |
 | Naming Transform | camelCase / snake_case auto-detect |
 | DTO Expansion | Nested DTO field resolution up to 3 levels |
+| JSON to DTO | Generate Java/Kotlin DTO classes from selected or clipboard JSON |
 | Configurable | Custom scan paths and exclusion patterns |
 
 ## Supported Frameworks
@@ -101,11 +102,11 @@ RestfulToolkit supports three configuration levels:
 |---------|------|---------|-------------|
 | `scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | Glob patterns for files to scan |
 | `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | Glob patterns to exclude |
-| `maxResults` | `number` | `100` | Maximum search results |
+| `maxResults` | `number` | `100` | Maximum search results (1-1000) |
 | `copyNameFormat` | `string` | `"camelCase"` | Default name format for copied parameters |
 | `baseUrl` | `string` | `""` | Base URL for generated URLs/cURL. Auto-detects from `application.yml`/`application.properties` when empty |
 
-**Priority**: VS Code settings > `.restful-toolkit.json` in project root > defaults
+**Priority**: VS Code settings > `.restful-toolkit.json` in each workspace root > defaults
 
 ## Copy Commands
 

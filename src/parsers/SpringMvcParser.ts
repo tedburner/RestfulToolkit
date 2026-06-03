@@ -18,23 +18,18 @@ export class SpringMvcParser {
     }
 
     parseClassLevelPath(content: string): string | null {
-        const patterns = [
-            /@RequestMapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?"([^"]+)"\s*\)/,
-            /@RequestMapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?\{([^}]+)\}\s*\)/
-        ];
-
-        for (const pattern of patterns) {
-            const match = content.match(pattern);
-            if (match) {
-                if (match[1].includes(',')) {
-                    const paths = match[1].split(',').map(p => p.trim().replace(/"/g, '').replace(/'/g, ''));
-                    return paths[0].replace(/\s+/g, '');
-                }
-                return match[1].replace(/\s+/g, '').replace(/"/g, '').replace(/'/g, '');
-            }
+        const requestMappingMatch = content.match(/@(?:[\w.]+\.)?RequestMapping(?:\s|\(|$)/);
+        if (!requestMappingMatch) {
+            return null;
         }
 
-        return null;
+        const annotationText = this.extractAnnotationForward(content, requestMappingMatch.index!);
+        if (!annotationText) {
+            return null;
+        }
+
+        const paths = this.extractPathValues(annotationText);
+        return paths.length > 0 ? paths[0] : null;
     }
 
     parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[]): RestEndpoint[] {
@@ -47,7 +42,8 @@ export class SpringMvcParser {
 
         for (const annotationName of mappingAnnotations) {
             // 使用更简单的正则：只匹配注解名称，不匹配完整注解（避免跨行问题）
-            const annotationPattern = new RegExp(`${annotationName}(?:\\s|\\(|$)`, 'g');
+            const simpleName = annotationName.slice(1);
+            const annotationPattern = new RegExp(`@(?:[\\w.]+\\.)?${simpleName}(?:\\s|\\(|$)`, 'g');
             let annotationMatch;
 
             while ((annotationMatch = annotationPattern.exec(content)) !== null) {
@@ -56,6 +52,10 @@ export class SpringMvcParser {
                 // 从注解位置向后提取完整注解文本（包括跨行）
                 const annotationText = this.extractAnnotationForward(content, annotationIndex);
                 if (!annotationText) {
+                    continue;
+                }
+
+                if (simpleName === 'RequestMapping' && this.isClassLevelRequestMapping(content, annotationIndex, annotationText.length)) {
                     continue;
                 }
 
@@ -98,6 +98,20 @@ export class SpringMvcParser {
     /**
      * 从注解起始位置向后提取完整注解文本（支持跨行）
      */
+    private isClassLevelRequestMapping(content: string, annotationIndex: number, annotationLength: number): boolean {
+        const searchArea = content.substring(annotationIndex + annotationLength, annotationIndex + annotationLength + 1000);
+        const bodyIndex = searchArea.indexOf('{');
+        const declarationArea = bodyIndex === -1 ? searchArea : searchArea.substring(0, bodyIndex);
+        const typeDeclarationMatch = declarationArea.match(/\b(?:class|interface|object)\s+\w+/);
+
+        if (!typeDeclarationMatch) {
+            return false;
+        }
+
+        const beforeType = declarationArea.substring(0, typeDeclarationMatch.index);
+        return !/\w+\s*\([^)]*$/.test(beforeType);
+    }
+
     private extractAnnotationForward(content: string, startIndex: number): string | null {
         // 确保 startIndex 指向 @ 符号
         if (content[startIndex] !== '@') {
@@ -165,112 +179,151 @@ export class SpringMvcParser {
         const endpoints: RestEndpoint[] = [];
 
         // 提取注解名称
-        const annotationNameMatch = annotationText.match(/@(\w+)/);
+        const annotationNameMatch = annotationText.match(/@([\w.]+)/);
         if (!annotationNameMatch) {
             return endpoints;
         }
 
-        const annotationName = annotationNameMatch[1];
+        const annotationName = annotationNameMatch[1].split('.').pop()!;
 
         // 根据注解名称确定 HTTP 方法
         const httpMethod = SpringMvcParser.httpMethodMap.get(annotationName) ?? null;
 
-        // 提取路径（支持多种格式）
-        // 重要：先匹配路径数组，再匹配单路径（避免误匹配其他数组参数）
-        // 路径数组必须满足以下条件之一：
-        // 1. 明确带有 value= 或 path= 参数名
-        // 2. 注解名称后直接是括号（无参数名的第一个参数）
-        // 排除：produces/consumes等参数数组（有明确的参数名）、路径变量{id}（无引号）
-        let pathArrayMatch = annotationText.match(/(?:value\s*=\s*|path\s*=\s*)\{("[^"]+"\s*(?:,\s*"[^"]+"\s*)+)\}/);
-
-        // 如果没有明确参数名的数组，检查是否紧跟注解名（第一个参数）
-        if (!pathArrayMatch) {
-            const directArrayMatch = annotationText.match(/@\w+\s*\(\s*\{("[^"]+"\s*(?:,\s*"[^"]+"\s*)+)\}/);
-            if (directArrayMatch) {
-                pathArrayMatch = directArrayMatch;
-            }
-        }
-
-        const pathMatch = !pathArrayMatch ? annotationText.match(/(?:value\s*=\s*|path\s*=\s*)?"([^"]+)"/) : null;
+        const pathValues = this.extractPathValues(annotationText);
 
         if (httpMethod) {
             // 简写注解（@GetMapping 等）
-            if (pathMatch) {
-                const pathValue = pathMatch[1];
-                endpoints.push(this.createEndpoint(
-                    httpMethod,
-                    this.combinePath(classPath, pathValue.replace(/"/g, '').replace(/\s+/g, '')),
-                    className,
-                    methodName,
-                    filePath,
-                    line
-                ));
-            } else if (pathArrayMatch) {
-                // 多路径情况
-                const paths = pathArrayMatch[1].split(',').map(p => p.trim().replace(/"/g, '').replace(/'/g, '').replace(/\s+/g, ''));
-                for (const path of paths) {
-                    endpoints.push(this.createEndpoint(
-                        httpMethod,
-                        this.combinePath(classPath, path),
-                        className,
-                        methodName,
-                        filePath,
-                        line
-                    ));
-                }
+            if (pathValues.length > 0) {
+                this.addEndpoints(endpoints, [httpMethod], pathValues, classPath, className, methodName, filePath, line);
             } else if (annotationText.includes('(') && annotationText.includes(')')) {
                 // 有括号但没有路径参数，可能是默认路径
                 // 例如：@GetMapping() 这种情况忽略
             }
         } else if (annotationName === 'RequestMapping') {
             // @RequestMapping 注解（需要提取 method 参数）
-            const methodMatch = annotationText.match(/method\s*=\s*RequestMethod\.(\w+)/);
+            if (pathValues.length > 0) {
+                this.addEndpoints(endpoints, this.extractRequestMethods(annotationText), pathValues, classPath, className, methodName, filePath, line);
+            }
+        }
 
-            if (pathMatch) {
-                const pathValue = pathMatch[1];
-                let method: HttpMethod = 'GET';
+        return endpoints;
+    }
 
-                if (methodMatch) {
-                    const methodNameUpper = methodMatch[1].toUpperCase();
-                    if (['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].includes(methodNameUpper)) {
-                        method = methodNameUpper as HttpMethod;
-                    }
-                }
-
+    private addEndpoints(
+        endpoints: RestEndpoint[],
+        methods: HttpMethod[],
+        paths: string[],
+        classPath: string,
+        className: string,
+        methodName: string,
+        filePath: string,
+        line: number
+    ): void {
+        for (const method of methods) {
+            for (const path of paths) {
                 endpoints.push(this.createEndpoint(
                     method,
-                    this.combinePath(classPath, pathValue.replace(/"/g, '').replace(/\s+/g, '')),
+                    this.combinePath(classPath, path),
                     className,
                     methodName,
                     filePath,
                     line
                 ));
-            } else if (pathArrayMatch) {
-                // 多路径情况
-                const paths = pathArrayMatch[1].split(',').map(p => p.trim().replace(/"/g, '').replace(/'/g, '').replace(/\s+/g, ''));
-                let method: HttpMethod = 'GET';
+            }
+        }
+    }
 
-                if (methodMatch) {
-                    const methodNameUpper = methodMatch[1].toUpperCase();
-                    if (['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].includes(methodNameUpper)) {
-                        method = methodNameUpper as HttpMethod;
-                    }
-                }
+    private extractRequestMethods(annotationText: string): HttpMethod[] {
+        const args = this.extractAnnotationArguments(annotationText);
+        if (!args) {
+            return ['GET'];
+        }
 
-                for (const path of paths) {
-                    endpoints.push(this.createEndpoint(
-                        method,
-                        this.combinePath(classPath, path),
-                        className,
-                        methodName,
-                        filePath,
-                        line
-                    ));
+        const methodAttr = args.match(/(?:^|,)\s*method\s*=\s*(?:\{([\s\S]*?)\}|([^,)]+))/);
+        if (!methodAttr) {
+            return ['GET'];
+        }
+
+        const rawValue = methodAttr[1] || methodAttr[2] || '';
+        const methods: HttpMethod[] = [];
+        const methodPattern = /(?:RequestMethod\.)?(GET|POST|PUT|DELETE|PATCH)\b/g;
+        let match: RegExpExecArray | null;
+        while ((match = methodPattern.exec(rawValue)) !== null) {
+            methods.push(match[1] as HttpMethod);
+        }
+
+        return methods.length > 0 ? methods : ['GET'];
+    }
+
+    private extractPathValues(annotationText: string): string[] {
+        const args = this.extractAnnotationArguments(annotationText);
+        if (args === null) {
+            return [];
+        }
+
+        const arrayValue = this.extractPathArrayArgument(args);
+        if (arrayValue !== null) {
+            return this.extractQuotedStrings(arrayValue);
+        }
+
+        const singleValue = this.extractPathStringArgument(args);
+        return singleValue ? [singleValue] : [];
+    }
+
+    private extractAnnotationArguments(annotationText: string): string | null {
+        const parenStart = annotationText.indexOf('(');
+        if (parenStart === -1) {
+            return null;
+        }
+
+        let depth = 0;
+        for (let i = parenStart; i < annotationText.length; i++) {
+            const char = annotationText[i];
+            if (char === '(') {
+                depth++;
+            } else if (char === ')') {
+                depth--;
+                if (depth === 0) {
+                    return annotationText.substring(parenStart + 1, i);
                 }
             }
         }
 
-        return endpoints;
+        return null;
+    }
+
+    private extractPathArrayArgument(args: string): string | null {
+        const explicitArray = args.match(/(?:^|,)\s*(?:value|path)\s*=\s*\{([\s\S]*?)\}/);
+        if (explicitArray) {
+            return explicitArray[1];
+        }
+
+        const directArray = args.match(/^\s*\{([\s\S]*?)\}/);
+        return directArray ? directArray[1] : null;
+    }
+
+    private extractPathStringArgument(args: string): string | null {
+        const explicitString = args.match(/(?:^|,)\s*(?:value|path)\s*=\s*["']([^"']+)["']/);
+        if (explicitString) {
+            return this.normalizePathValue(explicitString[1]);
+        }
+
+        const directString = args.match(/^\s*["']([^"']+)["']/);
+        return directString ? this.normalizePathValue(directString[1]) : null;
+    }
+
+    private extractQuotedStrings(value: string): string[] {
+        const paths: string[] = [];
+        const quotedPattern = /["']([^"']+)["']/g;
+        let match: RegExpExecArray | null;
+        while ((match = quotedPattern.exec(value)) !== null) {
+            paths.push(this.normalizePathValue(match[1]));
+        }
+        return paths;
+    }
+
+    private normalizePathValue(value: string): string {
+        return value.replace(/\s+/g, '');
     }
 
     private combinePath(classPath: string, methodPath: string): string {

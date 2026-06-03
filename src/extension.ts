@@ -10,6 +10,7 @@ import { CopyEndpointParametersCommand } from './commands/CopyEndpointParameters
 import { CopyUrlCommand } from './commands/CopyUrlCommand';
 import { CopyCurlCommand } from './commands/CopyCurlCommand';
 import { JsonToClassCommand } from './commands/JsonToClassCommand';
+import { getLabels } from './extractor/i18n';
 
 let cache: EndpointCache;
 let scanner: FileScanner;
@@ -19,9 +20,20 @@ let searchUI: SearchUI;
 let configManager: ConfigManager;
 let scanStateManager: ScanStateManager;
 
+function getWorkspaceFolderPaths(): string[] {
+    return vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [];
+}
+
+async function reloadConfigAndRefreshWatchers(): Promise<void> {
+    await configManager.setWorkspaceFolders(getWorkspaceFolderPaths());
+    const updatedConfig = configManager.getScanConfig();
+    watcher.start(updatedConfig.scanPaths);
+    await scanner.refresh(true);
+}
+
 export async function activate(context: vscode.ExtensionContext) {
     logger = Logger.getInstance();
-    logger.info('RestfulToolkit extension is now active!');
+    logger.info('=== RestfulToolkit v0.0.6-SEARCH-FIX loaded ===');
 
     // 初始化配置管理器
     configManager = ConfigManager.getInstance();
@@ -31,10 +43,7 @@ export async function activate(context: vscode.ExtensionContext) {
     scanStateManager.setContext(context);
 
     // 设置工作区文件夹（用于加载项目配置）
-    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-        const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        configManager.setWorkspaceFolder(workspaceFolder);
-    }
+    await configManager.setWorkspaceFolders(getWorkspaceFolderPaths());
 
     cache = new EndpointCache();
     scanner = new FileScanner(cache);
@@ -61,6 +70,19 @@ export async function activate(context: vscode.ExtensionContext) {
 
     await scanner.scanWorkspace();
 
+    const configChangeSubscription = vscode.workspace.onDidChangeConfiguration(async (event) => {
+        if (!event.affectsConfiguration('restfulToolkit')) {
+            return;
+        }
+        logger.info('RestfulToolkit configuration changed; rebuilding watchers and refreshing endpoints');
+        await reloadConfigAndRefreshWatchers();
+    });
+
+    const workspaceFoldersSubscription = vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+        logger.info('RestfulToolkit workspace folders changed; reloading project config and refreshing endpoints');
+        await reloadConfigAndRefreshWatchers();
+    });
+
     const searchCommand = vscode.commands.registerCommand(
         'restfulToolkit.searchEndpoints',
         async () => {
@@ -73,25 +95,25 @@ export async function activate(context: vscode.ExtensionContext) {
         'restfulToolkit.refreshEndpoints',
         async () => {
             logger.info('Refresh endpoints command executed');
+            const labels = getLabels();
 
-            // 询问用户选择刷新模式
             const choice = await vscode.window.showQuickPick(
                 [
                     {
-                        label: '$(sync) 增量刷新',
-                        description: '仅扫描修改过的文件（推荐）',
-                        detail: '快速、高效，适合日常使用',
+                        label: labels.refreshIncrementalLabel,
+                        description: labels.refreshIncrementalDesc,
+                        detail: labels.refreshIncrementalDetail,
                         value: 'incremental'
                     },
                     {
-                        label: '$(refresh) 全量刷新',
-                        description: '重新扫描所有文件',
-                        detail: '完整、彻底，适合配置变化或怀疑缓存错误时',
+                        label: labels.refreshFullLabel,
+                        description: labels.refreshFullDesc,
+                        detail: labels.refreshFullDetail,
                         value: 'full'
                     }
                 ],
                 {
-                    placeHolder: '选择刷新模式',
+                    placeHolder: labels.refreshPlaceholder,
                     matchOnDescription: true
                 }
             );
@@ -106,7 +128,7 @@ export async function activate(context: vscode.ExtensionContext) {
             await vscode.window.withProgress(
                 {
                     location: vscode.ProgressLocation.Notification,
-                    title: forceFullScan ? 'RestfulToolkit: 全量刷新端点...' : 'RestfulToolkit: 增量刷新端点...',
+                    title: forceFullScan ? labels.refreshProgressFull : labels.refreshProgressIncremental,
                     cancellable: false
                 },
                 async () => {
@@ -116,8 +138,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
             const stats = scanStateManager.getStats();
             const message = forceFullScan
-                ? `全量刷新完成！共找到 ${cache.size()} 个端点`
-                : `增量刷新完成！共找到 ${cache.size()} 个端点（扫描 ${stats.totalFiles} 文件）`;
+                ? labels.refreshCompleteFull.replace('{0}', String(cache.size()))
+                : labels.refreshCompleteIncremental.replace('{0}', String(cache.size())).replace('{1}', String(stats.totalFiles));
 
             vscode.window.showInformationMessage(message);
         }
@@ -179,11 +201,17 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(copyUrlCommand);
     context.subscriptions.push(copyCurlCommand);
     context.subscriptions.push(jsonToClassInFolderCommand);
+    context.subscriptions.push(configChangeSubscription);
+    context.subscriptions.push(workspaceFoldersSubscription);
     context.subscriptions.push(scanner);
     context.subscriptions.push(watcher);
+    context.subscriptions.push(searchUI);
     context.subscriptions.push(logger);
 }
 
-export function deactivate() {
-    logger.info('RestfulToolkit extension deactivated');
+export async function deactivate() {
+    logger?.info('RestfulToolkit extension deactivated');
+    ConfigManager.reset();
+    ScanStateManager.reset();
+    Logger.reset();
 }

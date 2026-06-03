@@ -2,10 +2,12 @@ import * as vscode from 'vscode';
 import { RestEndpoint } from '../models/types';
 import { EndpointCache } from '../cache/EndpointCache';
 import { Logger } from '../utils/Logger';
+import { getLabels } from '../extractor/i18n';
 
-export class SearchUI {
+export class SearchUI implements vscode.Disposable {
     private cache: EndpointCache;
     private logger: Logger;
+    private searchDebounceTimer: NodeJS.Timeout | undefined;
 
     constructor(cache: EndpointCache) {
         this.cache = cache;
@@ -13,13 +15,17 @@ export class SearchUI {
     }
 
     async show(): Promise<void> {
+        const labels = getLabels();
         const quickPick = vscode.window.createQuickPick();
-        quickPick.placeholder = '搜索 REST 端点 (路径、类名、方法名、HTTP 方法)';
+        (quickPick as vscode.QuickPick<vscode.QuickPickItem> & { sortByLabel?: boolean }).sortByLabel = false;
+        quickPick.matchOnDescription = false;
+        quickPick.matchOnDetail = false;
+        quickPick.placeholder = labels.searchPlaceholder;
 
         const allEndpoints = this.cache.getAll();
 
         if (allEndpoints.length === 0) {
-            vscode.window.showWarningMessage('No REST endpoints found. Please scan your project first.');
+            vscode.window.showWarningMessage(labels.searchNoEndpoints);
             quickPick.dispose();
             return;
         }
@@ -29,8 +35,13 @@ export class SearchUI {
         quickPick.items = items;
 
         quickPick.onDidChangeValue((value) => {
-            const filteredItems = this.filterEndpoints(allEndpoints, value);
-            quickPick.items = filteredItems;
+            if (this.searchDebounceTimer) {
+                clearTimeout(this.searchDebounceTimer);
+            }
+            this.searchDebounceTimer = setTimeout(() => {
+                const filteredItems = this.filterEndpoints(value);
+                quickPick.items = filteredItems;
+            }, 150);
         });
 
         const selected = await new Promise<vscode.QuickPickItem | undefined>((resolve) => {
@@ -40,6 +51,10 @@ export class SearchUI {
             });
 
             quickPick.onDidHide(() => {
+                if (this.searchDebounceTimer) {
+                    clearTimeout(this.searchDebounceTimer);
+                    this.searchDebounceTimer = undefined;
+                }
                 resolve(undefined);
                 quickPick.dispose();
             });
@@ -84,9 +99,9 @@ export class SearchUI {
         }
     }
 
-    private filterEndpoints(endpoints: RestEndpoint[], query: string): EndpointQuickPickItem[] {
+    private filterEndpoints(query: string): EndpointQuickPickItem[] {
         if (!query || query.trim() === '') {
-            return endpoints.map(endpoint => this.createQuickPickItem(endpoint));
+            return this.cache.getAll().map(endpoint => this.createQuickPickItem(endpoint));
         }
 
         const maxResults = vscode.workspace
@@ -96,6 +111,13 @@ export class SearchUI {
         const searchResults = this.cache.search({ text: query }, maxResults);
 
         return searchResults.map(endpoint => this.createQuickPickItem(endpoint));
+    }
+
+    dispose(): void {
+        if (this.searchDebounceTimer) {
+            clearTimeout(this.searchDebounceTimer);
+            this.searchDebounceTimer = undefined;
+        }
     }
 
     private async openEndpoint(item: EndpointQuickPickItem): Promise<void> {
@@ -117,7 +139,7 @@ export class SearchUI {
         } catch (error) {
             const err = error as Error;
             this.logger.error(`Failed to open file: ${endpoint.file}`, err);
-            vscode.window.showErrorMessage(`无法打开文件: ${endpoint.file}`);
+            vscode.window.showErrorMessage(getLabels().searchOpenFileError.replace('{0}', endpoint.file));
         }
     }
 }

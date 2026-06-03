@@ -25,6 +25,7 @@ export class FileWatcher {
     }
 
     start(patterns: string[]): void {
+        this.stop();
         for (const pattern of patterns) {
             this.logger.info(`Starting file watcher for pattern: ${pattern}`);
 
