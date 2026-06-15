@@ -66,10 +66,10 @@ function queryMarketplace() {
 }
 
 function updateReadme(content, stats) {
-  // Download badge at the top (same pattern in both EN and CN READMEs)
+  // Install badge at the top (same pattern in both EN and CN READMEs)
   return content.replace(
-    /downloads-\d+-blue/,
-    `downloads-${stats.installs}-blue`,
+    /(?:downloads|installs)-\d+-blue/,
+    `installs-${stats.installs}-blue`,
   );
 }
 

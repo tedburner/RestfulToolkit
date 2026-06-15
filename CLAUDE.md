@@ -73,7 +73,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 
 | 文件 | 位置 | 示例 |
 |------|------|------|
-| `README.md` / `README_CN.md` | Marketplace 动态徽章 | 使用 `visual-studio-marketplace/v` 与 `/d` 时无需手动同步静态版本号 |
+| `README.md` / `README_CN.md` | shields.io 徽章 | 同步 `version-<version>-green` 与 `installs-<count>-blue` |
 | `CHANGELOG.md` | 版本标题 | `## [0.0.5] - 2026-05-19` |
 | `docs/DOCUMENTATION_MANIFEST.md` | 版本引用 | 文档清单中的版本号 |
 | `.vscodeignore` | VSIX 内容 | 确认 Agent 配置、测试产物与开发脚本不会进入发布包 |

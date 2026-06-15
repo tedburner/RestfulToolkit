@@ -1,8 +1,8 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/kiturone.restful-toolkit)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
-[![Downloads](https://img.shields.io/visual-studio-marketplace/d/kiturone.restful-toolkit)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
+[![Version](https://img.shields.io/badge/version-0.0.7-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Installs](https://img.shields.io/badge/installs-170-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **English** | [中文](README_CN.md)
