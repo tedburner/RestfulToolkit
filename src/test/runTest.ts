@@ -3,6 +3,8 @@ import Mocha from 'mocha';
 import { glob } from 'glob';
 
 export async function run(): Promise<void> {
+    require(path.resolve(__dirname, '../../src/test/scripts/mock-vscode.js'));
+
     const mocha = new Mocha({
         ui: 'tdd',
         color: true
@@ -26,5 +28,12 @@ export async function run(): Promise<void> {
         } catch (err) {
             reject(err);
         }
+    });
+}
+
+if (require.main === module) {
+    run().catch((error) => {
+        console.error(error);
+        process.exit(1);
     });
 }

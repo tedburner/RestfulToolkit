@@ -33,7 +33,7 @@ async function reloadConfigAndRefreshWatchers(): Promise<void> {
 
 export async function activate(context: vscode.ExtensionContext) {
     logger = Logger.getInstance();
-    logger.info('=== RestfulToolkit v0.0.6-SEARCH-FIX loaded ===');
+    logger.info('=== RestfulToolkit v0.0.7 loaded ===');
 
     // 初始化配置管理器
     configManager = ConfigManager.getInstance();
@@ -148,10 +148,10 @@ export async function activate(context: vscode.ExtensionContext) {
     // 新增：创建项目配置文件命令
     const createConfigCommand = vscode.commands.registerCommand(
         'restfulToolkit.createProjectConfig',
-        () => {
+        async () => {
             if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
                 const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath;
-                configManager.createProjectConfigTemplate(workspaceFolder);
+                await configManager.createProjectConfigTemplate(workspaceFolder);
             } else {
                 vscode.window.showWarningMessage('No workspace folder opened');
             }

@@ -17,21 +17,21 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 ### 测试
 
 **单元测试（Mocha）**:
-- **运行所有测试**: `npm test` - Mocha 测试（解析器和缓存）
-- **单元测试位置**: `src/test/` - Parser 测试（SpringMvcParser, JaxRsParser）和缓存测试
+- **运行所有测试**: `npm test` - Mocha 测试（解析器、缓存、扫描器、工具、参数提取、JSON 生成）
+- **单元测试位置**: `src/test/` - Parser 测试（SpringMvcParser, JaxRsParser）、缓存测试、FileScanner 扫描测试、工具与生成器测试
 
 **参数复制批量测试**:
 - **运行**: `node src/test/scripts/test-parameter-copy.js`
-- **覆盖**: 75 个测试（Spring 解析 26、JAX-RS 解析 10、DTO 提取 17、格式转换 12、文件完整性 10）
+- **覆盖**: 78 个测试（Spring 解析、JAX-RS 解析、DTO 提取、格式转换、文件完整性）
 
 **自动化验证脚本**:
 - **运行验证**: `node src/test/scripts/test-all-files.js`
 - **验证位置**: `src/test/scripts/test-all-files.js`
-- **验证内容**: 49个端点、行号准确性100%、多路径拆分、Kotlin支持、框架分布统计
+- **验证内容**: 50个端点、行号准确性100%、多路径拆分、Kotlin支持、框架分布统计
 
 **URL/cURL 自动化测试**:
 - **运行**: `node src/test/scripts/test-copy-url-curl.js`
-- **覆盖**: 108 个测试（URL 生成、cURL 转换、Base URL 解析、Header 端到端）
+- **覆盖**: 115 个测试（URL 生成、cURL 转换、Base URL 解析、Header 端到端）
 
 **VS Code功能测试**:
 - 详见 `docs/TESTING_GUIDE.md`
@@ -73,10 +73,10 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 
 | 文件 | 位置 | 示例 |
 |------|------|------|
-| `README.md` | shields.io 徽章 | `version-0.0.5-green` |
-| `README_CN.md` | shields.io 徽章 | `version-0.0.5-green` |
+| `README.md` / `README_CN.md` | Marketplace 动态徽章 | 使用 `visual-studio-marketplace/v` 与 `/d` 时无需手动同步静态版本号 |
 | `CHANGELOG.md` | 版本标题 | `## [0.0.5] - 2026-05-19` |
 | `docs/DOCUMENTATION_MANIFEST.md` | 版本引用 | 文档清单中的版本号 |
+| `.vscodeignore` | VSIX 内容 | 确认 Agent 配置、测试产物与开发脚本不会进入发布包 |
 
 > 快速查找旧版本号：`grep -r "0\.0\.<old>" --include="*.md" README.md README_CN.md CHANGELOG.md docs/`
 
@@ -110,6 +110,8 @@ vsce publish patch
 
 **扫描层** (`src/scanner/FileScanner.ts`):
 - 使用 ConfigManager 提供的 glob 模式扫描工作区文件
+- 合并多 glob 匹配结果后按文件路径去重，避免重叠模式触发重复 stat/解析
+- `needsScan` 文件状态检查与文件解析都使用扫描并发上限，避免大仓库瞬时打满文件系统
 - 文件扫描防抖（500ms 延迟）用于实时更新
 - 扫描期间显示状态栏进度
 
@@ -120,6 +122,7 @@ vsce publish patch
 
 **Spring MVC 解析器** (`src/parsers/SpringMvcParser.ts`):
 - 解析 `@RequestMapping`, `@GetMapping`, `@PostMapping` 等
+- 方法级 Spring mapping 注解使用单次源码顺序扫描，避免按注解类型多轮扫描造成顺序漂移
 - 处理多路径注解：`@GetMapping({"/users", "/list"})`
 - 类级别 + 方法级别路径组合
 
@@ -130,6 +133,7 @@ vsce publish patch
 **缓存层** (`src/cache/EndpointCache.ts`):
 - 双索引：按端点路径和按文件路径
 - 模糊搜索加权评分（路径 40%，类名 30%，方法名 20%，HTTP 方法 10%）
+- 端点加入缓存时预计算小写文本、camelCase/分隔符词段和首字母缩写；搜索时维护 top-K 候选，避免重复分词和全量排序
 - 文件变更/删除时实时更新
 
 **UI 层** (`src/ui/SearchUI.ts`):
@@ -141,7 +145,7 @@ vsce publish patch
 - **ParameterExtractor.ts** — 入口：检测框架、查找方法（含类级路径拼接）、解析参数、解析 DTO 字段
 - **SpringParameterParser.ts** — Spring 注解参数解析（@RequestParam, @PathVariable, @RequestBody, @RequestHeader 等），跟踪括号深度
 - **JaxRsParameterParser.ts** — JAX-RS 注解参数解析（@PathParam, @QueryParam, @FormParam, @HeaderParam）
-- **DtoFieldExtractor.ts** — 异步嵌套 DTO 字段提取（最多 3 层，循环引用保护），支持 @JsonProperty/@JsonAlias/@JSONField/@JsonNaming，支持泛型集合（List\<T\>、Set\<T\>、Map\<K,V\>）内嵌 DTO 解析
+- **DtoFieldExtractor.ts** — 异步嵌套 DTO 字段提取（最多 3 层，循环引用保护），支持 @JsonProperty/@JsonAlias/@JSONField/@JsonNaming，支持泛型集合（List\<T\>、Set\<T\>、Map\<K,V\>）内嵌 DTO 解析；同一实例缓存 DTO 文件查找、净化文本和直接字段解析结果，减少一次命令内重复 I/O
 - **FormatConverter.ts** — 格式转换：URL Params、JSON Body（body 参数展开）、Form Data（form 参数展开）、x-www-form-urlencoded
 - **UrlGenerator.ts** — 完整 URL 生成（Base URL + 路径 + 查询参数）
 - **CurlConverter.ts** — cURL 命令生成（方法 + URL + 请求头 + 请求体）
@@ -178,6 +182,7 @@ vsce publish patch
 - 支持 `bootstrap.yml` / `bootstrap.properties`（Spring Cloud，优先级高于 application）
 - 支持 `application-{profile}.yml` 多环境配置覆盖
 - 支持占位符解析：`${SERVER_PORT:8080}` → `8080`
+- 按 workspace folder 缓存自动检测结果，并通过配置文件路径、mtime、ctime、size 变化失效，减少 URL/cURL 命令重复读取配置
 - 配置文件优先级：application（基础）→ bootstrap（高）→ application-{profile}（最高）
 
 ## OpenSpec 工作流

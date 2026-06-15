@@ -231,6 +231,29 @@ suite('EndpointCache Test Suite', () => {
         assert.strictEqual(all.length, 2);
     });
 
+    test('Should isolate cached endpoints from external mutation', () => {
+        const endpoint: RestEndpoint = {
+            method: 'GET',
+            path: '/api/users',
+            className: 'UserController',
+            methodName: 'getUsers',
+            file: 'UserController.java',
+            line: 10,
+            framework: 'Spring'
+        };
+
+        cache.add(endpoint);
+        endpoint.path = '/api/orders';
+
+        const results = cache.search({ text: 'users' });
+        assert.strictEqual(results.length, 1);
+        assert.strictEqual(results[0].path, '/api/users');
+
+        results[0].path = '/api/products';
+        assert.strictEqual(cache.getAll()[0].path, '/api/users');
+        assert.strictEqual(cache.search({ text: 'products' }).length, 0);
+    });
+
     test('Should limit results with maxResults parameter', () => {
         for (let i = 0; i < 10; i++) {
             cache.add({
@@ -548,6 +571,30 @@ suite('EndpointCache Test Suite', () => {
         assert.strictEqual(results.length, 1, '"pd" should match "parseData" via acronym');
     });
 
+    test('CamelCase acronym matches should rank above loose fuzzy matches', () => {
+        cache.add({
+            method: 'GET',
+            path: '/api/alpha',
+            className: 'AlphaController',
+            methodName: 'parseData',
+            file: 'AlphaController.java',
+            line: 10,
+            framework: 'Spring'
+        });
+        cache.add({
+            method: 'GET',
+            path: '/api/beta',
+            className: 'BetaController',
+            methodName: 'paddle',
+            file: 'PaddleController.java',
+            line: 20,
+            framework: 'Spring'
+        });
+
+        const results = cache.search({ text: 'pd' });
+        assert.strictEqual(results[0].methodName, 'parseData', '"pd" should prefer the parseData acronym over a loose path fuzzy match');
+    });
+
     test('Should match camelCase acronym: "uc" matches UserController', () => {
         cache.add({
             method: 'GET',
@@ -576,6 +623,27 @@ suite('EndpointCache Test Suite', () => {
 
         const results = cache.search({ text: 'dt' });
         assert.strictEqual(results.length, 1, '"dt" should match "data-transfer" via acronym');
+    });
+
+    test('Search should reuse precomputed searchable fields', () => {
+        cache.add({
+            method: 'GET',
+            path: '/api/data-transfer/items',
+            className: 'DataTransferController',
+            methodName: 'getItems',
+            file: 'DataTransferController.java',
+            line: 10,
+            framework: 'Spring'
+        });
+
+        const internals = cache as unknown as { tokenizeCamelCase(text: string): string[] };
+        internals.tokenizeCamelCase = () => {
+            throw new Error('Search should not tokenize endpoint text after it has been added');
+        };
+
+        const results = cache.search({ text: 'dt' });
+        assert.strictEqual(results.length, 1);
+        assert.strictEqual(results[0].className, 'DataTransferController');
     });
 
     test('Acronym should NOT match single-word text', () => {

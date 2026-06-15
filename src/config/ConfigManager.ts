@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { DEFAULT_CONFIG, CONFIG_KEYS, PROJECT_CONFIG_FILE, ScanConfig } from './ScanConfig';
 import { Logger } from '../utils/Logger';
 import { BaseUrlResolver } from '../utils/BaseUrlResolver';
@@ -219,10 +218,11 @@ export class ConfigManager {
         return vscode.workspace.getWorkspaceFolder(resourceUri)?.uri.fsPath;
     }
 
-    createProjectConfigTemplate(workspaceFolder: string): void {
+    async createProjectConfigTemplate(workspaceFolder: string): Promise<void> {
         const configPath = path.join(workspaceFolder, PROJECT_CONFIG_FILE);
+        const configUri = vscode.Uri.file(configPath);
 
-        if (fs.existsSync(configPath)) {
+        if (await this.fileExists(configUri)) {
             this.logger.warning(`${PROJECT_CONFIG_FILE} already exists`);
             return;
         }
@@ -235,7 +235,7 @@ export class ConfigManager {
         };
 
         try {
-            fs.writeFileSync(configPath, JSON.stringify(template, null, 2), 'utf-8');
+            await vscode.workspace.fs.writeFile(configUri, Buffer.from(JSON.stringify(template, null, 2), 'utf-8'));
             this.logger.info(`Created ${PROJECT_CONFIG_FILE} template`);
             vscode.window.showInformationMessage(
                 `Created ${PROJECT_CONFIG_FILE} in project root. You can customize scan settings.`
@@ -243,6 +243,15 @@ export class ConfigManager {
         } catch (error) {
             const err = error as Error;
             this.logger.error(`Failed to create config template: ${err.message}`);
+        }
+    }
+
+    private async fileExists(uri: vscode.Uri): Promise<boolean> {
+        try {
+            await vscode.workspace.fs.stat(uri);
+            return true;
+        } catch {
+            return false;
         }
     }
 

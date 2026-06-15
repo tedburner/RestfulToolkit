@@ -1,25 +1,35 @@
 import * as assert from 'assert';
-import * as fs from 'fs';
+import fs = require('fs');
+import * as os from 'os';
 import * as path from 'path';
+import * as vscode from 'vscode';
 import { BaseUrlResolver } from '../../utils/BaseUrlResolver';
 
 suite('BaseUrlResolver Test Suite', () => {
     let resolver: BaseUrlResolver;
     let tempDir: string;
+    const originalReadFileSync = fs.readFileSync;
+    const originalStatSync = fs.statSync;
+    const originalWorkspaceReadFile = vscode.workspace.fs.readFile;
 
     setup(() => {
         resolver = new BaseUrlResolver();
-        tempDir = fs.mkdtempSync(path.join(__dirname, 'test-baseurl-'));
+        tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'restful-toolkit-baseurl-'));
     });
 
     teardown(() => {
+        (fs as { readFileSync: typeof originalReadFileSync }).readFileSync = originalReadFileSync;
+        (fs as { statSync: typeof originalStatSync }).statSync = originalStatSync;
+        vscode.workspace.fs.readFile = originalWorkspaceReadFile;
         fs.rmSync(tempDir, { recursive: true, force: true });
     });
 
-    function writeResourceFile(name: string, content: string) {
+    function writeResourceFile(name: string, content: string): string {
         const resourcesDir = path.join(tempDir, 'src', 'main', 'resources');
         fs.mkdirSync(resourcesDir, { recursive: true });
-        fs.writeFileSync(path.join(resourcesDir, name), content);
+        const filePath = path.join(resourcesDir, name);
+        fs.writeFileSync(filePath, content);
+        return filePath;
     }
 
     // ===== 基础 properties 解析 =====
@@ -37,6 +47,74 @@ suite('BaseUrlResolver Test Suite', () => {
         assert.ok(result !== null);
         assert.strictEqual(result!.port, '9191');
         assert.strictEqual(result!.contextPath, '/async');
+    });
+
+    test('Should reuse cached sync result when config file metadata is unchanged', () => {
+        writeResourceFile('application.properties', 'server.port=9090\n');
+        const first = resolver.resolve(tempDir);
+        assert.ok(first !== null);
+        assert.strictEqual(first!.port, '9090');
+
+        (fs as { readFileSync: typeof originalReadFileSync }).readFileSync = () => {
+            throw new Error('Config file should not be read again when cache is valid');
+        };
+
+        const second = new BaseUrlResolver().resolve(tempDir);
+        assert.deepStrictEqual(second, first);
+    });
+
+    test('Should reuse cached async result when config file metadata is unchanged', async () => {
+        writeResourceFile('application.yml', 'server:\n  port: 9191\n');
+        const first = await resolver.resolveAsync(tempDir);
+        assert.ok(first !== null);
+        assert.strictEqual(first!.port, '9191');
+
+        vscode.workspace.fs.readFile = async () => {
+            throw new Error('Config file should not be read again when cache is valid');
+        };
+
+        const second = await new BaseUrlResolver().resolveAsync(tempDir);
+        assert.deepStrictEqual(second, first);
+    });
+
+    test('Should invalidate cached result when config file changes', () => {
+        writeResourceFile('application.properties', 'server.port=9090\n');
+        const first = resolver.resolve(tempDir);
+        assert.ok(first !== null);
+        assert.strictEqual(first!.port, '9090');
+
+        writeResourceFile('application.properties', 'server.port=10010\n');
+        const second = new BaseUrlResolver().resolve(tempDir);
+        assert.ok(second !== null);
+        assert.strictEqual(second!.port, '10010');
+    });
+
+    test('Should invalidate cached result when same-size config content changes with unchanged mtime', () => {
+        const configFile = writeResourceFile('application.properties', 'server.port=9090\n');
+        const first = resolver.resolve(tempDir);
+        assert.ok(first !== null);
+        assert.strictEqual(first!.port, '9090');
+
+        const originalMetadata = fs.statSync(configFile);
+        fs.writeFileSync(configFile, 'server.port=8081\n');
+        const changedMetadata = fs.statSync(configFile);
+
+        (fs as { statSync: typeof originalStatSync }).statSync = ((target: fs.PathLike) => {
+            if (path.resolve(String(target)) === path.resolve(configFile)) {
+                return {
+                    mtime: originalMetadata.mtime,
+                    mtimeMs: originalMetadata.mtimeMs,
+                    ctime: changedMetadata.ctime,
+                    ctimeMs: changedMetadata.ctimeMs,
+                    size: originalMetadata.size
+                } as fs.Stats;
+            }
+            return originalStatSync(target);
+        }) as typeof originalStatSync;
+
+        const second = new BaseUrlResolver().resolve(tempDir);
+        assert.ok(second !== null);
+        assert.strictEqual(second!.port, '8081');
     });
 
     test('Should parse context-path from application.properties', () => {

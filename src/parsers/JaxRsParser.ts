@@ -66,10 +66,6 @@ export class JaxRsParser {
                 braceEnd++;
             }
 
-            if (braceStart === -1) {
-                continue; // 方法体开始括号未找到
-            }
-
             // 从方法体开始位置向前扫描，找到 { 之前的内容
             // 注意：需要区分方法注解和参数注解（如 @FormParam），只收集 public/private/protected 之前的注解
             const annotationBlock = this.findMethodAnnotationBlock(content, braceStart);

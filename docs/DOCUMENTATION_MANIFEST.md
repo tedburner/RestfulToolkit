@@ -2,9 +2,9 @@
 
 ## 整理完成 ✅
 
-**整理日期**: 2026-04-20 | **更新日期**: 2026-06-02（P0/P1 与中低优先级小修）
+**整理日期**: 2026-04-20 | **更新日期**: 2026-06-15（FileScanner 去重/限流、SpringMvcParser 单次扫描、EndpointCache 预计算与返回值隔离、DtoFieldExtractor 与 BaseUrlResolver 缓存、优化任务清单完成）
 
-**v0.0.6 新增**:
+**近期新增与更新**:
 - `docs/CODE_AUDIT_2026-06-01.md` — 全面代码审查报告，覆盖解析器、缓存/搜索、参数提取、扫描器/配置/工具层，含 6 个严重、5 个高级、12 个中级、16 个低级问题
 - P0/P1 修复：恢复 TypeScript 编译，修复 Spring/JAX-RS 路径解析、搜索正则崩溃、JSON-to-DTO 覆盖确认与 `@JsonProperty` key 转义、项目配置安全校验、缓存计数漂移与扫描竞态
 - 中低优先级小修：搜索输入防抖与实时清空、配置变化重建 watcher、Base URL YAML 层级约束、`maxResults` 约束、搜索 filters 应用、全限定 REST 注解识别、`@RequestMapping` 多 HTTP 方法解析
@@ -22,7 +22,7 @@
 - `src/utils/BaseUrlResolver.ts` — Base URL 自动检测（支持 bootstrap.yml、多环境 profile、占位符解析）
 - `src/test/extractor/UrlGenerator.test.ts` — URL 生成测试（5 用例）
 - `src/test/extractor/CurlConverter.test.ts` — cURL 生成测试（5 用例）
-- `src/test/utils/BaseUrlResolver.test.ts` — Base URL 检测测试（18 用例）
+- `src/test/utils/BaseUrlResolver.test.ts` — Base URL 检测测试（24 用例）
 - `package.nls.json` / `package.nls.zh-cn.json` — 新增 copyUrl/copyCurl 命令标题
 - `src/extractor/ParameterExtractor.ts` — 增强 `findMethodAtPosition` 双策略扫描、括号深度签名匹配
 - `src/extractor/DtoFieldExtractor.ts` — 提取 `PRIMITIVE_TYPES` 共享常量
@@ -70,7 +70,7 @@ restful-toolkit/
 │   ├── CONFIG_SYSTEM.md     # 配置系统文档
 │   ├── DOCUMENTATION_MANIFEST.md # 本清单
 │   ├── INCREMENTAL_SCAN.md  # 增量扫描文档
-│   ├── OPTIMIZATION_PLAN.md # 核心代码优化方案（已完成）
+│   ├── OPTIMIZATION_PLAN.md # 当前核心代码优化任务清单
 │   ├── CODE_AUDIT_2026-06-01.md # 代码审查报告（待修复）
 │   ├── TESTING_GUIDE.md     # 测试指南
 │   └── screenshot.png       # 扩展截图演示
@@ -91,9 +91,9 @@ restful-toolkit/
 │
 ├── src/test/scripts/ (自动化测试脚本)
 │   ├── mock-vscode.js            # Node 脚本最小 VS Code API mock
-│   ├── test-all-files.js         # 端点验证脚本（41端点）
-│   ├── test-parameter-copy.js    # 参数复制批量测试（75测试）
-│   ├── test-copy-url-curl.js     # URL/cURL 自动化测试（108测试）
+│   ├── test-all-files.js         # 端点验证脚本（50端点）
+│   ├── test-parameter-copy.js    # 参数复制批量测试（78测试）
+│   ├── test-copy-url-curl.js     # URL/cURL 自动化测试（115测试）
 │   └── test-json-to-class.js     # JSON 转 DTO 自动化测试（86测试）
 │
 ├── openspec/ (OpenSpec规范 - 保持不变)
@@ -108,7 +108,7 @@ restful-toolkit/
 
 ## 二、测试脚本结构
 
-### 单元测试（Mocha框架）- 13个文件 ✅
+### 单元测试（Mocha框架）- 15个文件 ✅
 
 **位置**: `src/test/` 目录
 
@@ -117,14 +117,16 @@ restful-toolkit/
 | runTest.ts | Mocha测试入口 |
 | parsers/SpringMvcParser.test.ts | Spring解析器测试（含 @RequestHeader） |
 | parsers/JaxRsParser.test.ts | JAX-RS解析器测试（含 @HeaderParam） |
-| cache/EndpointCache.test.ts | 缓存测试 |
+| cache/EndpointCache.test.ts | 缓存、搜索排序与预计算复用测试 |
+| scanner/FileScanner.test.ts | 文件扫描去重与并发限流测试 |
 | extractor/UrlGenerator.test.ts | URL 生成测试（5 用例） |
 | extractor/CurlConverter.test.ts | cURL 生成测试（5 用例） |
 | extractor/NameTransformer.test.ts | 命名转换测试 |
 | extractor/FormatConverter.test.ts | 格式转换测试 |
+| extractor/DtoFieldExtractor.test.ts | DTO 查找缓存与字段解析测试 |
 | extractor/SpringParameterParser.test.ts | Spring 参数解析测试 |
 | extractor/JaxRsParameterParser.test.ts | JAX-RS 参数解析测试 |
-| utils/BaseUrlResolver.test.ts | Base URL 自动检测测试（5 用例） |
+| utils/BaseUrlResolver.test.ts | Base URL 自动检测与缓存失效测试 |
 | generator/JsonClassGenerator.test.ts | JSON 转 Java/Kotlin DTO 生成测试 |
 | generator/JsonTypeMapper.test.ts | JSON 值到 Java/Kotlin 类型映射测试 |
 | utils/TextProcessor.test.ts | 文本净化与行号索引测试 |
@@ -137,9 +139,9 @@ restful-toolkit/
 
 | 脚本 | 说明 | 运行 |
 |------|------|------|
-| test-all-files.js | 41个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
-| test-parameter-copy.js | 75个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node src/test/scripts/test-parameter-copy.js` |
-| test-copy-url-curl.js | 108个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
+| test-all-files.js | 50个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
+| test-parameter-copy.js | 78个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node src/test/scripts/test-parameter-copy.js` |
+| test-copy-url-curl.js | 115个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
 | test-json-to-class.js | 86个测试（命名转换、类型推断、Java/Kotlin 生成、边界情况） | `node src/test/scripts/test-json-to-class.js` |
 | mock-vscode.js | 为 Node 自动化脚本提供最小 VS Code API mock | 由脚本自动加载 |
 
@@ -163,7 +165,7 @@ restful-toolkit/
 | TESTING_GUIDE.md | VS Code测试指南 |
 | CONFIG_SYSTEM.md | 配置系统文档 |
 | INCREMENTAL_SCAN.md | 增量扫描文档 |
-| OPTIMIZATION_PLAN.md | 核心代码优化方案（2026-04-19，已完成） |
+| OPTIMIZATION_PLAN.md | 当前核心代码优化任务清单（2026-06-15，已完成） |
 | CODE_AUDIT_2026-06-01.md | 代码审查报告（2026-06-01，P0/P1 已在 2026-06-02 优先修复） |
 | DOCUMENTATION_MANIFEST.md | 本清单文档 |
 | screenshot.png | 扩展截图演示 |
@@ -214,7 +216,6 @@ restful-toolkit/
 1. ❌ restful-tool（空目录）
 2. ❌ restful-toolkit-0.0.1.vsix（打包文件应在.gitignore）
 3. ❌ docs/demo/（与test-project重复）
-4. ❌ src/test/scanner/（空目录）
 
 ### 重命名的文件
 
@@ -224,7 +225,7 @@ restful-toolkit/
 
 ## 五、统计
 
-### v0.0.6 当前状态
+### v0.0.7 当前状态
 
 | 类别 | 数量 |
 |------|------|
@@ -232,8 +233,8 @@ restful-toolkit/
 | 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
 | docs 文档 | 7个（CONFIG_SYSTEM, DOCUMENTATION_MANIFEST, INCREMENTAL_SCAN, OPTIMIZATION_PLAN, CODE_AUDIT_2026-06-01, TESTING_GUIDE, screenshot.png） |
 | 源代码模块 | 22个（含 extractor/ 8、commands/ 4、generator/ 2、utils/ 3） |
-| 单元测试 | 13+ Mocha 测试（含 BaseUrlResolver、TextProcessor、JSON-to-DTO） |
-| 自动化脚本 | 4个（41端点验证 + 75参数复制 + 108 URL/cURL + 86 JSON-to-DTO） |
+| 单元测试 | 15+ Mocha 测试（含 FileScanner、EndpointCache、DtoFieldExtractor、BaseUrlResolver、TextProcessor、JSON-to-DTO） |
+| 自动化脚本 | 4个（50端点验证 + 78参数复制 + 115 URL/cURL + 86 JSON-to-DTO） |
 | 测试 Controller | 3个（Spring 25 + JAX-RS 11 + Form） |
 | 测试 DTO | 7个 |
 
@@ -244,6 +245,7 @@ restful-toolkit/
 - **v0.0.4 更新**（2026-04-29）：新增 Copy URL/cURL、Base URL 检测、请求头解析
 - **v0.0.5 更新**（2026-05-19）：新增并发扫描、TextProcessor、JSON 转 DTO Lombok 选项、异步 I/O 与搜索排序优化
 - **v0.0.6 更新**（2026-06-02）：优先修复代码审查 P0/P1 与中低优先级小问题，恢复编译与本地验证脚本稳定性
+- **v0.0.7 更新**（2026-06-15）：FileScanner 去重重叠 glob 匹配，限制增量 stat 检查并发；SpringMvcParser 改为单次源码顺序扫描；EndpointCache 预计算搜索字段、维护 top-K 候选并隔离返回值变异；DtoFieldExtractor 缓存一次命令内 DTO 查找和直接字段解析；BaseUrlResolver 缓存 workspace 自动检测结果并按配置文件 mtime/ctime/size 变化失效；完成优化任务清单
 
 ---
 

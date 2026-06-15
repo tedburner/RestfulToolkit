@@ -15,6 +15,9 @@ export const PRIMITIVE_TYPES = [
 
 export class DtoFieldExtractor {
     private readonly maxDepth = 3;
+    private readonly dtoFileCache = new Map<string, vscode.Uri[]>();
+    private readonly sanitizedContentCache = new Map<string, string>();
+    private readonly directFieldsCache = new Map<string, DtoField[]>();
 
     async findDtoFields(
         dtoTypeName: string,
@@ -28,10 +31,7 @@ export class DtoFieldExtractor {
             return [];
         }
 
-        const files = await vscode.workspace.findFiles(
-            `**/${dtoTypeName}.{java,kt}`,
-            '**/node_modules/**,**/target/**,**/build/**,**/.git/**'
-        );
+        const files = await this.findDtoFiles(dtoTypeName);
 
         if (files.length === 0) {
             return [];
@@ -55,9 +55,9 @@ export class DtoFieldExtractor {
                 }
             }
 
-            const content = await TextProcessor.readFileText(selectedFile);
-            const sanitized = TextProcessor.sanitize(content, { preserveStrings: true });
-            return await this.resolveNestedFields(sanitized, visited, depth + 1);
+            const sanitized = await this.readSanitizedContent(selectedFile);
+            const directFields = this.getDirectFields(selectedFile.fsPath, sanitized);
+            return await this.resolveNestedFields(sanitized, visited, depth + 1, directFields);
         } catch {
             return [];
         }
@@ -67,9 +67,53 @@ export class DtoFieldExtractor {
         return this.parseFields(TextProcessor.sanitize(content, { preserveStrings: true }));
     }
 
-    private async resolveNestedFields(content: string, visited: Set<string>, depth: number): Promise<DtoField[]> {
+    private async findDtoFiles(dtoTypeName: string): Promise<vscode.Uri[]> {
+        const cached = this.dtoFileCache.get(dtoTypeName);
+        if (cached) {
+            return cached;
+        }
+
+        const files = await vscode.workspace.findFiles(
+            `**/${dtoTypeName}.{java,kt}`,
+            '**/node_modules/**,**/target/**,**/build/**,**/.git/**'
+        );
+        this.dtoFileCache.set(dtoTypeName, files);
+        return files;
+    }
+
+    private async readSanitizedContent(file: vscode.Uri): Promise<string> {
+        const key = this.normalizeFileKey(file.fsPath);
+        const cached = this.sanitizedContentCache.get(key);
+        if (cached !== undefined) {
+            return cached;
+        }
+
+        const content = await TextProcessor.readFileText(file);
+        const sanitized = TextProcessor.sanitize(content, { preserveStrings: true });
+        this.sanitizedContentCache.set(key, sanitized);
+        return sanitized;
+    }
+
+    private getDirectFields(filePath: string, content: string): DtoField[] {
+        const key = this.normalizeFileKey(filePath);
+        const cached = this.directFieldsCache.get(key);
+        if (cached) {
+            return this.cloneFields(cached);
+        }
+
+        const fields = this.parseFields(content);
+        this.directFieldsCache.set(key, this.cloneFields(fields));
+        return fields;
+    }
+
+    private async resolveNestedFields(
+        content: string,
+        visited: Set<string>,
+        depth: number,
+        directFields?: DtoField[]
+    ): Promise<DtoField[]> {
         if (depth >= this.maxDepth) {
-            return this.parseFields(content);
+            return this.cloneFields(directFields ?? this.parseFields(content));
         }
 
         const resolveNested = async (typeName: string) => {
@@ -78,7 +122,7 @@ export class DtoFieldExtractor {
         };
 
         // 先同步解析字段，再异步解析嵌套 DTO
-        const fields = this.parseFields(content);
+        const fields = this.cloneFields(directFields ?? this.parseFields(content));
         for (const field of fields) {
             if (!this.isPrimitiveType(field.type)) {
                 const nested = await this.resolveNestedDtoFields(field.type, resolveNested);
@@ -88,6 +132,17 @@ export class DtoFieldExtractor {
             }
         }
         return fields;
+    }
+
+    private normalizeFileKey(filePath: string): string {
+        return filePath.replace(/\\/g, '/');
+    }
+
+    private cloneFields(fields: DtoField[]): DtoField[] {
+        return fields.map(field => ({
+            ...field,
+            nested: field.nested ? this.cloneFields(field.nested) : undefined
+        }));
     }
 
     /**

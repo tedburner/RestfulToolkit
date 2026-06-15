@@ -35,61 +35,53 @@ export class SpringMvcParser {
     parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[]): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
-        // 新方法：直接查找 REST 注解，然后提取方法和注解
-        const mappingAnnotations = [
-            '@GetMapping', '@PostMapping', '@PutMapping', '@DeleteMapping', '@PatchMapping', '@RequestMapping'
-        ];
+        const annotationPattern = /@(?:[\w.]+\.)?(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)(?:\s|\(|$)/g;
+        let annotationMatch: RegExpExecArray | null;
 
-        for (const annotationName of mappingAnnotations) {
-            // 使用更简单的正则：只匹配注解名称，不匹配完整注解（避免跨行问题）
-            const simpleName = annotationName.slice(1);
-            const annotationPattern = new RegExp(`@(?:[\\w.]+\\.)?${simpleName}(?:\\s|\\(|$)`, 'g');
-            let annotationMatch;
+        while ((annotationMatch = annotationPattern.exec(content)) !== null) {
+            const annotationIndex = annotationMatch.index;
+            const simpleName = annotationMatch[1];
 
-            while ((annotationMatch = annotationPattern.exec(content)) !== null) {
-                const annotationIndex = annotationMatch.index;
-
-                // 从注解位置向后提取完整注解文本（包括跨行）
-                const annotationText = this.extractAnnotationForward(content, annotationIndex);
-                if (!annotationText) {
-                    continue;
-                }
-
-                if (simpleName === 'RequestMapping' && this.isClassLevelRequestMapping(content, annotationIndex, annotationText.length)) {
-                    continue;
-                }
-
-                // 从注解位置向后查找方法名
-                const methodStartIndex = annotationIndex + annotationText.length;
-                const methodName = this.findMethodNameForward(content, methodStartIndex);
-                if (!methodName) {
-                    continue;
-                }
-
-                // 跳过类级别的 @RequestMapping（检查注解后是否有 class 关键字）
-                if (annotationName === '@RequestMapping') {
-                    const searchArea = content.substring(annotationIndex, annotationIndex + 300);
-                    if (searchArea.match(/(?:public|private|protected)?\s+class\s+\w+/)) {
-                        // 这是类级别注解，跳过
-                        continue;
-                    }
-                }
-
-                // 计算注解起始行号（直接从注解的 @ 符号位置计算）
-                const line = lineIndex
-                    ? TextProcessor.getLineNumber(lineIndex, annotationIndex)
-                    : TextProcessor.getLineNumberFallback(content, annotationIndex);
-                const methodEndpoints = this.parseAnnotationText(
-                    annotationText,
-                    classPath || '',
-                    className,
-                    methodName,
-                    filePath,
-                    line
-                );
-
-                endpoints.push(...methodEndpoints);
+            // 从注解位置向后提取完整注解文本（包括跨行）
+            const annotationText = this.extractAnnotationForward(content, annotationIndex);
+            if (!annotationText) {
+                continue;
             }
+
+            if (simpleName === 'RequestMapping' && this.isClassLevelRequestMapping(content, annotationIndex, annotationText.length)) {
+                continue;
+            }
+
+            // 从注解位置向后查找方法名
+            const methodStartIndex = annotationIndex + annotationText.length;
+            const methodName = this.findMethodNameForward(content, methodStartIndex);
+            if (!methodName) {
+                continue;
+            }
+
+            // 跳过类级别的 @RequestMapping（检查注解后是否有 class 关键字）
+            if (simpleName === 'RequestMapping') {
+                const searchArea = content.substring(annotationIndex, annotationIndex + 300);
+                if (searchArea.match(/(?:public|private|protected)?\s+class\s+\w+/)) {
+                    // 这是类级别注解，跳过
+                    continue;
+                }
+            }
+
+            // 计算注解起始行号（直接从注解的 @ 符号位置计算）
+            const line = lineIndex
+                ? TextProcessor.getLineNumber(lineIndex, annotationIndex)
+                : TextProcessor.getLineNumberFallback(content, annotationIndex);
+            const methodEndpoints = this.parseAnnotationText(
+                annotationText,
+                classPath || '',
+                className,
+                methodName,
+                filePath,
+                line
+            );
+
+            endpoints.push(...methodEndpoints);
         }
 
         return endpoints;

@@ -30,17 +30,14 @@ export class SearchUI implements vscode.Disposable {
             return;
         }
 
-        // 初始显示全部端点（未输入搜索时）
-        const items = allEndpoints.map(endpoint => this.createQuickPickItem(endpoint));
-        quickPick.items = items;
+        quickPick.items = allEndpoints.map(endpoint => this.createQuickPickItem(endpoint));
 
         quickPick.onDidChangeValue((value) => {
             if (this.searchDebounceTimer) {
                 clearTimeout(this.searchDebounceTimer);
             }
             this.searchDebounceTimer = setTimeout(() => {
-                const filteredItems = this.filterEndpoints(value);
-                quickPick.items = filteredItems;
+                quickPick.items = this.filterEndpoints(value);
             }, 150);
         });
 
@@ -68,8 +65,7 @@ export class SearchUI implements vscode.Disposable {
     }
 
     private createQuickPickItem(endpoint: RestEndpoint): EndpointQuickPickItem {
-        const methodIcon = this.getMethodIcon(endpoint.method);
-        const label = `${methodIcon} [${endpoint.method}] ${endpoint.path} - ${endpoint.className}.${endpoint.methodName}()`;
+        const label = `[${endpoint.method}] ${endpoint.path} - ${endpoint.className}.${endpoint.methodName}()`;
         const description = endpoint.file;
         const detail = endpoint.framework;
 
@@ -82,23 +78,6 @@ export class SearchUI implements vscode.Disposable {
         };
     }
 
-    private getMethodIcon(method: string): string {
-        switch (method) {
-            case 'GET':
-                return '🟢';
-            case 'POST':
-                return '🔵';
-            case 'PUT':
-                return '🟡';
-            case 'DELETE':
-                return '🔴';
-            case 'PATCH':
-                return '🟣';
-            default:
-                return '⚪';
-        }
-    }
-
     private filterEndpoints(query: string): EndpointQuickPickItem[] {
         if (!query || query.trim() === '') {
             return this.cache.getAll().map(endpoint => this.createQuickPickItem(endpoint));
@@ -108,9 +87,8 @@ export class SearchUI implements vscode.Disposable {
             .getConfiguration('restfulToolkit')
             .get<number>('maxResults', 100);
 
-        const searchResults = this.cache.search({ text: query }, maxResults);
-
-        return searchResults.map(endpoint => this.createQuickPickItem(endpoint));
+        return this.cache.search({ text: query }, maxResults)
+            .map(endpoint => this.createQuickPickItem(endpoint));
     }
 
     dispose(): void {
@@ -135,7 +113,6 @@ export class SearchUI implements vscode.Disposable {
             });
 
             this.logger.info(`Opened endpoint: ${endpoint.path} at ${endpoint.file}:${endpoint.line}`);
-
         } catch (error) {
             const err = error as Error;
             this.logger.error(`Failed to open file: ${endpoint.file}`, err);

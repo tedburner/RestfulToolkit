@@ -165,7 +165,7 @@ export class AnnotationParser {
         }
 
         // 从第一个 { 开始计算括号深度（在净化文本上执行，字符串/注释中的括号已被清除）
-        const braceDepth = { value: 0 };
+        let braceDepth = 0;
         let endIndex = actualStartIndex;
         let foundOpenBrace = false;
 
@@ -173,18 +173,18 @@ export class AnnotationParser {
             const char = content[j];
 
             if (char === '{') {
-                braceDepth.value++;
+                braceDepth++;
                 foundOpenBrace = true;
             } else if (char === '}') {
-                braceDepth.value--;
-                if (foundOpenBrace && braceDepth.value === 0) {
+                braceDepth--;
+                if (foundOpenBrace && braceDepth === 0) {
                     endIndex = j + 1;
                     break;
                 }
             }
         }
 
-        if (!foundOpenBrace || braceDepth.value !== 0) {
+        if (!foundOpenBrace || braceDepth !== 0) {
             return null;
         }
 

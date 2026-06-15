@@ -1,36 +1,52 @@
 import { RestEndpoint, MatchScore, SearchQuery } from '../models/types';
 
+interface SearchableField {
+    lower: string;
+    words: string[];
+    acronym: string | null;
+}
+
+interface SearchableEndpoint {
+    endpoint: RestEndpoint;
+    path: SearchableField;
+    className: SearchableField;
+    methodName: SearchableField;
+    httpMethod: SearchableField;
+}
+
+interface ScoredEndpoint {
+    item: SearchableEndpoint;
+    score: MatchScore;
+}
+
 export class EndpointCache {
-    private endpoints: Map<string, RestEndpoint[]> = new Map();
-    private fileIndex: Map<string, RestEndpoint[]> = new Map();
+    private endpoints: Map<string, SearchableEndpoint[]> = new Map();
+    private fileIndex: Map<string, SearchableEndpoint[]> = new Map();
+    private allEndpoints: SearchableEndpoint[] = [];
+    private endpointCount = 0;
 
-    /** 扁平化端点缓存，避免每次 search() 重新分配 */
-    private _allEndpoints: RestEndpoint[] = [];
-    /** 增量计数器，避免 size() 每次 O(n) 遍历 */
-    private _size = 0;
-
-    /** httpMethod 集合，用于多词搜索的 token 分类（静态，避免每次 search 重建） */
     private static readonly httpMethods = new Set(['get', 'post', 'put', 'delete', 'patch']);
 
     add(endpoint: RestEndpoint): void {
-        const pathKey = endpoint.path;
+        const searchableEndpoint = this.createSearchableEndpoint(endpoint);
+        const pathKey = searchableEndpoint.endpoint.path;
         if (!this.endpoints.has(pathKey)) {
             this.endpoints.set(pathKey, []);
         }
-        this.endpoints.get(pathKey)!.push(endpoint);
+        this.endpoints.get(pathKey)!.push(searchableEndpoint);
 
-        const fileKey = endpoint.file;
+        const fileKey = searchableEndpoint.endpoint.file;
         if (!this.fileIndex.has(fileKey)) {
             this.fileIndex.set(fileKey, []);
         }
-        this.fileIndex.get(fileKey)!.push(endpoint);
+        this.fileIndex.get(fileKey)!.push(searchableEndpoint);
 
-        this._allEndpoints.push(endpoint);
-        this._size++;
+        this.allEndpoints.push(searchableEndpoint);
+        this.endpointCount++;
     }
 
     getByFile(file: string): RestEndpoint[] {
-        return this.fileIndex.get(file) || [];
+        return (this.fileIndex.get(file) || []).map(item => this.cloneEndpoint(item.endpoint));
     }
 
     removeByFile(file: string): void {
@@ -40,22 +56,20 @@ export class EndpointCache {
         }
 
         for (const endpoint of endpoints) {
-            const pathEndpoints = this.endpoints.get(endpoint.path);
+            const pathEndpoints = this.endpoints.get(endpoint.endpoint.path);
             if (pathEndpoints) {
-                const filtered = pathEndpoints.filter(e => e.file !== file);
+                const filtered = pathEndpoints.filter(e => e.endpoint.file !== file);
                 if (filtered.length === 0) {
-                    this.endpoints.delete(endpoint.path);
+                    this.endpoints.delete(endpoint.endpoint.path);
                 } else {
-                    this.endpoints.set(endpoint.path, filtered);
+                    this.endpoints.set(endpoint.endpoint.path, filtered);
                 }
             }
         }
 
-        this._size -= endpoints.length;
+        this.endpointCount -= endpoints.length;
         this.fileIndex.delete(file);
-
-        // 增量移除：直接过滤，无需全量重建
-        this._allEndpoints = this._allEndpoints.filter(e => e.file !== file);
+        this.allEndpoints = this.allEndpoints.filter(e => e.endpoint.file !== file);
     }
 
     updateFile(file: string, endpoints: RestEndpoint[]): void {
@@ -70,18 +84,13 @@ export class EndpointCache {
         const queryText = query.text.trim();
 
         if (!queryText) {
-            return this._allEndpoints.slice(0, limit);
+            return this.allEndpoints.slice(0, limit).map(item => this.cloneEndpoint(item.endpoint));
         }
 
         const tokens = queryText.split(/\s+/).map(t => t.toLowerCase()).filter(t => t.length > 0);
-
-        /*
-         * token 分类：在循环外执行一次，避免每个端点重复计算
-         * httpTokens → 作为 HTTP 方法过滤器
-         * searchTextTokens → 参与 path/class/method 打分
-         */
         const httpTokens: string[] = [];
         const searchTextTokens: string[] = [];
+
         for (const token of tokens) {
             if (EndpointCache.httpMethods.has(token)) {
                 httpTokens.push(token);
@@ -89,96 +98,106 @@ export class EndpointCache {
                 searchTextTokens.push(token);
             }
         }
+
         const hasHttpFilter = httpTokens.length > 0;
+        const scored: ScoredEndpoint[] = [];
 
-        const scored = this._allEndpoints
-            .filter(endpoint => this.matchesFilters(endpoint, query))
-            .map(endpoint => {
-                const httpMethod = endpoint.method.toLowerCase();
+        for (const item of this.allEndpoints) {
+            if (!this.matchesFilters(item.endpoint, query)) {
+                continue;
+            }
 
-                // 有 httpMethod token 但当前端点方法不匹配 → 过滤掉
-                if (hasHttpFilter && !httpTokens.includes(httpMethod)) {
-                    return { endpoint, score: this.zeroScore() };
+            if (hasHttpFilter && !httpTokens.includes(item.httpMethod.lower)) {
+                continue;
+            }
+
+            let score: MatchScore;
+            if (searchTextTokens.length === 0) {
+                if (tokens.length !== 1 || !hasHttpFilter) {
+                    continue;
                 }
 
-                // 没有搜索词
-                if (searchTextTokens.length === 0) {
-                    // 单词 httpMethod 查询（如 "post"）→ 该端点匹配，给 httpMethod 维度分数
-                    if (tokens.length === 1 && hasHttpFilter) {
-                        const httpScore = this.matchScore(httpMethod, tokens[0]) * 0.1;
-                        return { endpoint, score: { pathScore:0, classScore:0, methodScore:0, httpScore, total: httpScore } };
-                    }
-                    // 多词全是 httpMethod（如 "post get"）→ 无搜索词，过滤
-                    return { endpoint, score: this.zeroScore() };
+                const httpScore = this.matchScore(item.httpMethod, tokens[0]) * 0.1;
+                score = { pathScore: 0, classScore: 0, methodScore: 0, httpScore, total: httpScore };
+            } else {
+                const tokenScores = searchTextTokens.map(token => this.calculateScore(item, token));
+
+                if (tokenScores.some(tokenScore => tokenScore.total === 0)) {
+                    continue;
                 }
 
-                // 预计算各维度 lowercase（每个端点只算一次，不在 calculateScore 内重复）
-                const pathLower = endpoint.path.toLowerCase();
-                const classLower = endpoint.className.toLowerCase();
-                const methodLower = endpoint.methodName.toLowerCase();
-                const httpLower = endpoint.method.toLowerCase();
-
-                // 对每个搜索 token 计算 4 维分数
-                const tokenScores: MatchScore[] = [];
-                for (const token of searchTextTokens) {
-                    tokenScores.push(this.calculateScore(pathLower, classLower, methodLower, httpLower, token));
-                }
-
-                // AND：每个搜索 token 都必须至少命中一个维度
-                if (tokenScores.some(s => s.total === 0)) {
-                    return { endpoint, score: this.zeroScore() };
-                }
-
-                // 多词取平均，单词直接用
-                const total = searchTextTokens.length === 1
+                const total = tokenScores.length === 1
                     ? tokenScores[0].total
-                    : tokenScores.reduce((acc, s) => acc + s.total, 0) / tokenScores.length;
+                    : tokenScores.reduce((acc, tokenScore) => acc + tokenScore.total, 0) / tokenScores.length;
 
-                // 各维度取最大值（用于排序优先级）
-                const maxPath = Math.max(...tokenScores.map(s => s.pathScore));
-                const maxClass = Math.max(...tokenScores.map(s => s.classScore));
-                const maxMethod = Math.max(...tokenScores.map(s => s.methodScore));
-                const maxHttp = Math.max(...tokenScores.map(s => s.httpScore));
-
-                return {
-                    endpoint,
-                    score: {
-                        pathScore: maxPath,
-                        classScore: maxClass,
-                        methodScore: maxMethod,
-                        httpScore: maxHttp,
-                        total
-                    }
+                score = {
+                    pathScore: Math.max(...tokenScores.map(tokenScore => tokenScore.pathScore)),
+                    classScore: Math.max(...tokenScores.map(tokenScore => tokenScore.classScore)),
+                    methodScore: Math.max(...tokenScores.map(tokenScore => tokenScore.methodScore)),
+                    httpScore: Math.max(...tokenScores.map(tokenScore => tokenScore.httpScore)),
+                    total
                 };
-            })
-            .filter(item => item.score.total > 0);
+            }
 
-        /*
-         * 排序：逐层比较实际分数值，而非二值 flag。
-         * path 分数高的排最前；同分时比 className，再比 methodName，最后比总分。
-         */
-        scored.sort((a, b) => {
-            // 1. path 分数
-            if (a.score.pathScore !== b.score.pathScore) {
-                return b.score.pathScore - a.score.pathScore;
+            if (score.total > 0) {
+                this.insertTopScore(scored, { item, score }, limit);
             }
-            // 2. className 分数
-            if (a.score.classScore !== b.score.classScore) {
-                return b.score.classScore - a.score.classScore;
-            }
-            // 3. methodName 分数
-            if (a.score.methodScore !== b.score.methodScore) {
-                return b.score.methodScore - a.score.methodScore;
-            }
-            // 4. 总分
-            return b.score.total - a.score.total;
-        });
+        }
 
-        return scored.slice(0, limit).map(item => item.endpoint);
+        return scored.map(item => this.cloneEndpoint(item.item.endpoint));
     }
 
-    private zeroScore(): MatchScore {
-        return { pathScore: 0, classScore: 0, methodScore: 0, httpScore: 0, total: 0 };
+    private createSearchableEndpoint(endpoint: RestEndpoint): SearchableEndpoint {
+        const cachedEndpoint = this.cloneEndpoint(endpoint);
+        return {
+            endpoint: cachedEndpoint,
+            path: this.createSearchableField(cachedEndpoint.path),
+            className: this.createSearchableField(cachedEndpoint.className),
+            methodName: this.createSearchableField(cachedEndpoint.methodName),
+            httpMethod: this.createSearchableField(cachedEndpoint.method)
+        };
+    }
+
+    private cloneEndpoint(endpoint: RestEndpoint): RestEndpoint {
+        return { ...endpoint };
+    }
+
+    private createSearchableField(text: string): SearchableField {
+        const words = this.tokenizeCamelCase(text);
+        return {
+            lower: text.toLowerCase(),
+            words,
+            acronym: words.length >= 2 ? words.map(word => word[0]).join('').toLowerCase() : null
+        };
+    }
+
+    private insertTopScore(scored: ScoredEndpoint[], candidate: ScoredEndpoint, limit: number): void {
+        let index = 0;
+        while (index < scored.length && this.compareScored(scored[index], candidate) <= 0) {
+            index++;
+        }
+
+        if (index >= limit) {
+            return;
+        }
+
+        scored.splice(index, 0, candidate);
+        if (scored.length > limit) {
+            scored.pop();
+        }
+    }
+
+    private compareScored(a: ScoredEndpoint, b: ScoredEndpoint): number {
+        if (a.score.pathScore !== b.score.pathScore) {
+            return b.score.pathScore - a.score.pathScore;
+        }
+        if (a.score.classScore !== b.score.classScore) {
+            return b.score.classScore - a.score.classScore;
+        }
+        if (a.score.methodScore !== b.score.methodScore) {
+            return b.score.methodScore - a.score.methodScore;
+        }
+        return b.score.total - a.score.total;
     }
 
     private matchesFilters(endpoint: RestEndpoint, query: SearchQuery): boolean {
@@ -188,19 +207,11 @@ export class EndpointCache {
         return true;
     }
 
-    /**
-     * 对单个 query token 计算 4 维加权分数。
-     * 接收预 lowercase 的字段，避免重复 toLowerCase()。
-     * 权重：path 0.4 > className 0.3 > methodName 0.2 > httpMethod 0.1
-     */
-    private calculateScore(
-        pathLower: string, classLower: string, methodLower: string, httpLower: string,
-        queryText: string
-    ): MatchScore {
-        const pathScore = this.matchScore(pathLower, queryText) * 0.4;
-        const classScore = this.matchScore(classLower, queryText) * 0.3;
-        const methodScore = this.matchScore(methodLower, queryText) * 0.2;
-        const httpScore = this.matchScore(httpLower, queryText) * 0.1;
+    private calculateScore(item: SearchableEndpoint, queryText: string): MatchScore {
+        const pathScore = this.matchScore(item.path, queryText) * 0.4;
+        const classScore = this.matchScore(item.className, queryText) * 0.3;
+        const methodScore = this.matchScore(item.methodName, queryText) * 0.2;
+        const httpScore = this.matchScore(item.httpMethod, queryText) * 0.1;
 
         return {
             pathScore,
@@ -211,93 +222,62 @@ export class EndpointCache {
         };
     }
 
-    private matchScore(text: string, query: string): number {
+    private matchScore(field: SearchableField, query: string): number {
         if (query.length === 0) {
             return 1;
         }
 
-        if (text === query) {
+        if (field.lower === query) {
             return 1;
         }
-
-        // 子串包含
-        if (text.includes(query)) {
+        if (field.lower.includes(query)) {
             return 0.9;
         }
-
-        // 单词边界：路径分隔符或 camelCase 起始
-        if (this.matchAtWordBoundary(text, query)) {
+        if (this.matchAtWordBoundary(field, query)) {
             return 0.85;
         }
-
-        // 首字母缩写匹配
-        if (this.matchAcronym(text, query)) {
+        if (this.matchAcronym(field, query)) {
             return 0.82;
         }
-
-        // 模糊匹配：最小 2 字符
         if (query.length < 2) {
             return 0;
         }
 
-        return this.fuzzyMatch(text, query);
+        return this.fuzzyMatch(field.lower, query);
     }
 
-    private matchAtWordBoundary(text: string, query: string): boolean {
-        if (text.startsWith(query)) {
+    private matchAtWordBoundary(field: SearchableField, query: string): boolean {
+        if (field.lower.startsWith(query)) {
+            return true;
+        }
+        if (field.lower.includes(`/${query}`) ||
+            field.lower.includes(`-${query}`) ||
+            field.lower.includes(`_${query}`) ||
+            field.lower.includes(`.${query}`)) {
             return true;
         }
 
-        if (text.includes(`/${query}`) ||
-            text.includes(`-${query}`) ||
-            text.includes(`_${query}`) ||
-            text.includes(`.${query}`)) {
-            return true;
-        }
-
-        // camelCase boundary: uppercase letter directly before the query
-        const camelPattern = new RegExp('[A-Z]' + this.escapeRegex(query));
-        if (camelPattern.test(text)) {
-            return true;
-        }
-
-        return false;
+        return field.words.some(word => word.toLowerCase().startsWith(query));
     }
 
-    /**
-     * 首字母缩写匹配：将 camelCase / 分隔符边界拆分为词，
-     * 取每个词的首字母组成缩写，检查 query 是否匹配。
-     */
-    private matchAcronym(text: string, query: string): boolean {
-        const words = this.tokenizeCamelCase(text);
-        if (words.length < 2) { return false; }
-        const acronym = words.map(w => w[0]).join('').toLowerCase();
-        return acronym === query;
+    private matchAcronym(field: SearchableField, query: string): boolean {
+        return field.acronym === query;
     }
 
-    /**
-     * 将 camelCase / 分隔符边界字符串拆分为词。
-     */
     private tokenizeCamelCase(text: string): string[] {
-        const segments = text.split(/[^a-zA-Z]+/).filter(s => s.length > 0);
+        const segments = text.split(/[^a-zA-Z]+/).filter(segment => segment.length > 0);
         const words: string[] = [];
-        for (const seg of segments) {
-            const camelParts = seg.match(/[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|[A-Z]+/g);
+
+        for (const segment of segments) {
+            const camelParts = segment.match(/[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|[A-Z]+/g);
             if (camelParts) {
                 words.push(...camelParts);
             }
         }
+
         return words;
     }
 
-    private escapeRegex(str: string): string {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-
-    /**
-     * 模糊匹配：query 的所有字符按顺序出现在 text 中即视为匹配。
-     * 评分基于连续率和集中率。
-     */
     private fuzzyMatch(text: string, query: string): number {
         let queryIndex = 0;
         let consecutiveMatches = 0;
@@ -338,21 +318,18 @@ export class EndpointCache {
         return 0;
     }
 
-    /**
-     * #18: 返回副本，防止外部修改污染内部缓存
-     */
     getAll(): RestEndpoint[] {
-        return [...this._allEndpoints];
+        return this.allEndpoints.map(item => this.cloneEndpoint(item.endpoint));
     }
 
     clear(): void {
         this.endpoints.clear();
         this.fileIndex.clear();
-        this._allEndpoints = [];
-        this._size = 0;
+        this.allEndpoints = [];
+        this.endpointCount = 0;
     }
 
     size(): number {
-        return this._size;
+        return this.endpointCount;
     }
 }

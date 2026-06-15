@@ -3,12 +3,15 @@ import { JsonClassGenerator } from '../generator/JsonClassGenerator';
 import { TargetLanguage } from '../generator/JsonTypeMapper';
 import { getLabels } from '../extractor/i18n';
 import { toPascalCase } from '../extractor/NameTransformer';
+import { Logger } from '../utils/Logger';
 
 export class JsonToClassCommand {
     private generator: JsonClassGenerator;
+    private logger: Logger;
 
     constructor() {
         this.generator = new JsonClassGenerator();
+        this.logger = Logger.getInstance();
     }
 
     // Explorer folder context menu entry
@@ -99,7 +102,7 @@ export class JsonToClassCommand {
         const fileName = `${className}.${extension}`;
         const fileUri = vscode.Uri.joinPath(folderUri, fileName);
 
-        console.log(`[JsonToClass] writing to: ${fileUri.fsPath}`);
+        this.logger.info(`[JsonToClass] writing to: ${fileUri.fsPath}`);
 
         if (await this.fileExists(fileUri)) {
             const choice = await vscode.window.showWarningMessage(

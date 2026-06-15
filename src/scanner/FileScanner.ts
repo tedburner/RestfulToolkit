@@ -71,13 +71,6 @@ export class FileScanner implements vscode.Disposable {
             this.logger.warning('No workspace folder found');
         }
 
-        // 诊断：直接测试是否能找到 Controller 文件
-        const controllerTest = await vscode.workspace.findFiles('**/controller/*.java', '{**/src/test/**,**/target/**}');
-        this.logger.info(`Controller files test (pattern: **/controller/*.java): found ${controllerTest.length} files`);
-        if (controllerTest.length > 0) {
-            this.logger.info(`Controller files: ${controllerTest.slice(0, 5).map(f => f.fsPath).join(', ')}`);
-        }
-
         // 增量扫描统计
         const stats = this.scanStateManager.getStats();
         if (!forceFullScan && stats.lastScanTime) {
@@ -87,7 +80,7 @@ export class FileScanner implements vscode.Disposable {
         this.showProgress(getLabels().scanProgress, 0, 0);
 
         // 一次性收集所有文件（避免重复调用 findFiles）
-        const excludePattern = `{${excludePatterns.join(',')}}`;
+        const excludePattern = excludePatterns.length > 0 ? `{${excludePatterns.join(',')}}` : undefined;
         const allFiles: vscode.Uri[] = [];
         const patternFileCounts: Map<string, number> = new Map();
 
@@ -97,10 +90,12 @@ export class FileScanner implements vscode.Disposable {
             allFiles.push(...files);
         }
 
-        const totalFiles = allFiles.length;
+        const uniqueFiles = this.deduplicateUris(allFiles);
+        const duplicateFiles = allFiles.length - uniqueFiles.length;
+        const totalFiles = uniqueFiles.length;
 
         this.logger.info(`Files found per pattern: ${Array.from(patternFileCounts.entries()).map(([p, c]) => `${p}:${c}`).join(', ')}`);
-        this.logger.info(`Total files to scan: ${totalFiles}`);
+        this.logger.info(`Total unique files to scan: ${totalFiles}${duplicateFiles > 0 ? ` (${duplicateFiles} duplicate matches removed)` : ''}`);
 
         if (totalFiles === 0) {
             this.logger.info('No files found to scan');
@@ -110,16 +105,17 @@ export class FileScanner implements vscode.Disposable {
         }
 
         // 过滤需要扫描的文件（并发检查 mtime）
-        const candidates = allFiles.filter(f => !/[/\\]\.git([/\\]|$)/.test(f.fsPath));
+        const candidates = uniqueFiles.filter(f => !/[/\\]\.git([/\\]|$)/.test(f.fsPath));
 
         let filesToScan: { file: vscode.Uri; mtime: number }[];
         let skippedFiles: number;
         if (!forceFullScan) {
-            const results = await Promise.all(
-                candidates.map(async (file) => ({
+            const results = await this.runWithConcurrency(
+                candidates.map((file) => async () => ({
                     file,
                     ...await this.scanStateManager.needsScan(file.fsPath)
-                }))
+                })),
+                this.scanConcurrency
             );
             const scanned = results
                 .filter(r => r.needsScan)
@@ -186,12 +182,33 @@ export class FileScanner implements vscode.Disposable {
     /**
      * 并发控制执行器
      */
-    private async runWithConcurrency(tasks: (() => Promise<void>)[], concurrency: number): Promise<void> {
+    private deduplicateUris(files: vscode.Uri[]): vscode.Uri[] {
+        const seen = new Set<string>();
+        const uniqueFiles: vscode.Uri[] = [];
+
+        for (const file of files) {
+            const key = this.normalizeFsPath(file.fsPath);
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            uniqueFiles.push(file);
+        }
+
+        return uniqueFiles;
+    }
+
+    private normalizeFsPath(filePath: string): string {
+        return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
+    }
+
+    private async runWithConcurrency<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<T[]> {
+        const results: T[] = new Array(tasks.length);
         let index = 0;
         const worker = async () => {
             while (index < tasks.length) {
                 const currentIndex = index++;
-                await tasks[currentIndex]();
+                results[currentIndex] = await tasks[currentIndex]();
             }
         };
         const workers = Array.from(
@@ -199,6 +216,7 @@ export class FileScanner implements vscode.Disposable {
             () => worker()
         );
         await Promise.all(workers);
+        return results;
     }
 
     async scanFile(uri: vscode.Uri): Promise<void> {

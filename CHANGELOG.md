@@ -5,6 +5,22 @@ All notable changes to RestfulToolkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.7] - 2026-06-15
+
+- **Fixed**: Endpoint search acronym ranking now uses original camelCase text, and `npm test` runs reliably with the VS Code API mock
+- **Fixed**: Endpoint cache results are isolated from caller mutation, and Base URL cache invalidation now handles same-size config rewrites with unchanged mtimes
+- **Changed**: Optimized workspace scanning, Spring MVC parsing, endpoint search, DTO field extraction, and Base URL detection with bounded work and process-local caches
+- **Changed**: Cleaned up config creation, Search QuickPick icons, text sanitization, parser internals, and JSON-to-DTO logging implementation details
+- **Added**: Regression coverage for scan deduplication/concurrency, Spring mapping source-order parsing, repeated DTO extraction, Base URL cache invalidation, and endpoint search precomputation; completed the optimization task backlog
+
+---
+
+- **修复**: 端点搜索首字母缩写排序使用原始 camelCase 文本，`npm test` 可通过 VS Code API mock 稳定运行
+- **修复**: 端点缓存返回值与调用方修改隔离，并增强 Base URL 缓存失效以覆盖同大小配置重写且 mtime 未变的情况
+- **优化**: 工作区扫描、Spring MVC 解析、端点搜索、DTO 字段提取与 Base URL 检测性能优化，包含扫描限流、注解源码顺序解析、进程内缓存
+- **优化**: 清理配置创建、搜索图标、文本净化、解析器内部逻辑和 JSON 转 DTO 日志等实现细节
+- **新增**: 扫描去重/并发、Spring mapping 源码顺序解析、重复 DTO 提取、Base URL 缓存失效与端点搜索预计算回归测试，并完成优化任务清单
+
 ## [0.0.6] - 2026-06-02
 
 - **Added**: Multi-word search with AND semantics — `post create` filters by HTTP method then ranks path matches first

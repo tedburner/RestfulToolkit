@@ -251,6 +251,31 @@ suite('SpringMvcParser Test Suite', () => {
         assert.strictEqual(endpoints[1].path, '/put');
     });
 
+    test('Should preserve source order across different Spring mapping annotations', () => {
+        const content = `
+            public class OrderedController {
+                @PostMapping("/create")
+                public User create() {}
+
+                @GetMapping("/list")
+                public List<User> list() {}
+
+                @RequestMapping(value = "/delete", method = RequestMethod.DELETE)
+                public void delete() {}
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'OrderedController', null, 'test.java');
+
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => `${endpoint.method} ${endpoint.path}`),
+            [
+                'POST /create',
+                'GET /list',
+                'DELETE /delete'
+            ]
+        );
+    });
+
     // ========== 新增测试：覆盖本次修改 ==========
 
     test('Should parse multi-line annotation (跨行注解)', () => {

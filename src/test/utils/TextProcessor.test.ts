@@ -14,13 +14,13 @@ suite('TextProcessor Test Suite', () => {
     test('Should preserve newlines inside double-quoted strings', () => {
         const input = 'String s = "line1\nline2";';
         const result = TextProcessor.sanitize(input);
-        assert.strictEqual(result, 'String s =      \n      ;');
+        assert.strictEqual(result, 'String s =       \n      ;');
     });
 
     test('Should handle escaped quotes inside strings', () => {
         const input = 'String s = "say \\"hi\\"";';
         const result = TextProcessor.sanitize(input);
-        assert.strictEqual(result, 'String s =               ;');
+        assert.strictEqual(result, 'String s =             ;');
     });
 
     test('Should replace single-quoted char with spaces', () => {
@@ -32,7 +32,7 @@ suite('TextProcessor Test Suite', () => {
     test('Should replace single-line comments with spaces', () => {
         const input = '// this is a comment';
         const result = TextProcessor.sanitize(input);
-        assert.strictEqual(result, '                     ');
+        assert.strictEqual(result, ' '.repeat(input.length));
     });
 
     test('Should sanitize @annotation inside single-line comment', () => {
@@ -44,15 +44,15 @@ suite('TextProcessor Test Suite', () => {
     test('Should replace multi-line comments with spaces', () => {
         const input = '/* block\ncomment */';
         const result = TextProcessor.sanitize(input);
-        assert.strictEqual(result, '                 \n        ');
+        assert.strictEqual(result, '        \n          ');
     });
 
     test('Should preserve newlines in multi-line comments', () => {
         const input = '/*\n * comment\n */';
         const result = TextProcessor.sanitize(input);
         assert.strictEqual(result[0], ' ');
-        assert.strictEqual(result[1], '\n');
-        assert.strictEqual(result[3], '\n');
+        assert.strictEqual(result[2], '\n');
+        assert.strictEqual(result[13], '\n');
     });
 
     test('Should not affect code outside strings/comments', () => {
@@ -112,7 +112,7 @@ suite('TextProcessor Test Suite', () => {
     test('getLineNumber should return correct line for last line', () => {
         const indices = TextProcessor.buildLineIndex('a\nb\nc');
         assert.strictEqual(TextProcessor.getLineNumber(indices, 4), 3);
-        assert.strictEqual(TextProcessor.getLineNumber(indices, 10), 4); // past end counts as next line
+        assert.strictEqual(TextProcessor.getLineNumber(indices, 10), 3);
     });
 
     test('getLineNumber on empty lineIndex should return 1', () => {

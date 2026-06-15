@@ -1,164 +1,225 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.6-green.svg)](https://github.com/tedburner/RestfulToolkit)
-[![Downloads](https://img.shields.io/badge/downloads-164-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
+[![Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/kiturone.restful-toolkit)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
+[![Downloads](https://img.shields.io/visual-studio-marketplace/d/kiturone.restful-toolkit)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**English Documentation** | **[中文文档](README_CN.md)**
+**English** | [中文](README_CN.md)
 
-A VS Code extension for searching and navigating RESTful API endpoints in Java/Kotlin Spring and JAX-RS projects.
+RestfulToolkit is a VS Code extension for finding, navigating, and copying RESTful API endpoints in Java/Kotlin Spring MVC, Spring Boot, and JAX-RS projects.
 
-## Why RestfulToolkit?
+It scans controller annotations, builds a searchable endpoint index, and lets you jump to source code, copy request parameters, generate full URLs/cURL commands, or create DTO classes from JSON without leaving VS Code.
 
-In medium-to-large Spring Boot or JAX-RS projects, finding API endpoints is a daily pain:
+## Highlights
 
-- **No unified entry point**: Routes are scattered across dozens of `@RestController` classes and methods — you have to manually search files or grep annotations.
-- **No quick overview**: There is no built-in way to see "what endpoints does this project expose" at a glance.
-- **API testing setup is tedious**: Writing request bodies, form data, or cURL commands by hand from controller annotations wastes time.
+| Capability | What it does |
+|------------|--------------|
+| Endpoint search | Search by URL path, class name, method name, HTTP method, camelCase acronym, or multiple words |
+| Source navigation | Jump from a QuickPick result to the exact controller annotation line |
+| Parameter copy | Copy endpoint parameters as URL Params, JSON Body, Form Data, or x-www-form-urlencoded |
+| DTO expansion | Expand nested request DTO fields up to 3 levels, including common JSON naming annotations |
+| URL and cURL copy | Generate full URLs and cURL commands with headers, query params, and request bodies |
+| Base URL detection | Read `server.port` and `server.servlet.context-path` from Spring config files |
+| JSON to DTO | Generate Java/Kotlin DTO classes from selected JSON or clipboard JSON |
+| Realtime updates | Watch Java/Kotlin files and refresh the endpoint cache on changes |
 
-RestfulToolkit solves this by scanning all `@RequestMapping` / `@Path` annotations in your project, indexing them into a searchable database, and letting you jump, copy, or test endpoints from a single quick-pick panel — **zero configuration required**.
+## Supported Projects
 
-## Who is it for?
+### Frameworks
 
-- **Java / Kotlin backend developers** working on Spring MVC, Spring Boot, or JAX-RS projects
-- **QA / API testers** who need to quickly find endpoints and generate cURL / JSON payloads for testing
-- **Code reviewers** who want to audit all exposed API routes without opening every controller file
+- Spring MVC / Spring Boot
+- JAX-RS with `javax.ws.rs` or `jakarta.ws.rs`
 
-## Core Features
+### File Types
 
-### 🔍 One-Panel Endpoint Search
+- Java: `*.java`
+- Kotlin: `*.kt`
 
-Fuzzy search by URL path, class name, method name, or HTTP method. Click to jump directly to the controller method — no more Ctrl+Shift+F grepping.
+### Endpoint Annotations
 
-### 📋 Smart Parameter Copy
+| Framework | Supported annotations |
+|-----------|-----------------------|
+| Spring | `@RequestMapping`, `@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`, `@PatchMapping` |
+| JAX-RS | `@Path`, `@GET`, `@POST`, `@PUT`, `@DELETE`, `@PATCH` |
 
-Right-click any endpoint → copy its parameters as **URL Params**, **JSON Body**, **Form Data**, or **x-www-form-urlencoded**. Nested DTO fields are auto-expanded up to 3 levels deep, with camelCase / snake_case auto-detection.
-
-### 📡 One-Click cURL Generation
-
-Generate a ready-to-use cURL command (HTTP method + URL + headers + body with DTO expansion) that can be directly imported into Postman, Bruno, or Insomnia.
-
-### ⚡ Zero Config, Real-Time Sync
-
-Auto-detects `application.yml` / `application.properties` for base URL. Watches file changes and updates the endpoint cache in real time. Works out of the box — just install and search.
-
-### Full Feature List
-
-| Feature | Description |
-|---------|-------------|
-| Quick Search | Fuzzy search by path, class, method, or HTTP method |
-| Instant Navigation | Jump to controller definition with one click |
-| Real-time Updates | Auto-scan and update cache on file change |
-| Visual Indicators | Color-coded HTTP method icons |
-| Copy Parameters | URL Params / JSON Body / Form Data / x-www-form-urlencoded |
-| Copy Full URL | Base URL + path + query params |
-| Copy as cURL | Method + URL + headers + body, Postman-importable |
-| Base URL Auto-detect | Port and context-path from application.yml / properties, resolved per workspace folder |
-| Naming Transform | camelCase / snake_case auto-detect |
-| DTO Expansion | Nested DTO field resolution up to 3 levels |
-| JSON to DTO | Generate Java/Kotlin DTO classes from selected or clipboard JSON |
-| Configurable | Custom scan paths and exclusion patterns |
-
-## Supported Frameworks
-
-### Spring MVC / Spring Boot
-- `@RequestMapping` (class and method level)
-- `@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`, `@PatchMapping`
-- Multi-path annotations: `@GetMapping({"/users", "/list"})`
-
-### JAX-RS
-- `@Path` (class and method level)
-- `@GET`, `@POST`, `@PUT`, `@DELETE`, `@PATCH`
-
-### Supported File Types
-- Java (`*.java`), Kotlin (`*.kt`)
+Multi-path annotations such as `@GetMapping({"/users", "/list"})` are split into separate endpoints.
 
 ## Installation
 
-Search "RestfulToolkit" in VS Code Extensions view (Ctrl+Shift+X) and click Install.
+Install from the VS Code Extensions view:
 
-**From source**: `git clone` → `npm install` → `npm run compile` → press F5 in VS Code.
+1. Open Extensions with `Ctrl+Shift+X`.
+2. Search for `RestfulToolkit`.
+3. Click Install.
+
+From source:
+
+```bash
+git clone https://github.com/tedburner/RestfulToolkit.git
+cd RestfulToolkit
+npm install
+npm run compile
+```
+
+Then press `F5` in VS Code to launch the Extension Development Host.
 
 ## Usage
 
 ### Search Endpoints
 
-Keyboard shortcuts:
-- **Windows/Linux**: `Ctrl+Alt+N` or `Ctrl+\`
-- **Mac**: `Cmd+Alt+N` or `Cmd+\`
+Open the command:
 
-Or Command Palette: "RestfulToolkit: Search REST Endpoints"
+- Command Palette: `RestfulToolkit: Search REST Endpoints`
+- Windows/Linux: `Ctrl+Alt+N` or `Ctrl+\`
+- macOS: `Cmd+Alt+N` or `Cmd+\`
 
-### Refresh Endpoints
+Search supports:
 
-Command Palette: "RestfulToolkit: Refresh Endpoints"
+- Path fragments: `users`
+- HTTP methods: `post`
+- Multiple words: `post create`
+- camelCase acronyms: `dtc` for `DataTransferController`
 
-## Configuration
+### Copy Endpoint Parameters
 
-RestfulToolkit supports three configuration levels:
+Right-click a controller method and choose `RestfulToolkit: Copy Endpoint Parameters`.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | Glob patterns for files to scan |
-| `excludePaths` | `array` | `["**/src/test/**", "**/target/**", ...]` | Glob patterns to exclude |
-| `maxResults` | `number` | `100` | Maximum search results (1-1000) |
-| `copyNameFormat` | `string` | `"camelCase"` | Default name format for copied parameters |
-| `baseUrl` | `string` | `""` | Base URL for generated URLs/cURL. Auto-detects from `application.yml`/`application.properties` when empty |
+Supported parameter sources:
 
-**Priority**: VS Code settings > `.restful-toolkit.json` in each workspace root > defaults
+| Framework | Supported parameter annotations |
+|-----------|---------------------------------|
+| Spring | `@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestPart`, `@ModelAttribute`, `@RequestHeader` |
+| JAX-RS | `@PathParam`, `@QueryParam`, `@FormParam`, `@HeaderParam` |
 
-## Copy Commands
+Output formats:
 
-### Copy Parameters
+- URL Params
+- JSON Body
+- Form Data
+- x-www-form-urlencoded
 
-Right-click on a controller method → "Copy Endpoint Parameters":
-1. Choose format: URL Params / JSON Body / Form Data / x-www-form-urlencoded
-2. Choose naming: camelCase / snake_case (auto-detected)
-
-**Supported annotations**:
-- **Spring**: `@RequestParam`, `@PathVariable`, `@RequestBody`, `@RequestPart`, `@ModelAttribute`, `@RequestHeader`
-- **JAX-RS**: `@PathParam`, `@QueryParam`, `@FormParam`, `@HeaderParam`
-- `@RequestBody` and `@ModelAttribute` parameters auto-expand nested DTO fields (up to 3 levels).
+`@RequestBody` and `@ModelAttribute` DTOs are expanded when their fields can be resolved in the workspace.
 
 ### Copy Full URL
 
-Output: `http://localhost:8080/api/users/{id}?keyword=`
-- Base URL resolved from: VS Code settings → `application.yml`/`application.properties` → default `http://localhost:8080`
-- Path parameters remain as `{placeholders}`
+Right-click an endpoint and choose `RestfulToolkit: Copy Full URL`.
+
+Example output:
+
+```text
+http://localhost:8080/api/users/{id}?keyword=
+```
+
+Base URL resolution order:
+
+1. `restfulToolkit.baseUrl` VS Code setting
+2. `.restful-toolkit.json` project config
+3. Spring config files such as `application.yml`, `application.properties`, `bootstrap.yml`, and profile files
+4. Default `http://localhost:8080`
 
 ### Copy as cURL
 
-Includes: HTTP method, full URL, headers (`@RequestHeader`/`@HeaderParam`), and request body with DTO expansion.
-Directly importable into Postman, Bruno, and Insomnia.
+Right-click an endpoint and choose `RestfulToolkit: Copy as cURL`.
 
-Example: `curl -X POST 'http://localhost:8080/api/users' -H 'Content-Type: application/json' -d '{"name": "", "email": ""}'`
+Example output:
+
+```bash
+curl -X POST 'http://localhost:8080/api/users' -H 'Content-Type: application/json' -d '{"name": "", "email": ""}'
+```
+
+The command includes the HTTP method, full URL, headers, and request body where applicable. The result can be imported into Postman, Bruno, or Insomnia.
+
+### Generate DTO Class from JSON
+
+Right-click a folder in Explorer and choose `RestfulToolkit: Generate DTO Class from JSON`.
+
+The generator supports:
+
+- Java and Kotlin output
+- Nested objects and arrays
+- `@JsonProperty` for original JSON keys
+- Optional Lombok mode for Java DTOs
+
+## Configuration
+
+RestfulToolkit reads configuration from three levels, in priority order:
+
+1. VS Code workspace settings
+2. `.restful-toolkit.json` in the workspace root
+3. Built-in defaults
+
+| VS Code setting | Type | Default | Description |
+|-----------------|------|---------|-------------|
+| `restfulToolkit.scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | Glob patterns to scan |
+| `restfulToolkit.excludePaths` | `array` | `["**/src/test/**", "**/target/**", "**/build/**", ...]` | Glob patterns to exclude |
+| `restfulToolkit.maxResults` | `number` | `100` | Maximum search results, clamped to 1-1000 |
+| `restfulToolkit.copyNameFormat` | `string` | `"camelCase"` | Default copied parameter naming style |
+| `restfulToolkit.baseUrl` | `string` | `""` | Base URL for URL/cURL generation; empty means auto-detect |
+
+Project config example:
+
+```json
+{
+  "scanPaths": [
+    "**/src/main/java/**/*.java",
+    "**/src/main/kotlin/**/*.kt"
+  ],
+  "excludePaths": [
+    "**/src/test/**",
+    "**/target/**",
+    "**/build/**"
+  ],
+  "maxResults": 100
+}
+```
 
 ## Known Limitations
 
-- Cannot detect inherited annotations from parent classes
-- Cannot resolve property placeholders (`${api.path}`)
-- Cannot detect `@Configuration` class routes
-- Limited Kotlin string template support
-- Cannot evaluate conditional annotations (`@ConditionalOnProperty`)
+- Does not detect endpoints inherited from parent classes.
+- Does not resolve route placeholders such as `${api.path}`.
+- Does not detect routes registered through `@Configuration` classes.
+- Kotlin string template support is limited.
+- Conditional annotations such as `@ConditionalOnProperty` are not evaluated.
 
-**Expected accuracy**: ~80-85% endpoint detection rate for typical Spring Boot projects.
+Expected endpoint detection accuracy is about 80-85% for typical Spring Boot projects.
 
 ## Troubleshooting
 
-- **No endpoints found**: Verify scan paths match your project structure, then run "RestfulToolkit: Refresh Endpoints"
-- **View logs**: Command Palette → "RestfulToolkit: Show Logs" → check Output channel
+| Problem | What to try |
+|---------|-------------|
+| No endpoints found | Check `scanPaths`, then run `RestfulToolkit: Refresh Endpoints` and choose a full refresh |
+| Generated URL has the wrong host or port | Set `restfulToolkit.baseUrl`, or check `application.yml` / `application.properties` |
+| DTO fields are not expanded | Make sure the DTO class is in the workspace and imported by the controller source file |
+| Search results look stale | Run `RestfulToolkit: Refresh Endpoints` |
+| Need diagnostics | Open the Output panel and select the RestfulToolkit channel |
+
+## Development
+
+```bash
+npm install
+npm run compile
+npm test
+npm run build
+```
+
+Additional validation scripts:
+
+```bash
+node src/test/scripts/test-parameter-copy.js
+node src/test/scripts/test-copy-url-curl.js
+node src/test/scripts/test-all-files.js
+node src/test/scripts/test-json-to-class.js
+```
 
 ## Roadmap
 
-- Support for Micronaut and Quarkus frameworks
+- Micronaut and Quarkus support
 - Spring Boot Actuator integration
-- HTTP request testing capabilities
-- Services tree view panel
-- Better inheritance and configuration class support
+- HTTP request execution inside VS Code
+- Services tree view
+- Better inheritance and configuration-class route support
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-**Enjoy faster REST endpoint navigation!**
+MIT. See [LICENSE](LICENSE).

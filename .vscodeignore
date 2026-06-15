@@ -13,8 +13,14 @@ node_modules/**
 !node_modules/typescript/**
 openspec/**
 docs/**
+AGENTS.md
 CLAUDE.md
+.agents/**
 .claude/**
+.github/**
+scripts/**
+dist/test/**
+dist/**/*.d.ts
 restful-tool/**
 test-manual.js
 test-standalone.js
