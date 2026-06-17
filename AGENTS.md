@@ -36,6 +36,9 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 **VS Code功能测试**:
 - 详见 `docs/TESTING_GUIDE.md`
 
+**Marketplace 统计脚本测试**:
+- **运行**: `npm run test:marketplace-stats` - 验证 README 安装量徽章更新和缺失徽章报错
+
 ### 发布与部署
 
 **准备工作**:

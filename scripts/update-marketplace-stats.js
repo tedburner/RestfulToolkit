@@ -1,5 +1,5 @@
 /**
- * Update VS Code Marketplace stats in README.md and README_CN.md
+ * Update VS Code Marketplace stats in README.md and README_CN.md.
  *
  * Queries the undocumented VS Code Marketplace API for extension stats
  * and replaces the values in both English and Chinese README files.
@@ -65,12 +65,21 @@ function queryMarketplace() {
   });
 }
 
-function updateReadme(content, stats) {
-  // Install badge at the top (same pattern in both EN and CN READMEs)
-  return content.replace(
-    /(?:downloads|installs)-\d+-blue/,
-    `installs-${stats.installs}-blue`,
-  );
+function updateReadme(content, stats, fileName = 'README') {
+  const badgePattern = /(?:downloads|installs)-\d+-blue/;
+  const currentBadge = content.match(badgePattern)?.[0];
+
+  if (!currentBadge) {
+    throw new Error(`No Marketplace installs badge found in ${fileName}`);
+  }
+
+  const nextBadge = `installs-${stats.installs}-blue`;
+  return {
+    content: content.replace(badgePattern, nextBadge),
+    changed: currentBadge !== nextBadge,
+    currentBadge,
+    nextBadge,
+  };
 }
 
 async function main() {
@@ -84,21 +93,29 @@ async function main() {
   for (const file of ['README.md', 'README_CN.md']) {
     const filePath = path.join(__dirname, '..', file);
     if (!fs.existsSync(filePath)) {
-      console.warn(`⚠ ${file} not found, skipping`);
+      console.warn(`WARN: ${file} not found, skipping`);
       continue;
     }
-    let content = fs.readFileSync(filePath, 'utf8');
-    const updated = updateReadme(content, stats);
-    if (updated !== content) {
-      fs.writeFileSync(filePath, updated);
-      console.log(`✅ Updated ${file}`);
+    const content = fs.readFileSync(filePath, 'utf8');
+    const updated = updateReadme(content, stats, file);
+    console.log(`${file}: ${updated.currentBadge} -> ${updated.nextBadge}`);
+    if (updated.changed) {
+      fs.writeFileSync(filePath, updated.content);
+      console.log(`OK: Updated ${file}`);
     } else {
-      console.log(`—  ${file} unchanged`);
+      console.log(`OK: ${file} unchanged`);
     }
   }
 }
 
-main().catch((err) => {
-  console.error('Error:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('Error:', err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  queryMarketplace,
+  updateReadme,
+};

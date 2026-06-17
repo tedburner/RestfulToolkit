@@ -13,6 +13,7 @@
 - `src/test/generator/JsonClassGenerator.test.ts` / `src/test/generator/JsonTypeMapper.test.ts` — JSON 转 DTO 单元测试
 - `src/test/scripts/test-json-to-class.js` — JSON 转 DTO 批量验证脚本（86 测试）
 - `src/test/scripts/mock-vscode.js` — Node 自动化脚本使用的最小 VS Code API mock
+- `scripts/update-marketplace-stats.js` / `scripts/update-marketplace-stats.test.js` — Marketplace 安装量徽章同步脚本与回归测试
 
 **v0.0.4 新增**:
 - `src/extractor/UrlGenerator.ts` — 完整 URL 生成

@@ -158,6 +158,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./dist/test/runTest.js",
+    "test:marketplace-stats": "node scripts/update-marketplace-stats.test.js",
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch"
   },
