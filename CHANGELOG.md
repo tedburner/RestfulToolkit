@@ -8,11 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - **Fixed**: Marketplace stats updater now reports the README badge before/after value and fails when the installs badge is missing instead of silently succeeding
+- **Changed**: Marketplace stats workflow now uses Node.js 24-compatible GitHub Actions
 - **Added**: Local regression test for README Marketplace installs badge updates
 
 ---
 
 - **修复**: Marketplace 统计更新脚本现在会输出 README 徽章更新前后值，并在安装量徽章缺失时失败，避免静默成功
+- **优化**: Marketplace 统计工作流改用兼容 Node.js 24 的 GitHub Actions
 - **新增**: README Marketplace 安装量徽章更新的本地回归测试
 
 ## [0.0.7] - 2026-06-15
