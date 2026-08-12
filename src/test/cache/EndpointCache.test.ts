@@ -97,6 +97,76 @@ suite('EndpointCache Test Suite', () => {
         assert.strictEqual(fileEndpoints[0].method, 'POST');
     });
 
+    test('broad search avoids ordered-array insertion while preserving stable results', () => {
+        for (let i = 0; i < 2000; i++) {
+            cache.add({
+                method: i % 2 === 0 ? 'GET' : 'POST',
+                path: `/api/resource/${i}`,
+                className: `ResourceController${i % 10}`,
+                methodName: `getResource${i}`,
+                file: `ResourceController${i}.java`,
+                line: i + 1,
+                framework: 'Spring'
+            });
+        }
+
+        const originalSplice = Array.prototype.splice;
+        let spliceCalls = 0;
+        Array.prototype.splice = function (this: unknown[], ...args: unknown[]) {
+            spliceCalls++;
+            return Reflect.apply(originalSplice, this, args);
+        } as typeof Array.prototype.splice;
+        try {
+            const reference = cache.search({ text: 'resource' }, 1000).slice(0, 500);
+            const first = cache.search({ text: 'resource' }, 500);
+            const second = cache.search({ text: 'resource' }, 500);
+            assert.strictEqual(first.length, 500);
+            assert.deepStrictEqual(first, reference);
+            assert.deepStrictEqual(second, first);
+            assert.strictEqual(spliceCalls, 0, 'bounded search should not linearly splice candidates into an ordered array');
+        } finally {
+            Array.prototype.splice = originalSplice;
+        }
+    });
+
+    test('search avoids per-token score-array mapping while preserving multi-token results', () => {
+        cache.add({
+            method: 'GET', path: '/api/users', className: 'UserController', methodName: 'getUsers',
+            file: 'UserController.java', line: 10, framework: 'Spring'
+        });
+
+        const originalMap = Array.prototype.map;
+        let mapCalls = 0;
+        Array.prototype.map = function (this: unknown[], ...args: unknown[]): unknown[] {
+            mapCalls++;
+            return Reflect.apply(originalMap, this, args) as unknown[];
+        } as typeof Array.prototype.map;
+
+        try {
+            const results = cache.search({ text: 'user get' });
+            assert.strictEqual(results.length, 1);
+            assert.ok(mapCalls <= 2, `expected query parsing and final result mapping only, got ${mapCalls} map calls`);
+        } finally {
+            Array.prototype.map = originalMap;
+        }
+    });
+
+    test('repeated non-HTTP query tokens preserve the unique-token result order', () => {
+        cache.add({
+            method: 'GET', path: '/api/users', className: 'UserController', methodName: 'getUsers',
+            file: 'UserController.java', line: 10, framework: 'Spring'
+        });
+        cache.add({
+            method: 'GET', path: '/api/accounts', className: 'AccountController', methodName: 'getAccount',
+            file: 'AccountController.java', line: 20, framework: 'Spring'
+        });
+
+        assert.deepStrictEqual(
+            cache.search({ text: 'USER user' }),
+            cache.search({ text: 'user' })
+        );
+    });
+
     test('Should search endpoints by path', () => {
         const endpoint: RestEndpoint = {
             method: 'GET',

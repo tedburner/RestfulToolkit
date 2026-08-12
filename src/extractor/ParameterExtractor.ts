@@ -238,6 +238,15 @@ export class ParameterExtractor {
         return this.extractPathFromAnnotationText(annotations) || '';
     }
 
+    /**
+     * 从 Spring/JAX-RS 路由注解中提取复制命令使用的路径。
+     *
+     * 当 Spring mapping 同时声明多个路径时，复制 URL/cURL 命令稳定使用源码中的
+     * 第一个路径；完整端点扫描仍由解析器拆分全部路径，不受此规则影响。
+     *
+     * @param annotationText 方法或类型声明前的注解文本
+     * @returns 首个可用路径；未找到受支持路由注解时返回 null
+     */
     private extractPathFromAnnotationText(annotationText: string): string | null {
         const jaxRsPath = annotationText.match(/@(?:[\w.]+\.)?Path\s*\(\s*["']([^"']+)["']/);
         if (jaxRsPath) { return jaxRsPath[1]; }
@@ -246,10 +255,10 @@ export class ParameterExtractor {
         if (!mappingMatch) { return null; }
 
         const args = mappingMatch[1];
-        const explicitPath = args.match(/(?:^|,)\s*(?:value|path)\s*=\s*["']([^"']+)["']/);
+        const explicitPath = args.match(/(?:^|,)\s*(?:value|path)\s*=\s*(?:\{\s*)?["']([^"']+)["']/);
         if (explicitPath) { return explicitPath[1]; }
 
-        const directPath = args.match(/^\s*["']([^"']+)["']/);
+        const directPath = args.match(/^\s*(?:\{\s*)?["']([^"']+)["']/);
         return directPath ? directPath[1] : null;
     }
 

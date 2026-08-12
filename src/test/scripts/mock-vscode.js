@@ -32,6 +32,17 @@ function globToRegExp(pattern) {
 }
 
 const vscodeMock = {
+    EventEmitter: class {
+        constructor() {
+            this.listeners = new Set();
+            this.event = (listener) => {
+                this.listeners.add(listener);
+                return { dispose: () => this.listeners.delete(listener) };
+            };
+        }
+        fire(value) { for (const listener of this.listeners) listener(value); }
+        dispose() { this.listeners.clear(); }
+    },
     FileType: {
         File: 1,
         Directory: 2,
@@ -53,7 +64,17 @@ const vscodeMock = {
         showErrorMessage: async () => undefined,
         showQuickPick: async () => undefined,
         showInputBox: async () => undefined,
-        showTextDocument: async () => undefined
+        showTextDocument: async () => undefined,
+        createStatusBarItem: () => ({
+            text: '', show: () => undefined, hide: () => undefined, dispose: () => undefined
+        }),
+        createQuickPick: () => ({
+            items: [], selectedItems: [], value: '', busy: false,
+            onDidChangeValue: () => ({ dispose: () => undefined }),
+            onDidAccept: () => ({ dispose: () => undefined }),
+            onDidHide: () => ({ dispose: () => undefined }),
+            show: () => undefined, hide: () => undefined, dispose: () => undefined
+        })
     },
     workspace: {
         workspaceFolders: [{ uri: { fsPath: process.cwd() } }],
@@ -92,9 +113,19 @@ const vscodeMock = {
         },
         onDidChangeConfiguration: () => ({ dispose: () => undefined }),
         onDidChangeWorkspaceFolders: () => ({ dispose: () => undefined }),
-        openTextDocument: async (uri) => ({ uri })
+        openTextDocument: async (uri) => ({ uri }),
+        createFileSystemWatcher: () => ({
+            onDidCreate: () => ({ dispose: () => undefined }),
+            onDidChange: () => ({ dispose: () => undefined }),
+            onDidDelete: () => ({ dispose: () => undefined }),
+            dispose: () => undefined
+        })
+    },
+    commands: {
+        registerCommand: () => ({ dispose: () => undefined })
     },
     env: {
+        language: 'en',
         clipboard: {
             readText: async () => '',
             writeText: async () => undefined

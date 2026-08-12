@@ -2,6 +2,14 @@ import { RestEndpoint, HttpMethod } from '../models/types';
 import { Logger } from '../utils/Logger';
 import { TextProcessor } from '../utils/TextProcessor';
 
+interface MethodAnnotationBlock {
+    content: string;
+    startIndex: number;
+}
+
+/**
+ * 解析 JAX-RS 类型级路径和方法级 HTTP 注解，并保留每个注解在原文件中的精确行号。
+ */
 export class JaxRsParser {
     private logger: Logger;
 
@@ -10,14 +18,23 @@ export class JaxRsParser {
     }
 
     parseClassLevelPath(content: string): string | null {
-        const pattern = /@(?:[\w.]+\.)?Path\s*\(\s*"([^"]+)"\s*\)/;
-        const match = content.match(pattern);
-
-        if (match) {
-            return match[1].replace(/\s+/g, '');
+        const sanitized = TextProcessor.sanitize(content);
+        const typeDeclarationIndex = sanitized.search(/\b(?:class|interface|object)\s+\w+/);
+        if (typeDeclarationIndex === -1) {
+            return null;
         }
 
-        return null;
+        const pattern = /@(?:[\w.]+\.)?Path\s*\(/g;
+        let match: RegExpExecArray | null;
+        let classPath: string | null = null;
+        while ((match = pattern.exec(sanitized)) !== null && match.index < typeDeclarationIndex) {
+            const annotationText = this.extractAnnotationForward(content, match.index);
+            const pathMatch = annotationText?.match(/@(?:[\w.]+\.)?Path\s*\(\s*"([^"]+)"\s*\)/);
+            if (pathMatch) {
+                classPath = pathMatch[1].replace(/\s+/g, '');
+            }
+        }
+        return classPath;
     }
 
     /**
@@ -29,8 +46,10 @@ export class JaxRsParser {
      * @param classPath 类级别 @Path 路径
      * @param filePath 文件路径
      * @param lineIndex 预计算的换行符索引数组（用于快速行号计算）
+     * @param contentOffset 当前类型块在原文件中的绝对字符偏移
+     * @returns 当前类型直接声明的 JAX-RS 端点
      */
-    parseMethodAnnotations(content: string, sanitizedContent: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[]): RestEndpoint[] {
+    parseMethodAnnotations(content: string, sanitizedContent: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[], contentOffset: number = 0): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
         // 使用更准确的方法匹配：先找方法签名，然后用括号深度匹配方法体
@@ -73,18 +92,16 @@ export class JaxRsParser {
                 continue;
             }
 
-            // 计算注解块在 content 中的起始位置
-            const annotationBlockStart = content.indexOf(annotationBlock, Math.max(0, braceStart - annotationBlock.length - 500));
-
             const methodEndpoints = this.parseJaxRsAnnotations(
-                annotationBlock,
-                annotationBlockStart,
+                annotationBlock.content,
+                annotationBlock.startIndex,
                 classPath || '',
                 className,
                 methodName,
                 filePath,
                 content,
-                lineIndex
+                lineIndex,
+                contentOffset
             );
 
             endpoints.push(...methodEndpoints);
@@ -101,7 +118,8 @@ export class JaxRsParser {
         methodName: string,
         filePath: string,
         content: string,
-        lineIndex?: number[]
+        lineIndex?: number[],
+        contentOffset: number = 0
     ): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
@@ -122,7 +140,7 @@ export class JaxRsParser {
                 const absolutePosition = annotationBlockStart + httpMethodIndexInBlock;
                 // 使用快速行号计算
                 const line = lineIndex
-                    ? TextProcessor.getLineNumber(lineIndex, absolutePosition)
+                    ? TextProcessor.getLineNumber(lineIndex, contentOffset + absolutePosition)
                     : TextProcessor.getLineNumberFallback(content, absolutePosition);
 
                 // 查找方法级别的 @Path（取最后一个，避免匹配到类级 @Path）
@@ -149,13 +167,14 @@ export class JaxRsParser {
      * 策略：从 { 向前扫描，连续收集 @ 行，跳过非 @ 行（方法签名、参数），
      * 遇到 }（上一方法体结束）或 class（类声明）时停止。
      */
-    private findMethodAnnotationBlock(content: string, braceIndex: number): string | null {
+    private findMethodAnnotationBlock(content: string, braceIndex: number): MethodAnnotationBlock | null {
         let scanPos = braceIndex;
         while (scanPos > 0 && content[scanPos - 1] !== '\n') {
             scanPos--;
         }
 
         const methodAnnotations: string[] = [];
+        let annotationBlockStart = -1;
 
         while (scanPos > 0) {
             const prevNewlineIndex = scanPos - 1;
@@ -192,6 +211,7 @@ export class JaxRsParser {
                 }
                 // 方法级注解，收集
                 methodAnnotations.unshift(content.substring(prevLineStart, prevNewlineIndex));
+                annotationBlockStart = prevLineStart;
                 scanPos = prevLineStart;
             } else {
                 // 非注解非空行（方法签名行、返回类型行等）→ 跳过，继续向前
@@ -201,7 +221,10 @@ export class JaxRsParser {
         }
 
         if (methodAnnotations.length === 0) { return null; }
-        return methodAnnotations.join('\n');
+        return {
+            content: methodAnnotations.join('\n'),
+            startIndex: annotationBlockStart
+        };
     }
 
     /**
@@ -215,6 +238,35 @@ export class JaxRsParser {
             lastPath = match[1].replace(/\s+/g, '');
         }
         return lastPath;
+    }
+
+    private extractAnnotationForward(content: string, startIndex: number): string | null {
+        if (content[startIndex] !== '@') {
+            return null;
+        }
+
+        let nameEnd = startIndex;
+        while (nameEnd < content.length && content[nameEnd] !== '(' && !/\s/.test(content[nameEnd])) {
+            nameEnd++;
+        }
+        while (nameEnd < content.length && /\s/.test(content[nameEnd])) {
+            nameEnd++;
+        }
+        if (content[nameEnd] !== '(') {
+            return content.substring(startIndex, nameEnd);
+        }
+
+        let depth = 1;
+        let endIndex = nameEnd + 1;
+        while (endIndex < content.length && depth > 0) {
+            if (content[endIndex] === '(') {
+                depth++;
+            } else if (content[endIndex] === ')') {
+                depth--;
+            }
+            endIndex++;
+        }
+        return depth === 0 ? content.substring(startIndex, endIndex) : null;
     }
 
     private combinePath(classPath: string, methodPath: string): string {

@@ -9,27 +9,40 @@ RestfulToolkit 提供三种测试方式：
 **位置**: `src/test/` 目录
 
 **测试内容**:
-- Spring MVC解析器测试
-- JAX-RS解析器测试  
+- Spring MVC/JAX-RS 解析器及跨解析器集成测试（类级路径、嵌套类型、长声明、重复注解块绝对行号）
 - 端点缓存管理测试
+- 后台激活/停用、配置重载收束、扫描预筛选/原子整体替换、watcher 状态同步与删除清理、扫描前后 `mtime + size` 竞态、异常后排队刷新测试
+- watcher 工作区相对排除与 Base URL watcher 范围、索引完成刷新、异步 Base URL 缓存/并发失效测试
+- Copy Full URL/Copy as cURL 命令编排与多路径 mapping 首路径选择规则测试
 
 **运行方式**:
 ```bash
 npm test
 ```
 
+当前基线：272 个 Mocha 用例通过（含 TypeScript 编译与 ESLint 前置检查）。
+
 **测试文件**:
 - `src/test/runTest.ts` - Mocha测试入口
 - `src/test/parsers/SpringMvcParser.test.ts`
 - `src/test/parsers/JaxRsParser.test.ts`
+- `src/test/parsers/AnnotationParser.test.ts`
+- `src/test/extractor/ParameterExtractor.test.ts`
 - `src/test/cache/EndpointCache.test.ts`
+- `src/test/cache/ScanStateManager.test.ts`
+- `src/test/scanner/FileScanner.test.ts`
+- `src/test/ui/SearchUI.test.ts`
+- `src/test/utils/FileWatcher.test.ts`
+- `src/test/utils/BaseUrlResolver.test.ts`
+- `src/test/extension.test.ts`
+- `src/test/commands/CopyUrlCurlCommand.test.ts`
 
 ### 2. 自动化验证脚本 ✅
 
 **位置**: `src/test/scripts/test-all-files.js`
 
 **验证内容**:
-- 49个端点识别准确性
+- 50个端点识别准确性
 - 行号定位100%准确
 - 多路径拆分正确性
 - Kotlin文件支持
@@ -38,11 +51,15 @@ npm test
 **运行方式**:
 ```bash
 node src/test/scripts/test-all-files.js
+node src/test/scripts/test-parameter-copy.js
+node src/test/scripts/test-copy-url-curl.js
 ```
+
+当前自动化基线：50 个端点与 100% 行号准确率、78/78 参数复制、115/115 URL/cURL（含异步 Base URL）全部通过。
 
 **输出统计**:
 - 总端点数、行号准确率
-- 框架分布（Spring 90%, JAX-RS 10%）
+- 框架分布（Spring 70%, JAX-RS 30%）
 - 语言分布（Java 92%, Kotlin 8%）
 - 多路径拆分统计
 
@@ -181,6 +198,9 @@ public class ProductResource {
    - QuickPick 弹窗应显示所有端点
    - 端点应有彩色图标（GET=🟢, POST=🔵, PUT=🟡, DELETE=🔴）
    - 显示格式：[GET] /api/users - UserController.getUsers()
+   - 首次扫描仍在后台运行时，QuickPick 应显示 busy 状态和当前已发现的部分结果
+   - 首次扫描结束后，已打开的 QuickPick 应按当前查询刷新；未发现端点时应关闭并提示
+   - 初始与查询后条目数量均不超过 `restfulToolkit.maxResults`
 
 4. **测试模糊搜索**：
    - 输入 "users" - 应匹配 /api/users
@@ -211,6 +231,9 @@ public class ProductResource {
    - 删除一个方法
    - 保存文件
    - 验证搜索结果中已移除
+
+4. **删除文件中的最后一个端点**：
+   - 保存后验证该文件不再残留任何旧端点
 
 #### 测试 5: 手动刷新
 
@@ -351,6 +374,9 @@ code --install-extension restful-toolkit-1.0.0.vsix
 - [ ] HTTP 方法图标显示正确
 - [ ] 模糊搜索工作正常
 - [ ] 搜索结果排序合理
+- [ ] 后台索引期间可搜索当前结果并显示 busy 状态
+- [ ] 后台索引完成后刷新当前查询；无端点时关闭并提示
+- [ ] QuickPick 条目数量遵守 `maxResults`
 
 ### ✅ 导航功能测试
 - [ ] 选择端点跳转到文件

@@ -37,6 +37,8 @@ methodPath = 提取方法级注解路径
 fullPath = classPath + methodPath  （去掉 classPath 尾部 / 和 methodPath 首部 / 的重复）
 ```
 
+当 Spring mapping 通过数组声明多个路径时，扫描器继续拆分全部端点；Copy Full URL 与 Copy as cURL 属于当前光标上的即时命令，没有搜索结果上下文，因此稳定使用源码中的第一个声明路径。
+
 ### 2. Base URL 回退链
 
 **决策**：实现 `BaseUrlResolver` 类，三级回退。

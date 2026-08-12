@@ -1,8 +1,8 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.7-green.svg)](https://github.com/tedburner/RestfulToolkit)
-[![Installs](https://img.shields.io/badge/installs-296-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
+[![Version](https://img.shields.io/badge/version-0.0.8-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Installs](https://img.shields.io/badge/installs-295-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **English** | [中文](README_CN.md)
@@ -15,14 +15,14 @@ It scans controller annotations, builds a searchable endpoint index, and lets yo
 
 | Capability | What it does |
 |------------|--------------|
-| Endpoint search | Search by URL path, class name, method name, HTTP method, camelCase acronym, or multiple words |
+| Endpoint search | Search by URL path, class name, method name, HTTP method, camelCase acronym, or multiple words; available while background indexing runs |
 | Source navigation | Jump from a QuickPick result to the exact controller annotation line |
 | Parameter copy | Copy endpoint parameters as URL Params, JSON Body, Form Data, or x-www-form-urlencoded |
 | DTO expansion | Expand nested request DTO fields up to 3 levels, including common JSON naming annotations |
 | URL and cURL copy | Generate full URLs and cURL commands with headers, query params, and request bodies |
-| Base URL detection | Read `server.port` and `server.servlet.context-path` from Spring config files |
+| Base URL detection | Read Spring configuration asynchronously through a workspace-scoped, event-invalidated in-memory cache |
 | JSON to DTO | Generate Java/Kotlin DTO classes from selected JSON or clipboard JSON |
-| Realtime updates | Watch Java/Kotlin files and refresh the endpoint cache on changes |
+| Realtime updates | Watch Java/Kotlin files, honor workspace-relative exclusions, and atomically replace endpoints only after scan metadata remains stable |
 
 ## Supported Projects
 
@@ -81,6 +81,10 @@ Search supports:
 - Multiple words: `post create`
 - camelCase acronyms: `dtc` for `DataTransferController`
 
+Commands are registered before the initial scan finishes. If search opens during background indexing, QuickPick shows the endpoints discovered so far with an indexing indicator. When indexing completes, it refreshes the current query; if no endpoints were found, it closes and shows the normal empty-index warning. Initial and filtered results both respect `restfulToolkit.maxResults`.
+
+Search keeps its existing matching and ranking behavior while processing repeated text terms only once in memory.
+
 ### Copy Endpoint Parameters
 
 Right-click a controller method and choose `RestfulToolkit: Copy Endpoint Parameters`.
@@ -105,6 +109,8 @@ Output formats:
 
 Right-click an endpoint and choose `RestfulToolkit: Copy Full URL`.
 
+If a Spring mapping declares multiple paths, the copy commands use the first path declared in source order. Endpoint search still indexes every declared path separately.
+
 Example output:
 
 ```text
@@ -117,6 +123,8 @@ Base URL resolution order:
 2. `.restful-toolkit.json` project config
 3. Spring config files such as `application.yml`, `application.properties`, `bootstrap.yml`, and profile files
 4. Default `http://localhost:8080`
+
+Detected values remain in Extension Host memory only. Creating, changing, or deleting a supported Spring configuration file invalidates the owning workspace cache.
 
 ### Copy as cURL
 
@@ -152,7 +160,7 @@ RestfulToolkit reads configuration from three levels, in priority order:
 | VS Code setting | Type | Default | Description |
 |-----------------|------|---------|-------------|
 | `restfulToolkit.scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | Glob patterns to scan |
-| `restfulToolkit.excludePaths` | `array` | `["**/src/test/**", "**/target/**", "**/build/**", ...]` | Glob patterns to exclude |
+| `restfulToolkit.excludePaths` | `array` | `["**/src/test/**", "**/target/**", "**/build/**", ...]` | Glob patterns to exclude; watcher matching is relative to each containing workspace folder |
 | `restfulToolkit.maxResults` | `number` | `100` | Maximum search results, clamped to 1-1000 |
 | `restfulToolkit.copyNameFormat` | `string` | `"camelCase"` | Default copied parameter naming style |
 | `restfulToolkit.baseUrl` | `string` | `""` | Base URL for URL/cURL generation; empty means auto-detect |

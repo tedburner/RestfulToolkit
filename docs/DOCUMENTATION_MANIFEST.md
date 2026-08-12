@@ -2,9 +2,15 @@
 
 ## 整理完成 ✅
 
-**整理日期**: 2026-04-20 | **更新日期**: 2026-06-15（FileScanner 去重/限流、SpringMvcParser 单次扫描、EndpointCache 预计算与返回值隔离、DtoFieldExtractor 与 BaseUrlResolver 缓存、优化任务清单完成）
+**整理日期**: 2026-04-20 | **更新日期**: 2026-08-12（扫描原子提交、索引完成刷新、重复 JAX-RS 注解行号与工作区相对排除规则）
 
-**近期新增与更新**:
+**当前新增与更新（截至 2026-08-12）**:
+- `src/scanner/FileScanner.ts` — 解析前后校验 `mtime + size`，仅在文件状态稳定时原子提交端点缓存与扫描记录
+- `src/ui/SearchUI.ts` — 后台索引完成后按当前查询刷新已打开的 QuickPick，无端点时关闭并提示
+- `src/parsers/JaxRsParser.ts` / `src/utils/FileWatcher.ts` — 重复注解块保留精确源码行号，watcher 支持工作区相对排除模式
+- `docs/CODE_REVIEW_2026-07-29.md` — 本轮优化审查及逐项核验处置；R-2 至 R-7 中可执行项已修复，R-1/R-8 经评估暂不增加数据结构或配置复杂度
+- `openspec/changes/fix-parser-and-scan-consistency/` — 解析器所有权/行号、增量扫描状态和 Base URL 异步化的中文 OpenSpec 设计、规格与任务
+- `src/test/parsers/AnnotationParser.test.ts` / `src/test/cache/ScanStateManager.test.ts` — 类级路径、嵌套 Controller、绝对行号及 `mtime + size` 增量判断回归测试
 - `docs/CODE_AUDIT_2026-06-01.md` — 全面代码审查报告，覆盖解析器、缓存/搜索、参数提取、扫描器/配置/工具层，含 6 个严重、5 个高级、12 个中级、16 个低级问题
 - P0/P1 修复：恢复 TypeScript 编译，修复 Spring/JAX-RS 路径解析、搜索正则崩溃、JSON-to-DTO 覆盖确认与 `@JsonProperty` key 转义、项目配置安全校验、缓存计数漂移与扫描竞态
 - 中低优先级小修：搜索输入防抖与实时清空、配置变化重建 watcher、Base URL YAML 层级约束、`maxResults` 约束、搜索 filters 应用、全限定 REST 注解识别、`@RequestMapping` 多 HTTP 方法解析
@@ -14,6 +20,10 @@
 - `src/test/scripts/test-json-to-class.js` — JSON 转 DTO 批量验证脚本（86 测试）
 - `src/test/scripts/mock-vscode.js` — Node 自动化脚本使用的最小 VS Code API mock
 - `scripts/update-marketplace-stats.js` / `scripts/update-marketplace-stats.test.js` — Marketplace 安装量徽章同步脚本与回归测试
+- `openspec/changes/optimize-startup-and-incremental-indexing/` — 启动、扫描、搜索和 Base URL 内存缓存优化的中文 OpenSpec 设计与任务
+- `openspec/changes/optimize-search-hot-path/` — 保持搜索语义的流式评分聚合与重复 token 规范化 OpenSpec 设计、规格和任务
+- `openspec/changes/simplify-equivalent-production-code/` — 行为保持不变的生产代码精简 OpenSpec 设计、规范与任务
+- `src/test/extension.test.ts` / `src/test/ui/SearchUI.test.ts` / `src/test/utils/FileWatcher.test.ts` — 后台激活、索引中搜索、结果上限和 watcher 排除规则回归测试
 
 **v0.0.4 新增**:
 - `src/extractor/UrlGenerator.ts` — 完整 URL 生成
@@ -73,6 +83,7 @@ restful-toolkit/
 │   ├── INCREMENTAL_SCAN.md  # 增量扫描文档
 │   ├── OPTIMIZATION_PLAN.md # 当前核心代码优化任务清单
 │   ├── CODE_AUDIT_2026-06-01.md # 代码审查报告（待修复）
+│   ├── CODE_REVIEW_2026-07-29.md # 本轮优化审查与处置结果
 │   ├── TESTING_GUIDE.md     # 测试指南
 │   └── screenshot.png       # 扩展截图演示
 │
@@ -109,7 +120,7 @@ restful-toolkit/
 
 ## 二、测试脚本结构
 
-### 单元测试（Mocha框架）- 15个文件 ✅
+### 单元测试（Mocha框架）- 22个文件 ✅
 
 **位置**: `src/test/` 目录
 
@@ -117,9 +128,16 @@ restful-toolkit/
 |------|------|
 | runTest.ts | Mocha测试入口 |
 | parsers/SpringMvcParser.test.ts | Spring解析器测试（含 @RequestHeader） |
-| parsers/JaxRsParser.test.ts | JAX-RS解析器测试（含 @HeaderParam） |
+| parsers/JaxRsParser.test.ts | JAX-RS解析器测试（含 @HeaderParam 与重复注解块精确行号） |
+| parsers/AnnotationParser.test.ts | 类型级路径、嵌套 Controller 归属与绝对行号集成测试 |
+| extractor/ParameterExtractor.test.ts | 多路径 mapping 的复制命令首路径选择规则测试 |
 | cache/EndpointCache.test.ts | 缓存、搜索排序与预计算复用测试 |
-| scanner/FileScanner.test.ts | 文件扫描去重与并发限流测试 |
+| cache/ScanStateManager.test.ts | `mtime + size` 会话内增量判断测试 |
+| scanner/FileScanner.test.ts | 文件扫描单次发现、并发限流、注解预筛选、扫描期间文件变化的原子提交、异常后排队强制刷新与状态栏 timer 所有权测试 |
+| extension.test.ts | 命令先于后台扫描完成注册，以及停用等待配置重载和扫描收束的生命周期测试 |
+| commands/CopyUrlCurlCommand.test.ts | Copy Full URL/Copy as cURL 的端点提取、Base URL 与剪贴板命令编排测试 |
+| ui/SearchUI.test.ts | 索引中搜索、索引完成刷新/空结果提示与 QuickPick 结果上限测试 |
+| utils/FileWatcher.test.ts | watcher 默认及工作区相对排除规则测试 |
 | extractor/UrlGenerator.test.ts | URL 生成测试（5 用例） |
 | extractor/CurlConverter.test.ts | cURL 生成测试（5 用例） |
 | extractor/NameTransformer.test.ts | 命名转换测试 |
@@ -127,7 +145,7 @@ restful-toolkit/
 | extractor/DtoFieldExtractor.test.ts | DTO 查找缓存与字段解析测试 |
 | extractor/SpringParameterParser.test.ts | Spring 参数解析测试 |
 | extractor/JaxRsParameterParser.test.ts | JAX-RS 参数解析测试 |
-| utils/BaseUrlResolver.test.ts | Base URL 自动检测与缓存失效测试 |
+| utils/BaseUrlResolver.test.ts | Base URL 自动检测、发现复用、工作区级失效与异步失效竞态测试 |
 | generator/JsonClassGenerator.test.ts | JSON 转 Java/Kotlin DTO 生成测试 |
 | generator/JsonTypeMapper.test.ts | JSON 值到 Java/Kotlin 类型映射测试 |
 | utils/TextProcessor.test.ts | 文本净化与行号索引测试 |
@@ -150,16 +168,17 @@ restful-toolkit/
 
 ## 三、文档清单
 
-### 根目录文档 (4个) ✅
+### 根目录文档 (5个) ✅
 
 | 文档 | 说明 |
 |------|------|
 | README.md | 项目主文档（英文）|
 | README_CN.md | 项目主文档（中文）|
 | CHANGELOG.md | 版本变更日志 |
+| AGENTS.md | Codex 与通用 Agent 开发指导 |
 | CLAUDE.md | Claude开发指导 |
 
-### docs目录 (7个) ✅
+### docs目录 (8个) ✅
 
 | 文档 | 说明 |
 |------|------|
@@ -168,6 +187,7 @@ restful-toolkit/
 | INCREMENTAL_SCAN.md | 增量扫描文档 |
 | OPTIMIZATION_PLAN.md | 当前核心代码优化任务清单（2026-06-15，已完成） |
 | CODE_AUDIT_2026-06-01.md | 代码审查报告（2026-06-01，P0/P1 已在 2026-06-02 优先修复） |
+| CODE_REVIEW_2026-07-29.md | 解析器、扫描状态和 Base URL 优化审查及逐项处置结果 |
 | DOCUMENTATION_MANIFEST.md | 本清单文档 |
 | screenshot.png | 扩展截图演示 |
 | superpowers/plans/2026-04-27-endpoint-parameter-copy.md | 参数复制功能实现计划 |
@@ -226,15 +246,15 @@ restful-toolkit/
 
 ## 五、统计
 
-### v0.0.7 当前状态
+### v0.0.8 当前状态
 
 | 类别 | 数量 |
 |------|------|
-| 根目录文档 | 6个（README, README_CN, CHANGELOG, CLAUDE, LICENSE, RELEASE_v0.0.2） |
+| 根目录文档 | 6个（README, README_CN, CHANGELOG, AGENTS, CLAUDE, LICENSE） |
 | 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
-| docs 文档 | 7个（CONFIG_SYSTEM, DOCUMENTATION_MANIFEST, INCREMENTAL_SCAN, OPTIMIZATION_PLAN, CODE_AUDIT_2026-06-01, TESTING_GUIDE, screenshot.png） |
-| 源代码模块 | 22个（含 extractor/ 8、commands/ 4、generator/ 2、utils/ 3） |
-| 单元测试 | 15+ Mocha 测试（含 FileScanner、EndpointCache、DtoFieldExtractor、BaseUrlResolver、TextProcessor、JSON-to-DTO） |
+| docs 顶层文档 | 8 个（7 个 Markdown、1 个 screenshot） |
+| 源代码模块 | 30个（含 extractor/ 9、commands/ 4、generator/ 2、utils/ 4） |
+| 单元测试 | 272 个 Mocha 用例（含解析器集成、复制 URL/cURL 命令、FileScanner、ScanStateManager、EndpointCache、BaseUrlResolver、激活与 UI） |
 | 自动化脚本 | 4个（50端点验证 + 78参数复制 + 115 URL/cURL + 86 JSON-to-DTO） |
 | 测试 Controller | 3个（Spring 25 + JAX-RS 11 + Form） |
 | 测试 DTO | 7个 |
@@ -247,6 +267,7 @@ restful-toolkit/
 - **v0.0.5 更新**（2026-05-19）：新增并发扫描、TextProcessor、JSON 转 DTO Lombok 选项、异步 I/O 与搜索排序优化
 - **v0.0.6 更新**（2026-06-02）：优先修复代码审查 P0/P1 与中低优先级小问题，恢复编译与本地验证脚本稳定性
 - **v0.0.7 更新**（2026-06-15）：FileScanner 去重重叠 glob 匹配，限制增量 stat 检查并发；SpringMvcParser 改为单次源码顺序扫描；EndpointCache 预计算搜索字段、维护 top-K 候选并隔离返回值变异；DtoFieldExtractor 缓存一次命令内 DTO 查找和直接字段解析；BaseUrlResolver 缓存 workspace 自动检测结果并按配置文件 mtime/ctime/size 变化失效；完成优化任务清单
+- **v0.0.8 发布**（2026-08-12）：修复类型级路径、嵌套 Controller 所有权和重复 JAX-RS 注解行号；扫描结果与 `mtime + size` 状态仅在解析前后元数据稳定时原子提交；后台索引完成后刷新当前搜索；watcher 支持工作区相对排除模式；Base URL 删除同步文件系统入口并收窄配置 watcher；优化稳定 top-K 搜索与内存缓存
 
 ---
 

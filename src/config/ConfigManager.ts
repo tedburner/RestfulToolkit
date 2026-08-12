@@ -174,24 +174,12 @@ export class ConfigManager {
         return DEFAULT_CONFIG;
     }
 
-    getBaseUrl(): string {
-        const scanConfig = this.getScanConfig();
-        if (scanConfig.baseUrl) { return scanConfig.baseUrl; }
-
-        const workspaceFolder = this.workspaceFolders[0];
-        if (workspaceFolder) {
-            const resolver = new BaseUrlResolver();
-            const autoDetected = resolver.resolve(workspaceFolder);
-            if (autoDetected) {
-                const url = `http://${autoDetected.host}:${autoDetected.port}${autoDetected.contextPath}`;
-                this.logger.info(`Auto-detected base URL: ${url}`);
-                return url;
-            }
-        }
-
-        return 'http://localhost:8080';
-    }
-
+    /**
+     * 按“显式配置优先、工作区自动发现其次、默认地址兜底”的顺序异步解析 Base URL。
+     *
+     * @param resourceUri 当前命令关联的资源，用于多工作区场景选择所属工作区
+     * @returns 可直接用于 URL 与 cURL 生成的 Base URL
+     */
     async getBaseUrlAsync(resourceUri?: vscode.Uri): Promise<string> {
         const scanConfig = this.getScanConfig();
         if (scanConfig.baseUrl) { return scanConfig.baseUrl; }

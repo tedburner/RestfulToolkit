@@ -18,3 +18,7 @@
 #### Scenario: 类级路径拼接
 - **WHEN** Controller 同时有类级 `@RequestMapping("/api/v1")` 和方法级 `@GetMapping("/users")`
 - **THEN** 生成的路径 SHALL 为 `/api/v1/users`，无重复斜杠
+
+#### Scenario: 方法声明多个路径
+- **WHEN** 当前方法使用 `@GetMapping({"/users", "/accounts"})` 声明多个路径并触发 Copy Full URL 或 Copy as cURL
+- **THEN** 复制命令 SHALL 稳定使用源码中第一个声明路径 `/users`

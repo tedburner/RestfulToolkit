@@ -11,6 +11,7 @@ import { CopyUrlCommand } from './commands/CopyUrlCommand';
 import { CopyCurlCommand } from './commands/CopyCurlCommand';
 import { JsonToClassCommand } from './commands/JsonToClassCommand';
 import { getLabels } from './extractor/i18n';
+import { BaseUrlResolver } from './utils/BaseUrlResolver';
 
 let cache: EndpointCache;
 let scanner: FileScanner;
@@ -19,6 +20,12 @@ let logger: Logger;
 let searchUI: SearchUI;
 let configManager: ConfigManager;
 let scanStateManager: ScanStateManager;
+let baseUrlConfigWatcher: vscode.FileSystemWatcher | undefined;
+let initialScanPromise: Promise<void> | undefined;
+let configChangeSubscription: vscode.Disposable | undefined;
+let workspaceFoldersSubscription: vscode.Disposable | undefined;
+let deactivating = false;
+const lifecycleTasks = new Set<Promise<void>>();
 
 function getWorkspaceFolderPaths(): string[] {
     return vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [];
@@ -26,21 +33,43 @@ function getWorkspaceFolderPaths(): string[] {
 
 async function reloadConfigAndRefreshWatchers(): Promise<void> {
     await configManager.setWorkspaceFolders(getWorkspaceFolderPaths());
+    if (deactivating) {
+        return;
+    }
     const updatedConfig = configManager.getScanConfig();
-    watcher.start(updatedConfig.scanPaths);
+    watcher.start(updatedConfig.scanPaths, updatedConfig.excludePaths);
     await scanner.refresh(true);
 }
 
+function requestWorkspaceReload(logMessage: string, taskDescription: string): void {
+    logger.info(logMessage);
+    BaseUrlResolver.reset();
+    trackLifecycleTask(reloadConfigAndRefreshWatchers(), taskDescription);
+}
+
+function trackLifecycleTask(task: Promise<void>, description: string): void {
+    const tracked = task
+        .catch(error => {
+            if (!deactivating) {
+                const err = error instanceof Error ? error : new Error(String(error));
+                logger.error(`${description} failed`, err);
+            }
+        })
+        .finally(() => lifecycleTasks.delete(tracked));
+    lifecycleTasks.add(tracked);
+}
+
 export async function activate(context: vscode.ExtensionContext) {
+    deactivating = false;
+    lifecycleTasks.clear();
     logger = Logger.getInstance();
-    logger.info('=== RestfulToolkit v0.0.7 loaded ===');
+    logger.info('=== RestfulToolkit v0.0.8 loaded ===');
 
     // 初始化配置管理器
     configManager = ConfigManager.getInstance();
 
-    // 初始化扫描状态管理器（需要 context 用于持久化）
+    // 初始化纯内存扫描状态管理器
     scanStateManager = ScanStateManager.getInstance();
-    scanStateManager.setContext(context);
 
     // 设置工作区文件夹（用于加载项目配置）
     await configManager.setWorkspaceFolders(getWorkspaceFolderPaths());
@@ -48,7 +77,7 @@ export async function activate(context: vscode.ExtensionContext) {
     cache = new EndpointCache();
     scanner = new FileScanner(cache);
     watcher = new FileWatcher();
-    searchUI = new SearchUI(cache);
+    searchUI = new SearchUI(cache, scanner);
 
     // 使用 ConfigManager 获取配置
     const config = configManager.getScanConfig();
@@ -66,22 +95,37 @@ export async function activate(context: vscode.ExtensionContext) {
         scanner.removeFile(uri);
     });
 
-    watcher.start(scanPatterns);
+    watcher.start(scanPatterns, config.excludePaths);
 
-    await scanner.scanWorkspace();
-
-    const configChangeSubscription = vscode.workspace.onDidChangeConfiguration(async (event) => {
+    configChangeSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
         if (!event.affectsConfiguration('restfulToolkit')) {
             return;
         }
-        logger.info('RestfulToolkit configuration changed; rebuilding watchers and refreshing endpoints');
-        await reloadConfigAndRefreshWatchers();
+        requestWorkspaceReload(
+            'RestfulToolkit configuration changed; rebuilding watchers and refreshing endpoints',
+            'Configuration reload'
+        );
     });
 
-    const workspaceFoldersSubscription = vscode.workspace.onDidChangeWorkspaceFolders(async () => {
-        logger.info('RestfulToolkit workspace folders changed; reloading project config and refreshing endpoints');
-        await reloadConfigAndRefreshWatchers();
+    workspaceFoldersSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        requestWorkspaceReload(
+            'RestfulToolkit workspace folders changed; reloading project config and refreshing endpoints',
+            'Workspace folder reload'
+        );
     });
+
+    baseUrlConfigWatcher = vscode.workspace.createFileSystemWatcher(
+        '**/main/resources/{application,application-*,bootstrap}.{yml,yaml,properties}'
+    );
+    const invalidateBaseUrl = (uri: vscode.Uri) => {
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+        if (workspaceFolder) {
+            BaseUrlResolver.invalidate(workspaceFolder.uri.fsPath);
+        }
+    };
+    baseUrlConfigWatcher.onDidCreate(invalidateBaseUrl);
+    baseUrlConfigWatcher.onDidChange(invalidateBaseUrl);
+    baseUrlConfigWatcher.onDidDelete(invalidateBaseUrl);
 
     const searchCommand = vscode.commands.registerCommand(
         'restfulToolkit.searchEndpoints',
@@ -120,6 +164,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
             if (!choice) {
                 logger.info('Refresh cancelled by user');
+                return;
+            }
+
+            if (deactivating) {
                 return;
             }
 
@@ -194,24 +242,38 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    context.subscriptions.push(searchCommand);
-    context.subscriptions.push(refreshCommand);
-    context.subscriptions.push(createConfigCommand);
-    context.subscriptions.push(copyCommand);
-    context.subscriptions.push(copyUrlCommand);
-    context.subscriptions.push(copyCurlCommand);
-    context.subscriptions.push(jsonToClassInFolderCommand);
-    context.subscriptions.push(configChangeSubscription);
-    context.subscriptions.push(workspaceFoldersSubscription);
-    context.subscriptions.push(scanner);
-    context.subscriptions.push(watcher);
-    context.subscriptions.push(searchUI);
-    context.subscriptions.push(logger);
+    context.subscriptions.push(
+        searchCommand, refreshCommand, createConfigCommand, copyCommand, copyUrlCommand, copyCurlCommand,
+        jsonToClassInFolderCommand, configChangeSubscription, workspaceFoldersSubscription, baseUrlConfigWatcher,
+        scanner, watcher, searchUI, logger
+    );
+
+    initialScanPromise = scanner.scanWorkspace().catch(error => {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error('Initial background scan failed', err);
+    });
 }
 
 export async function deactivate() {
+    deactivating = true;
     logger?.info('RestfulToolkit extension deactivated');
+    configChangeSubscription?.dispose();
+    configChangeSubscription = undefined;
+    workspaceFoldersSubscription?.dispose();
+    workspaceFoldersSubscription = undefined;
+    baseUrlConfigWatcher?.dispose();
+    baseUrlConfigWatcher = undefined;
+    watcher?.dispose();
+    scanner?.dispose();
+    await Promise.allSettled([
+        ...lifecycleTasks,
+        initialScanPromise ?? Promise.resolve(),
+        scanner?.waitForIdle() ?? Promise.resolve()
+    ]);
+    lifecycleTasks.clear();
+    initialScanPromise = undefined;
     ConfigManager.reset();
+    BaseUrlResolver.reset();
     ScanStateManager.reset();
     Logger.reset();
 }

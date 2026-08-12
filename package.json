@@ -2,7 +2,7 @@
   "name": "restful-toolkit",
   "displayName": "RestfulToolkit",
   "description": "VS Code extension for searching and navigating RESTful API endpoints in Java/Kotlin Spring and JAX-RS projects",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "kiturone",
   "icon": "icon.png",
   "engines": {
@@ -152,7 +152,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run build",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",

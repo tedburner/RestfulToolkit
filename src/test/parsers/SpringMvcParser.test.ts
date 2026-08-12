@@ -508,4 +508,36 @@ public class UserController {
         assert.strictEqual(endpoints[0].path, '/users');
         assert.strictEqual(endpoints[0].methodName, 'getWithAnnotation');
     });
+
+    test('Should parse a method declaration beyond the legacy 500 character window', () => {
+        const declarationGap = ' '.repeat(600);
+        const content = `
+            public class LongDeclarationController {
+                @GetMapping("/long")
+                ${declarationGap}@Operation(summary = "long declaration")
+                public ResponseEntity<List<User>> longMethod() { return null; }
+            }
+        `;
+
+        const endpoints = parser.parseMethodAnnotations(content, 'LongDeclarationController', null, 'test.java');
+
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/long');
+        assert.strictEqual(endpoints[0].methodName, 'longMethod');
+    });
+
+    test('Should skip a parameterized annotation before the mapped method declaration', () => {
+        const content = `
+            public class AnnotatedController {
+                @GetMapping("/annotated")
+                @Operation(summary = "contains (parentheses)", tags = { "one", "two" })
+                public ResponseEntity<User> annotatedMethod() { return null; }
+            }
+        `;
+
+        const endpoints = parser.parseMethodAnnotations(content, 'AnnotatedController', null, 'test.java');
+
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].methodName, 'annotatedMethod');
+    });
 });

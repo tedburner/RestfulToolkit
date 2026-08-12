@@ -1,8 +1,8 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.7-green.svg)](https://github.com/tedburner/RestfulToolkit)
-[![Installs](https://img.shields.io/badge/installs-296-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
+[![Version](https://img.shields.io/badge/version-0.0.8-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Installs](https://img.shields.io/badge/installs-295-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](README.md) | **中文**
@@ -15,14 +15,14 @@ RestfulToolkit 是一个 VS Code 扩展，用于在 Java/Kotlin 的 Spring MVC�
 
 | 能力 | 说明 |
 |------|------|
-| 端点搜索 | 按 URL 路径、类名、方法名、HTTP 方法、camelCase 缩写或多关键词搜索 |
+| 端点搜索 | 按 URL 路径、类名、方法名、HTTP 方法、camelCase 缩写或多关键词搜索；后台索引期间仍可使用 |
 | 源码跳转 | 从 QuickPick 结果跳转到准确的 Controller 注解行 |
 | 参数复制 | 将端点参数复制为 URL Params、JSON Body、Form Data 或 x-www-form-urlencoded |
 | DTO 展开 | 自动展开最多 3 层嵌套请求 DTO 字段，并支持常见 JSON 命名注解 |
 | URL 和 cURL 复制 | 生成包含请求头、查询参数和请求体的完整 URL/cURL |
-| Base URL 检测 | 从 Spring 配置文件读取 `server.port` 和 `server.servlet.context-path` |
+| Base URL 检测 | 通过工作区级、事件失效的内存缓存异步读取 Spring 配置 |
 | JSON 转 DTO | 从选中文本或剪贴板 JSON 生成 Java/Kotlin DTO 类 |
-| 实时更新 | 监听 Java/Kotlin 文件变更并刷新端点缓存 |
+| 实时更新 | 监听 Java/Kotlin 文件变更、遵守工作区相对排除规则，并只在扫描元数据稳定后原子替换端点 |
 
 ## 支持的项目
 
@@ -81,6 +81,10 @@ npm run compile
 - 多关键词：`post create`
 - camelCase 缩写：`dtc` 匹配 `DataTransferController`
 
+命令会在首次扫描完成前注册。后台索引期间打开搜索时，QuickPick 会显示当前已发现的端点和索引提示；索引完成后会按当前查询刷新结果，若仍未发现端点则关闭并显示常规空索引提示。初始结果与过滤结果均遵守 `restfulToolkit.maxResults`。
+
+搜索保持既有的匹配与排序行为，同时在内存中只处理一次重复的文本关键词。
+
 ### 复制端点参数
 
 在 Controller 方法上右键，选择 `RestfulToolkit: Copy Endpoint Parameters`。
@@ -105,6 +109,8 @@ npm run compile
 
 在端点上右键，选择 `RestfulToolkit: Copy Full URL`。
 
+如果 Spring mapping 同时声明多个路径，复制命令会稳定使用源码中第一个声明路径；端点搜索仍会分别索引每一个声明路径。
+
 输出示例：
 
 ```text
@@ -117,6 +123,8 @@ Base URL 解析顺序：
 2. 工作区根目录下的 `.restful-toolkit.json`
 3. Spring 配置文件，例如 `application.yml`、`application.properties`、`bootstrap.yml` 和 profile 文件
 4. 默认值 `http://localhost:8080`
+
+自动检测结果只保存在 Extension Host 内存中。创建、修改或删除受支持的 Spring 配置文件时，会主动使所属工作区缓存失效。
 
 ### 复制为 cURL
 
@@ -152,7 +160,7 @@ RestfulToolkit 按以下优先级读取配置：
 | VS Code 设置 | 类型 | 默认值 | 说明 |
 |--------------|------|--------|------|
 | `restfulToolkit.scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | 需要扫描的 glob 模式 |
-| `restfulToolkit.excludePaths` | `array` | `["**/src/test/**", "**/target/**", "**/build/**", ...]` | 需要排除的 glob 模式 |
+| `restfulToolkit.excludePaths` | `array` | `["**/src/test/**", "**/target/**", "**/build/**", ...]` | 需要排除的 glob 模式；watcher 按文件所属工作区的相对路径匹配 |
 | `restfulToolkit.maxResults` | `number` | `100` | 最大搜索结果数，限制为 1-1000 |
 | `restfulToolkit.copyNameFormat` | `string` | `"camelCase"` | 复制参数时默认使用的命名风格 |
 | `restfulToolkit.baseUrl` | `string` | `""` | URL/cURL 生成使用的 Base URL；留空时自动检测 |

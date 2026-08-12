@@ -29,6 +29,7 @@ export interface I18nLabels {
     jsonToClassSuccess: string;
     jsonToClassLombok: string;
     searchPlaceholder: string;
+    searchIndexingPlaceholder: string;
     searchNoEndpoints: string;
     searchOpenFileError: string;
     refreshIncrementalLabel: string;
@@ -82,6 +83,7 @@ const zhLabels: I18nLabels = {
     jsonToClassSuccess: '✓ DTO 类文件已生成',
     jsonToClassLombok: '是否使用 Lombok',
     searchPlaceholder: '搜索 REST 端点 (路径、类名、方法名、HTTP 方法)',
+    searchIndexingPlaceholder: '正在索引，可搜索当前已发现的 REST 端点',
     searchNoEndpoints: '未找到 REST 端点，请先扫描项目',
     searchOpenFileError: '无法打开文件: {0}',
     refreshIncrementalLabel: '$(sync) 增量刷新',
@@ -135,6 +137,7 @@ const enLabels: I18nLabels = {
     jsonToClassSuccess: '✓ DTO class file generated',
     jsonToClassLombok: 'Use Lombok',
     searchPlaceholder: 'Search REST endpoints (path, class, method, HTTP method)',
+    searchIndexingPlaceholder: 'Indexing: search REST endpoints discovered so far',
     searchNoEndpoints: 'No REST endpoints found. Please scan your project first.',
     searchOpenFileError: 'Failed to open file: {0}',
     refreshIncrementalLabel: '$(sync) Incremental Refresh',

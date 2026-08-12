@@ -18,27 +18,32 @@ export class SpringMvcParser {
     }
 
     parseClassLevelPath(content: string): string | null {
-        const requestMappingMatch = content.match(/@(?:[\w.]+\.)?RequestMapping(?:\s|\(|$)/);
-        if (!requestMappingMatch) {
+        const sanitized = TextProcessor.sanitize(content);
+        const typeDeclarationIndex = this.findTypeDeclarationIndex(sanitized);
+        if (typeDeclarationIndex === -1) {
             return null;
         }
 
-        const annotationText = this.extractAnnotationForward(content, requestMappingMatch.index!);
-        if (!annotationText) {
-            return null;
+        const pattern = /@(?:[\w.]+\.)?RequestMapping(?:\s|\(|$)/g;
+        let match: RegExpExecArray | null;
+        let annotationText: string | null = null;
+        while ((match = pattern.exec(sanitized)) !== null && match.index < typeDeclarationIndex) {
+            annotationText = this.extractAnnotationForward(content, match.index);
         }
 
-        const paths = this.extractPathValues(annotationText);
+        const paths = annotationText ? this.extractPathValues(annotationText) : [];
         return paths.length > 0 ? paths[0] : null;
     }
 
-    parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[]): RestEndpoint[] {
+    parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[], contentOffset: number = 0): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
+        const sanitized = TextProcessor.sanitize(content);
+        const typeDeclarationIndex = this.findTypeDeclarationIndex(sanitized);
 
         const annotationPattern = /@(?:[\w.]+\.)?(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)(?:\s|\(|$)/g;
         let annotationMatch: RegExpExecArray | null;
 
-        while ((annotationMatch = annotationPattern.exec(content)) !== null) {
+        while ((annotationMatch = annotationPattern.exec(sanitized)) !== null) {
             const annotationIndex = annotationMatch.index;
             const simpleName = annotationMatch[1];
 
@@ -48,29 +53,20 @@ export class SpringMvcParser {
                 continue;
             }
 
-            if (simpleName === 'RequestMapping' && this.isClassLevelRequestMapping(content, annotationIndex, annotationText.length)) {
+            if (simpleName === 'RequestMapping' && typeDeclarationIndex !== -1 && annotationIndex < typeDeclarationIndex) {
                 continue;
             }
 
             // 从注解位置向后查找方法名
             const methodStartIndex = annotationIndex + annotationText.length;
-            const methodName = this.findMethodNameForward(content, methodStartIndex);
+            const methodName = this.findMethodNameForward(sanitized, methodStartIndex);
             if (!methodName) {
                 continue;
             }
 
-            // 跳过类级别的 @RequestMapping（检查注解后是否有 class 关键字）
-            if (simpleName === 'RequestMapping') {
-                const searchArea = content.substring(annotationIndex, annotationIndex + 300);
-                if (searchArea.match(/(?:public|private|protected)?\s+class\s+\w+/)) {
-                    // 这是类级别注解，跳过
-                    continue;
-                }
-            }
-
             // 计算注解起始行号（直接从注解的 @ 符号位置计算）
             const line = lineIndex
-                ? TextProcessor.getLineNumber(lineIndex, annotationIndex)
+                ? TextProcessor.getLineNumber(lineIndex, contentOffset + annotationIndex)
                 : TextProcessor.getLineNumberFallback(content, annotationIndex);
             const methodEndpoints = this.parseAnnotationText(
                 annotationText,
@@ -85,23 +81,6 @@ export class SpringMvcParser {
         }
 
         return endpoints;
-    }
-
-    /**
-     * 从注解起始位置向后提取完整注解文本（支持跨行）
-     */
-    private isClassLevelRequestMapping(content: string, annotationIndex: number, annotationLength: number): boolean {
-        const searchArea = content.substring(annotationIndex + annotationLength, annotationIndex + annotationLength + 1000);
-        const bodyIndex = searchArea.indexOf('{');
-        const declarationArea = bodyIndex === -1 ? searchArea : searchArea.substring(0, bodyIndex);
-        const typeDeclarationMatch = declarationArea.match(/\b(?:class|interface|object)\s+\w+/);
-
-        if (!typeDeclarationMatch) {
-            return false;
-        }
-
-        const beforeType = declarationArea.substring(0, typeDeclarationMatch.index);
-        return !/\w+\s*\([^)]*$/.test(beforeType);
     }
 
     private extractAnnotationForward(content: string, startIndex: number): string | null {
@@ -143,18 +122,49 @@ export class SpringMvcParser {
     }
 
     private findMethodNameForward(content: string, startIndex: number): string | null {
-        // 从注解后面查找第一个方法名
-        // 匹配模式: public/private/protected? return-type methodName(
-        const searchArea = content.substring(startIndex, startIndex + 500); // 搜索接下来的500字符
+        let index = startIndex;
 
-        const methodPattern = /(?:public|private|protected)?\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:\w+(?:<[^>]+>)?\s+)+(\w+)\s*\(/;
-        const match = searchArea.match(methodPattern);
+        while (index < content.length) {
+            while (index < content.length && /\s/.test(content[index])) {
+                index++;
+            }
+            if (content[index] !== '@') {
+                break;
+            }
+            const annotation = this.extractAnnotationForward(content, index);
+            if (!annotation) {
+                return null;
+            }
+            index += annotation.length;
+        }
 
-        if (match && match[1]) {
-            return match[1];
+        const declarationStart = index;
+        while (index < content.length) {
+            const char = content[index];
+            if (char === '@') {
+                const annotation = this.extractAnnotationForward(content, index);
+                if (!annotation) {
+                    return null;
+                }
+                index += annotation.length;
+                continue;
+            }
+            if (char === '(') {
+                const declarationPrefix = content.substring(declarationStart, index);
+                const methodMatch = declarationPrefix.match(/([A-Za-z_$][\w$]*)\s*$/);
+                return methodMatch ? methodMatch[1] : null;
+            }
+            if (char === '{' || char === '}' || char === ';') {
+                return null;
+            }
+            index++;
         }
 
         return null;
+    }
+
+    private findTypeDeclarationIndex(content: string): number {
+        return content.search(/\b(?:class|interface|object)\s+\w+/);
     }
 
     /**

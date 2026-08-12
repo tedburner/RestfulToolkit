@@ -1,5 +1,4 @@
 import * as path from 'path';
-import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { Logger } from './Logger';
 
@@ -10,8 +9,12 @@ interface ResolvedBaseUrl {
 }
 
 interface BaseUrlCacheEntry {
-    signature: string;
     value: ResolvedBaseUrl | null;
+}
+
+interface ConfigValues {
+    port: string | null;
+    contextPath: string | null;
 }
 
 /**
@@ -26,6 +29,8 @@ interface BaseUrlCacheEntry {
  */
 export class BaseUrlResolver {
     private static readonly cache = new Map<string, BaseUrlCacheEntry>();
+    private static readonly generations = new Map<string, number>();
+    private static cacheEpoch = 0;
     private logger: Logger;
 
     constructor() {
@@ -33,114 +38,76 @@ export class BaseUrlResolver {
     }
 
     /**
-     * 自动检测 Base URL
+     * 异步发现并解析工作区内的 Spring Boot Base URL 配置。
+     *
+     * 仅通过 VS Code 文件系统 API 访问资源目录和配置文件，解析结果缓存在 Extension Host
+     * 内存中；调用 {@link invalidate} 后，失效期间已经启动的旧解析结果不会重新写入缓存。
+     *
+     * @param workspaceFolder 工作区根目录
+     * @returns 自动识别的主机、端口和上下文路径；未发现有效配置时返回 null
      */
-    resolve(workspaceFolder: string): ResolvedBaseUrl | null {
-        const cacheKey = this.normalizePath(workspaceFolder);
-        const resourcesDirs = this.findResourcesDirs(workspaceFolder);
-        const files = resourcesDirs.flatMap(dir => this.collectConfigFiles(dir));
-        const signature = this.buildConfigSignature(files);
-        const cached = BaseUrlResolver.cache.get(cacheKey);
-        if (cached && cached.signature === signature) {
-            return this.cloneResult(cached.value);
-        }
-
-        const value = this.resolveFromConfigFiles(files);
-        BaseUrlResolver.cache.set(cacheKey, { signature, value: this.cloneResult(value) });
-        return value;
-    }
-
     async resolveAsync(workspaceFolder: string): Promise<ResolvedBaseUrl | null> {
         const cacheKey = this.normalizePath(workspaceFolder);
+        const cached = BaseUrlResolver.cache.get(cacheKey);
+        if (cached) {
+            return this.cloneResult(cached.value);
+        }
+        const cacheEpoch = BaseUrlResolver.cacheEpoch;
+        const generation = BaseUrlResolver.generations.get(cacheKey) ?? 0;
         const resourcesDirs = await this.findResourcesDirsAsync(workspaceFolder);
         const files: string[] = [];
         for (const dir of resourcesDirs) {
             files.push(...await this.collectConfigFilesAsync(dir));
         }
 
-        const signature = await this.buildConfigSignatureAsync(files);
-        const cached = BaseUrlResolver.cache.get(cacheKey);
-        if (cached && cached.signature === signature) {
-            return this.cloneResult(cached.value);
-        }
-
         const value = await this.resolveFromConfigFilesAsync(files);
-        BaseUrlResolver.cache.set(cacheKey, { signature, value: this.cloneResult(value) });
+        if (cacheEpoch === BaseUrlResolver.cacheEpoch
+            && generation === (BaseUrlResolver.generations.get(cacheKey) ?? 0)) {
+            BaseUrlResolver.cache.set(cacheKey, { value: this.cloneResult(value) });
+        }
         return value;
     }
 
-    private resolveFromConfigFiles(files: string[]): ResolvedBaseUrl | null {
-        if (files.length === 0) { return null; }
-        const result: { port: string | null; contextPath: string | null } = { port: null, contextPath: null };
+    static invalidate(workspaceFolder: string): void {
+        const cacheKey = BaseUrlResolver.normalizePath(workspaceFolder);
+        BaseUrlResolver.cache.delete(cacheKey);
+        BaseUrlResolver.generations.set(cacheKey, (BaseUrlResolver.generations.get(cacheKey) ?? 0) + 1);
+    }
 
-        for (const file of files) {
-            const content = this.readFile(file);
-            if (!content) { continue; }
-
-            const parsed = file.endsWith('.properties')
-                ? this.parseProperties(content)
-                : this.parseYaml(content);
-
-            if (parsed.port) {result.port = parsed.port;}
-            if (parsed.contextPath) {result.contextPath = parsed.contextPath;}
-        }
-
-        if (!result.port && !result.contextPath) { return null; }
-
-        return {
-            host: 'localhost',
-            port: result.port || '8080',
-            contextPath: result.contextPath || ''
-        };
+    static reset(): void {
+        BaseUrlResolver.cache.clear();
+        BaseUrlResolver.generations.clear();
+        BaseUrlResolver.cacheEpoch++;
     }
 
     private async resolveFromConfigFilesAsync(files: string[]): Promise<ResolvedBaseUrl | null> {
         if (files.length === 0) { return null; }
-        const result: { port: string | null; contextPath: string | null } = { port: null, contextPath: null };
+        const result: ConfigValues = { port: null, contextPath: null };
 
         for (const file of files) {
             const content = await this.readFileAsync(file);
             if (!content) { continue; }
-
-            const parsed = file.endsWith('.properties')
-                ? this.parseProperties(content)
-                : this.parseYaml(content);
-
-            if (parsed.port) { result.port = parsed.port; }
-            if (parsed.contextPath) { result.contextPath = parsed.contextPath; }
+            this.applyConfigValues(result, file, content);
         }
 
-        if (!result.port && !result.contextPath) { return null; }
+        return this.toResolvedBaseUrl(result);
+    }
 
+    private applyConfigValues(result: ConfigValues, file: string, content: string): void {
+        const parsed = file.endsWith('.properties')
+            ? this.parseProperties(content)
+            : this.parseYaml(content);
+        if (parsed.port) { result.port = parsed.port; }
+        if (parsed.contextPath) { result.contextPath = parsed.contextPath; }
+    }
+
+    private toResolvedBaseUrl(result: ConfigValues): ResolvedBaseUrl | null {
+        if (!result.port && !result.contextPath) { return null; }
         return {
             host: 'localhost',
             port: result.port || '8080',
             contextPath: result.contextPath || ''
         };
-    }
-
-    private buildConfigSignature(files: string[]): string {
-        return files.map(file => {
-            try {
-                const stats = fs.statSync(file);
-                return `${this.normalizePath(file)}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.size}`;
-            } catch {
-                return `${this.normalizePath(file)}:missing`;
-            }
-        }).join('|');
-    }
-
-    private async buildConfigSignatureAsync(files: string[]): Promise<string> {
-        const parts: string[] = [];
-        for (const file of files) {
-            try {
-                const stat = await vscode.workspace.fs.stat(vscode.Uri.file(file));
-                parts.push(`${this.normalizePath(file)}:${stat.mtime}:${stat.ctime}:${stat.size}`);
-            } catch {
-                parts.push(`${this.normalizePath(file)}:missing`);
-            }
-        }
-        return parts.join('|');
     }
 
     private cloneResult(value: ResolvedBaseUrl | null): ResolvedBaseUrl | null {
@@ -148,41 +115,21 @@ export class BaseUrlResolver {
     }
 
     private normalizePath(filePath: string): string {
-        return path.resolve(filePath).replace(/\\/g, '/');
+        return BaseUrlResolver.normalizePath(filePath);
+    }
+
+    private static normalizePath(filePath: string): string {
+        const normalized = path.resolve(filePath).replace(/\\/g, '/');
+        return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
     }
 
     /**
      * 查找所有 src/main/resources 目录（支持多模块 Maven/Gradle 项目）
      */
-    private findResourcesDirs(root: string): string[] {
-        const results: string[] = [];
-        this.searchDir(root, root, results, 0);
-        return results;
-    }
-
     private async findResourcesDirsAsync(root: string): Promise<string[]> {
         const results: string[] = [];
         await this.searchDirAsync(root, results, 0);
         return results;
-    }
-
-    private searchDir(root: string, dir: string, results: string[], depth: number) {
-        if (depth > 5) {return;}
-        try {
-            const entries = fs.readdirSync(dir, { withFileTypes: true });
-            for (const entry of entries) {
-                const fullPath = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    if (entry.name === 'resources' && dir.endsWith('main')) {
-                        results.push(fullPath);
-                    } else if (!this.isExcludedDir(entry.name)) {
-                        this.searchDir(root, fullPath, results, depth + 1);
-                    }
-                }
-            }
-        } catch {
-            // 忽略权限错误等
-        }
     }
 
     private isExcludedDir(name: string): boolean {
@@ -245,16 +192,6 @@ export class BaseUrlResolver {
         return files;
     }
 
-    private collectConfigFiles(resourcesDir: string): string[] {
-        try {
-            const entries = fs.readdirSync(resourcesDir, { withFileTypes: true });
-            const names = new Set(entries.filter(e => e.isFile()).map(e => e.name));
-            return this.buildConfigFileList(names, resourcesDir);
-        } catch {
-            return [];
-        }
-    }
-
     private async collectConfigFilesAsync(resourcesDir: string): Promise<string[]> {
         try {
             const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(resourcesDir));
@@ -264,14 +201,6 @@ export class BaseUrlResolver {
             return this.buildConfigFileList(names, resourcesDir);
         } catch {
             return [];
-        }
-    }
-
-    private readFile(filePath: string): string | null {
-        try {
-            return fs.readFileSync(filePath, 'utf-8');
-        } catch {
-            return null;
         }
     }
 

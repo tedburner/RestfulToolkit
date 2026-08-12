@@ -4,6 +4,13 @@ import { JaxRsParser } from './JaxRsParser';
 import { Logger } from '../utils/Logger';
 import { TextProcessor } from '../utils/TextProcessor';
 
+interface ClassBlockRange {
+    className: string;
+    declarationIndex: number;
+    startIndex: number;
+    endIndex: number;
+}
+
 export class AnnotationParser {
     private springMvcParser: SpringMvcParser;
     private jaxRsParser: JaxRsParser;
@@ -26,26 +33,23 @@ export class AnnotationParser {
             const sanitized = TextProcessor.sanitize(content);
             const lineIndex = TextProcessor.buildLineIndex(content);
 
-            const classPattern = /(class|interface)\s+(\w+)/g;
-            let classMatch;
+            const classBlocks = this.collectClassBlocks(sanitized);
+            for (const blockRange of classBlocks) {
+                let classBlock = content.substring(blockRange.startIndex, blockRange.endIndex);
+                let classBlockSanitized = sanitized.substring(blockRange.startIndex, blockRange.endIndex);
 
-            while ((classMatch = classPattern.exec(sanitized)) !== null) {
-                const className = classMatch[2];
-                const classStartIndex = classMatch.index;
-
-                const blockRange = this.extractClassBlock(sanitized, classStartIndex);
-                if (!blockRange) {
-                    continue;
+                for (const descendant of classBlocks) {
+                    if (descendant.declarationIndex <= blockRange.declarationIndex || descendant.endIndex > blockRange.endIndex) {
+                        continue;
+                    }
+                    const maskStart = descendant.startIndex - blockRange.startIndex;
+                    const maskEnd = descendant.endIndex - blockRange.startIndex;
+                    classBlock = this.maskRange(classBlock, maskStart, maskEnd);
+                    classBlockSanitized = this.maskRange(classBlockSanitized, maskStart, maskEnd);
                 }
 
-                const classBlock = content.substring(blockRange.startIndex, blockRange.endIndex);
-                const classBlockSanitized = sanitized.substring(blockRange.startIndex, blockRange.endIndex);
-
-                const classBlockStartLine = TextProcessor.getLineNumber(lineIndex, blockRange.startIndex);
-                const classBlockLineIndex = TextProcessor.buildLineIndex(classBlock);
-
-                const springEndpoints = this.parseSpringMvc(classBlock, className, filePath, classBlockStartLine, classBlockLineIndex);
-                const jaxRsEndpoints = this.parseJaxRs(classBlock, classBlockSanitized, className, filePath, classBlockStartLine, classBlockLineIndex);
+                const springEndpoints = this.parseSpringMvc(classBlock, blockRange.className, filePath, lineIndex, blockRange.startIndex);
+                const jaxRsEndpoints = this.parseJaxRs(classBlock, classBlockSanitized, blockRange.className, filePath, lineIndex, blockRange.startIndex);
 
                 endpoints.push(...springEndpoints, ...jaxRsEndpoints);
             }
@@ -58,11 +62,10 @@ export class AnnotationParser {
         return endpoints;
     }
 
-    private parseSpringMvc(content: string, className: string, filePath: string, classBlockStartLine: number, classBlockLineIndex: number[]): RestEndpoint[] {
+    private parseSpringMvc(content: string, className: string, filePath: string, lineIndex: number[], contentOffset: number): RestEndpoint[] {
         try {
             const classPath = this.springMvcParser.parseClassLevelPath(content);
-            const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath, classBlockLineIndex);
-            this.adjustLineNumbers(endpoints, classBlockStartLine);
+            const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath, lineIndex, contentOffset);
 
             if (classPath && endpoints.length > 0) {
                 this.logger.info(`Class ${className}: @RequestMapping("${classPath}") → ${endpoints.length} endpoints`);
@@ -74,11 +77,10 @@ export class AnnotationParser {
         }
     }
 
-    private parseJaxRs(content: string, sanitizedContent: string, className: string, filePath: string, classBlockStartLine: number, classBlockLineIndex: number[]): RestEndpoint[] {
+    private parseJaxRs(content: string, sanitizedContent: string, className: string, filePath: string, lineIndex: number[], contentOffset: number): RestEndpoint[] {
         try {
             const classPath = this.jaxRsParser.parseClassLevelPath(content);
-            const endpoints = this.jaxRsParser.parseMethodAnnotations(content, sanitizedContent, className, classPath, filePath, classBlockLineIndex);
-            this.adjustLineNumbers(endpoints, classBlockStartLine);
+            const endpoints = this.jaxRsParser.parseMethodAnnotations(content, sanitizedContent, className, classPath, filePath, lineIndex, contentOffset);
 
             return endpoints;
         } catch (error) {
@@ -86,12 +88,6 @@ export class AnnotationParser {
             this.logger.warning(`JAX-RS parsing failed for class ${className} in ${filePath}: ${err.message}`);
             return [];
         }
-    }
-
-    private adjustLineNumbers(endpoints: RestEndpoint[], offset: number): void {
-        endpoints.forEach(ep => {
-            ep.line = offset + ep.line - 1;
-        });
     }
 
     private preprocessKotlin(content: string): string {
@@ -107,49 +103,7 @@ export class AnnotationParser {
      * 返回类块在文本中的起始和结束索引。
      */
     private extractClassBlock(content: string, startIndex: number): { startIndex: number; endIndex: number } | null {
-        // 向前查找，包含类定义前的所有注解
-        let actualStartIndex = startIndex;
-
-        // 从 class/interface 位置向前查找注解（逐行查找）
-        let i = startIndex - 1;
-        while (i >= 0) {
-            // 查找当前行的开始位置
-            let lineEnd = i;
-            while (lineEnd >= 0 && content[lineEnd] !== '\n') {
-                lineEnd--;
-            }
-
-            if (lineEnd < 0) {
-                // 到达文件开头
-                actualStartIndex = 0;
-                break;
-            }
-
-            // lineEnd 指向换行符，lineEnd+1 是下一行的开始
-            // 查找前一行（lineEnd前面的换行符）
-            let prevLineEnd = lineEnd - 1;
-            while (prevLineEnd >= 0 && content[prevLineEnd] !== '\n') {
-                prevLineEnd--;
-            }
-
-            // prevLineEnd+1 到 lineEnd 是当前行
-            const currentLine = content.substring(prevLineEnd + 1, lineEnd).trim();
-
-            // 如果当前行是注解、注释或空行，继续向前
-            if (currentLine === '' ||
-                currentLine.startsWith('@') ||
-                currentLine.startsWith('//') ||
-                currentLine.startsWith('/*') ||
-                currentLine.startsWith('*') ||  // 多行注释中间行
-                currentLine.endsWith('*/')) {
-                actualStartIndex = prevLineEnd + 1;
-                i = prevLineEnd;
-                continue;
-            } else {
-                // 非注解行（如 import、package 等），停止
-                break;
-            }
-        }
+        const actualStartIndex = this.findDeclarationStart(content, startIndex);
 
         // 从 class 关键字位置开始查找第一个 {，确保跳过注释中的括号
         let firstBraceIndex = startIndex;
@@ -189,5 +143,56 @@ export class AnnotationParser {
         }
 
         return { startIndex: actualStartIndex, endIndex };
+    }
+
+    private collectClassBlocks(content: string): ClassBlockRange[] {
+        const blocks: ClassBlockRange[] = [];
+        const classPattern = /\b(class|interface|object)\s+(\w+)/g;
+        let classMatch: RegExpExecArray | null;
+
+        while ((classMatch = classPattern.exec(content)) !== null) {
+            const range = this.extractClassBlock(content, classMatch.index);
+            if (range) {
+                blocks.push({
+                    className: classMatch[2],
+                    declarationIndex: classMatch.index,
+                    ...range
+                });
+            }
+        }
+        return blocks;
+    }
+
+    private findDeclarationStart(content: string, declarationIndex: number): number {
+        let parenthesisDepth = 0;
+        let bracketDepth = 0;
+
+        for (let index = declarationIndex - 1; index >= 0; index--) {
+            const char = content[index];
+            if (char === ')') {
+                parenthesisDepth++;
+            } else if (char === '(' && parenthesisDepth > 0) {
+                parenthesisDepth--;
+            } else if (char === ']') {
+                bracketDepth++;
+            } else if (char === '[' && bracketDepth > 0) {
+                bracketDepth--;
+            } else if (parenthesisDepth === 0 && bracketDepth === 0 && (char === ';' || char === '{' || char === '}')) {
+                return index + 1;
+            }
+        }
+        return 0;
+    }
+
+    private maskRange(content: string, startIndex: number, endIndex: number): string {
+        const chars = content.split('');
+        const start = Math.max(0, startIndex);
+        const end = Math.min(chars.length, endIndex);
+        for (let index = start; index < end; index++) {
+            if (chars[index] !== '\n' && chars[index] !== '\r') {
+                chars[index] = ' ';
+            }
+        }
+        return chars.join('');
     }
 }

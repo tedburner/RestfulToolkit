@@ -352,11 +352,12 @@ function writeTmpConfig(tmpResources, filename, content) {
     fs.writeFileSync(path.join(tmpResources, filename), content);
 }
 
+async function runBaseUrlTests() {
 {
     // application.properties → port
     const { tmpDir, tmpResources } = createTmpProject();
     writeTmpConfig(tmpResources, 'application.properties', 'server.port=9090\nspring.application.name=myapp\n');
-    const result = baseUrlResolver.resolve(tmpDir);
+    const result = await baseUrlResolver.resolveAsync(tmpDir);
     assert(result !== null, 'properties 解析 port', '应返回非 null');
     if (result) {
         assert(result.port === '9090', 'properties port 值', `期望 "9090"，实际 "${result.port}"`);
@@ -367,7 +368,7 @@ function writeTmpConfig(tmpResources, filename, content) {
     // application.properties → port + context-path
     const { tmpDir, tmpResources } = createTmpProject();
     writeTmpConfig(tmpResources, 'application.properties', 'server.port=8080\nserver.servlet.context-path=/api/v1\n');
-    const result = baseUrlResolver.resolve(tmpDir);
+    const result = await baseUrlResolver.resolveAsync(tmpDir);
     assert(result !== null, 'properties 解析 context-path', '应返回非 null');
     if (result) {
         assert(result.port === '8080', 'properties port 值', `期望 "8080"，实际 "${result.port}"`);
@@ -379,7 +380,7 @@ function writeTmpConfig(tmpResources, filename, content) {
     // application.yml → port
     const { tmpDir, tmpResources } = createTmpProject();
     writeTmpConfig(tmpResources, 'application.yml', 'server:\n  port: 9090\n');
-    const result = baseUrlResolver.resolve(tmpDir);
+    const result = await baseUrlResolver.resolveAsync(tmpDir);
     assert(result !== null, 'yml 解析 port', '应返回非 null');
     if (result) {
         assert(result.port === '9090', 'yml port 值', `期望 "9090"，实际 "${result.port}"`);
@@ -390,7 +391,7 @@ function writeTmpConfig(tmpResources, filename, content) {
     // application.yml → port + context-path
     const { tmpDir, tmpResources } = createTmpProject();
     writeTmpConfig(tmpResources, 'application.yml', 'server:\n  port: 3000\n  servlet:\n    context-path: /api\n');
-    const result = baseUrlResolver.resolve(tmpDir);
+    const result = await baseUrlResolver.resolveAsync(tmpDir);
     assert(result !== null, 'yml 解析 port + context-path', '应返回非 null');
     if (result) {
         assert(result.port === '3000', 'yml port 值', `期望 "3000"，实际 "${result.port}"`);
@@ -402,7 +403,7 @@ function writeTmpConfig(tmpResources, filename, content) {
     // 占位符值 → 应解析默认值
     const { tmpDir, tmpResources } = createTmpProject();
     writeTmpConfig(tmpResources, 'application.properties', 'server.port=${SERVER_PORT:8080}\n');
-    const result = baseUrlResolver.resolve(tmpDir);
+    const result = await baseUrlResolver.resolveAsync(tmpDir);
     // 占位符有默认值 8080，应解析出来
     assert(result !== null, '占位符默认值应解析', `期望非 null，实际: ${JSON.stringify(result)}`);
     if (result) {
@@ -413,7 +414,7 @@ function writeTmpConfig(tmpResources, filename, content) {
 {
     // 无配置文件 → 返回 null
     const { tmpDir } = createTmpProject();
-    const result = baseUrlResolver.resolve(tmpDir);
+    const result = await baseUrlResolver.resolveAsync(tmpDir);
     assert(result === null, '无配置文件返回 null', `期望 null，实际: ${JSON.stringify(result)}`);
 }
 
@@ -424,6 +425,7 @@ for (const tmpDir of tmpDirs) {
     } catch (error) {
         console.warn(`  ⚠️ 临时目录清理失败: ${tmpDir} (${error.message})`);
     }
+}
 }
 
 // ===== 4. 命名转换测试 =====
@@ -821,18 +823,23 @@ console.log('\n--- 10. 表单 Body 生成 ---');
     assertContains(result, 'bio=', 'form-urlencoded body 包含 bio');
 }
 
-// ===== 汇总 =====
-console.log('\n=== 测试结果汇总 ===');
-console.log(`📊 总测试数: ${totalTests}`);
-console.log(`✅ 通过: ${passed} (${Math.round(passed / totalTests * 100)}%)`);
-console.log(`❌ 失败: ${failed} (${Math.round(failed / totalTests * 100)}%)`);
+runBaseUrlTests().then(() => {
+    // ===== 汇总 =====
+    console.log('\n=== 测试结果汇总 ===');
+    console.log(`📊 总测试数: ${totalTests}`);
+    console.log(`✅ 通过: ${passed} (${Math.round(passed / totalTests * 100)}%)`);
+    console.log(`❌ 失败: ${failed} (${Math.round(failed / totalTests * 100)}%)`);
 
-if (errors.length > 0) {
-    console.log('\n=== 失败详情 ===');
-    errors.forEach((e, i) => {
-        console.log(`  ${i + 1}. ${e.test}: ${e.message}`);
-    });
-    process.exit(1);
-} else {
-    console.log('\n✅ 所有测试通过！');
-}
+    if (errors.length > 0) {
+        console.log('\n=== 失败详情 ===');
+        errors.forEach((e, i) => {
+            console.log(`  ${i + 1}. ${e.test}: ${e.message}`);
+        });
+        process.exitCode = 1;
+    } else {
+        console.log('\n✅ 所有测试通过！');
+    }
+}).catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});

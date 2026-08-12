@@ -181,6 +181,70 @@ suite('JaxRsParser Test Suite', () => {
         assert.strictEqual(endpoints[2].line, expectedLine3, `@DELETE 应在第 ${expectedLine3} 行`);
     });
 
+    test('Should keep exact line numbers for identical annotation blocks', () => {
+        const content = `public class UserController {
+    @GET
+    @Path("/same")
+    public User first() {}
+
+    @GET
+    @Path("/same")
+    public User second() {}
+}`;
+        const sanitized = TextProcessor.sanitize(content);
+        const lineIndex = TextProcessor.buildLineIndex(content);
+        const endpoints = parser.parseMethodAnnotations(
+            content,
+            sanitized,
+            'UserController',
+            null,
+            'test.java',
+            lineIndex
+        );
+
+        assert.strictEqual(endpoints.length, 2);
+        assert.strictEqual(
+            endpoints[0].line,
+            TextProcessor.getLineNumberFallback(content, content.indexOf('@GET'))
+        );
+        assert.strictEqual(
+            endpoints[1].line,
+            TextProcessor.getLineNumberFallback(content, content.lastIndexOf('@GET'))
+        );
+    });
+
+    test('Should keep exact line numbers when CRLF annotations place @Path before @GET', () => {
+        const content = [
+            'public class UserController {',
+            '@Path("/first")',
+            '@Produces("application/json")',
+            '@GET',
+            'public User first() {}',
+            '',
+            '@Path("/second")',
+            '@Produces("application/json")',
+            '@GET',
+            'public User second() {}',
+            '}'
+        ].join('\r\n');
+        const sanitized = TextProcessor.sanitize(content);
+        const lineIndex = TextProcessor.buildLineIndex(content);
+        const endpoints = parser.parseMethodAnnotations(
+            content,
+            sanitized,
+            'UserController',
+            null,
+            'test.java',
+            lineIndex
+        );
+
+        assert.strictEqual(endpoints.length, 2);
+        const firstGet = content.indexOf('@GET');
+        const secondGet = content.lastIndexOf('@GET');
+        assert.strictEqual(endpoints[0].line, TextProcessor.getLineNumberFallback(content, firstGet));
+        assert.strictEqual(endpoints[1].line, TextProcessor.getLineNumberFallback(content, secondGet));
+    });
+
     test('Should correctly handle JAX-RS endpoint with annotations in comments', () => {
         // @GET 出现在注释中，应通过 sanitize 清除注释后再匹配
         const content = `

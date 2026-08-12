@@ -4,33 +4,67 @@ import { EndpointCache } from '../cache/EndpointCache';
 import { Logger } from '../utils/Logger';
 import { getLabels } from '../extractor/i18n';
 
+interface ScanStateSource {
+    isScanning(): boolean;
+    onDidChangeScanState(listener: (active: boolean) => void): vscode.Disposable;
+}
+
+/**
+ * 提供端点搜索选择器，并在后台索引状态变化时同步当前缓存结果。
+ */
 export class SearchUI implements vscode.Disposable {
     private cache: EndpointCache;
     private logger: Logger;
     private searchDebounceTimer: NodeJS.Timeout | undefined;
+    private readonly scanState: ScanStateSource;
 
-    constructor(cache: EndpointCache) {
+    constructor(cache: EndpointCache, scanState?: ScanStateSource) {
         this.cache = cache;
         this.logger = Logger.getInstance();
+        this.scanState = scanState ?? {
+            isScanning: () => false,
+            onDidChangeScanState: () => ({ dispose: () => undefined })
+        };
     }
 
+    /**
+     * 展示端点搜索选择器。
+     *
+     * 后台索引进行中允许先展示当前缓存；索引完成后会按当前查询刷新结果，若缓存仍为空则
+     * 关闭选择器并提示用户。选择端点后会打开源码并跳转到对应行。
+     */
     async show(): Promise<void> {
         const labels = getLabels();
         const quickPick = vscode.window.createQuickPick();
         (quickPick as vscode.QuickPick<vscode.QuickPickItem> & { sortByLabel?: boolean }).sortByLabel = false;
         quickPick.matchOnDescription = false;
         quickPick.matchOnDetail = false;
-        quickPick.placeholder = labels.searchPlaceholder;
+        const indexing = this.scanState.isScanning();
+        quickPick.placeholder = indexing ? labels.searchIndexingPlaceholder : labels.searchPlaceholder;
+        quickPick.busy = indexing;
 
-        const allEndpoints = this.cache.getAll();
+        const maxResults = this.getMaxResults();
+        const allEndpoints = this.cache.getAll().slice(0, maxResults);
 
-        if (allEndpoints.length === 0) {
+        if (allEndpoints.length === 0 && !indexing) {
             vscode.window.showWarningMessage(labels.searchNoEndpoints);
             quickPick.dispose();
             return;
         }
 
         quickPick.items = allEndpoints.map(endpoint => this.createQuickPickItem(endpoint));
+        const applyScanState = (active: boolean): void => {
+            quickPick.busy = active;
+            quickPick.placeholder = active ? labels.searchIndexingPlaceholder : labels.searchPlaceholder;
+            if (!active) {
+                quickPick.items = this.filterEndpoints(quickPick.value);
+                if (this.cache.size() === 0) {
+                    void vscode.window.showWarningMessage(labels.searchNoEndpoints);
+                    quickPick.hide();
+                }
+            }
+        };
+        let scanStateSubscription: vscode.Disposable | undefined;
 
         quickPick.onDidChangeValue((value) => {
             if (this.searchDebounceTimer) {
@@ -53,10 +87,18 @@ export class SearchUI implements vscode.Disposable {
                     this.searchDebounceTimer = undefined;
                 }
                 resolve(undefined);
+                scanStateSubscription?.dispose();
                 quickPick.dispose();
             });
 
+            scanStateSubscription = this.scanState.onDidChangeScanState(applyScanState);
             quickPick.show();
+
+            // 订阅后复查，避免扫描恰好在首次读取状态与监听器注册之间完成而丢失事件。
+            const currentScanState = this.scanState.isScanning();
+            if (currentScanState !== indexing) {
+                applyScanState(currentScanState);
+            }
         });
 
         if (selected) {
@@ -79,16 +121,20 @@ export class SearchUI implements vscode.Disposable {
     }
 
     private filterEndpoints(query: string): EndpointQuickPickItem[] {
+        const maxResults = this.getMaxResults();
         if (!query || query.trim() === '') {
-            return this.cache.getAll().map(endpoint => this.createQuickPickItem(endpoint));
+            return this.cache.getAll().slice(0, maxResults).map(endpoint => this.createQuickPickItem(endpoint));
         }
-
-        const maxResults = vscode.workspace
-            .getConfiguration('restfulToolkit')
-            .get<number>('maxResults', 100);
 
         return this.cache.search({ text: query }, maxResults)
             .map(endpoint => this.createQuickPickItem(endpoint));
+    }
+
+    private getMaxResults(): number {
+        const configured = vscode.workspace
+            .getConfiguration('restfulToolkit')
+            .get<number>('maxResults', 100) ?? 100;
+        return Math.min(1000, Math.max(1, Math.floor(configured)));
     }
 
     dispose(): void {

@@ -17,6 +17,15 @@ interface SearchableEndpoint {
 interface ScoredEndpoint {
     item: SearchableEndpoint;
     score: MatchScore;
+    position: number;
+}
+
+interface ScoreAccumulator {
+    total: number;
+    pathScore: number;
+    classScore: number;
+    methodScore: number;
+    httpScore: number;
 }
 
 export class EndpointCache {
@@ -87,63 +96,81 @@ export class EndpointCache {
             return this.allEndpoints.slice(0, limit).map(item => this.cloneEndpoint(item.endpoint));
         }
 
-        const tokens = queryText.split(/\s+/).map(t => t.toLowerCase()).filter(t => t.length > 0);
-        const httpTokens: string[] = [];
+        const rawTokens = queryText.split(/\s+/);
+        const httpTokens = new Set<string>();
         const searchTextTokens: string[] = [];
+        const seenSearchTextTokens = new Set<string>();
+        let tokenCount = 0;
 
-        for (const token of tokens) {
+        for (const rawToken of rawTokens) {
+            const token = rawToken.toLowerCase();
+            if (token.length === 0) {
+                continue;
+            }
+            tokenCount++;
             if (EndpointCache.httpMethods.has(token)) {
-                httpTokens.push(token);
-            } else {
+                httpTokens.add(token);
+            } else if (!seenSearchTextTokens.has(token)) {
+                seenSearchTextTokens.add(token);
                 searchTextTokens.push(token);
             }
         }
 
-        const hasHttpFilter = httpTokens.length > 0;
+        const hasHttpFilter = httpTokens.size > 0;
         const scored: ScoredEndpoint[] = [];
 
-        for (const item of this.allEndpoints) {
+        for (let position = 0; position < this.allEndpoints.length; position++) {
+            const item = this.allEndpoints[position];
             if (!this.matchesFilters(item.endpoint, query)) {
                 continue;
             }
 
-            if (hasHttpFilter && !httpTokens.includes(item.httpMethod.lower)) {
+            if (hasHttpFilter && !httpTokens.has(item.httpMethod.lower)) {
                 continue;
             }
 
             let score: MatchScore;
             if (searchTextTokens.length === 0) {
-                if (tokens.length !== 1 || !hasHttpFilter) {
+                if (tokenCount !== 1 || !hasHttpFilter) {
                     continue;
                 }
 
-                const httpScore = this.matchScore(item.httpMethod, tokens[0]) * 0.1;
+                const httpScore = this.matchScore(item.httpMethod, rawTokens[0].toLowerCase()) * 0.1;
                 score = { pathScore: 0, classScore: 0, methodScore: 0, httpScore, total: httpScore };
             } else {
-                const tokenScores = searchTextTokens.map(token => this.calculateScore(item, token));
-
-                if (tokenScores.some(tokenScore => tokenScore.total === 0)) {
+                const accumulator: ScoreAccumulator = {
+                    total: 0,
+                    pathScore: 0,
+                    classScore: 0,
+                    methodScore: 0,
+                    httpScore: 0
+                };
+                let matchesAllTokens = true;
+                for (const token of searchTextTokens) {
+                    if (!this.accumulateScore(item, token, accumulator)) {
+                        matchesAllTokens = false;
+                        break;
+                    }
+                }
+                if (!matchesAllTokens) {
                     continue;
                 }
 
-                const total = tokenScores.length === 1
-                    ? tokenScores[0].total
-                    : tokenScores.reduce((acc, tokenScore) => acc + tokenScore.total, 0) / tokenScores.length;
-
                 score = {
-                    pathScore: Math.max(...tokenScores.map(tokenScore => tokenScore.pathScore)),
-                    classScore: Math.max(...tokenScores.map(tokenScore => tokenScore.classScore)),
-                    methodScore: Math.max(...tokenScores.map(tokenScore => tokenScore.methodScore)),
-                    httpScore: Math.max(...tokenScores.map(tokenScore => tokenScore.httpScore)),
-                    total
+                    pathScore: accumulator.pathScore,
+                    classScore: accumulator.classScore,
+                    methodScore: accumulator.methodScore,
+                    httpScore: accumulator.httpScore,
+                    total: accumulator.total / searchTextTokens.length
                 };
             }
 
             if (score.total > 0) {
-                this.insertTopScore(scored, { item, score }, limit);
+                this.retainTopScore(scored, { item, score, position }, limit);
             }
         }
 
+        scored.sort((a, b) => this.compareScoredStable(a, b));
         return scored.map(item => this.cloneEndpoint(item.item.endpoint));
     }
 
@@ -171,19 +198,50 @@ export class EndpointCache {
         };
     }
 
-    private insertTopScore(scored: ScoredEndpoint[], candidate: ScoredEndpoint, limit: number): void {
-        let index = 0;
-        while (index < scored.length && this.compareScored(scored[index], candidate) <= 0) {
-            index++;
-        }
-
-        if (index >= limit) {
+    private retainTopScore(heap: ScoredEndpoint[], candidate: ScoredEndpoint, limit: number): void {
+        if (heap.length < limit) {
+            heap.push(candidate);
+            this.bubbleUpWorst(heap, heap.length - 1);
             return;
         }
 
-        scored.splice(index, 0, candidate);
-        if (scored.length > limit) {
-            scored.pop();
+        if (this.compareScoredStable(candidate, heap[0]) >= 0) {
+            return;
+        }
+
+        heap[0] = candidate;
+        this.siftDownWorst(heap, 0);
+    }
+
+    private bubbleUpWorst(heap: ScoredEndpoint[], startIndex: number): void {
+        let index = startIndex;
+        while (index > 0) {
+            const parent = Math.floor((index - 1) / 2);
+            if (this.compareScoredStable(heap[index], heap[parent]) <= 0) {
+                break;
+            }
+            [heap[index], heap[parent]] = [heap[parent], heap[index]];
+            index = parent;
+        }
+    }
+
+    private siftDownWorst(heap: ScoredEndpoint[], startIndex: number): void {
+        let index = startIndex;
+        while (index < heap.length) {
+            const left = index * 2 + 1;
+            const right = left + 1;
+            let worst = index;
+            if (left < heap.length && this.compareScoredStable(heap[left], heap[worst]) > 0) {
+                worst = left;
+            }
+            if (right < heap.length && this.compareScoredStable(heap[right], heap[worst]) > 0) {
+                worst = right;
+            }
+            if (worst === index) {
+                return;
+            }
+            [heap[index], heap[worst]] = [heap[worst], heap[index]];
+            index = worst;
         }
     }
 
@@ -200,6 +258,10 @@ export class EndpointCache {
         return b.score.total - a.score.total;
     }
 
+    private compareScoredStable(a: ScoredEndpoint, b: ScoredEndpoint): number {
+        return this.compareScored(a, b) || a.position - b.position;
+    }
+
     private matchesFilters(endpoint: RestEndpoint, query: SearchQuery): boolean {
         if (!query.filters) { return true; }
         if (query.filters.method && endpoint.method !== query.filters.method) { return false; }
@@ -207,19 +269,23 @@ export class EndpointCache {
         return true;
     }
 
-    private calculateScore(item: SearchableEndpoint, queryText: string): MatchScore {
+    private accumulateScore(item: SearchableEndpoint, queryText: string, accumulator: ScoreAccumulator): boolean {
         const pathScore = this.matchScore(item.path, queryText) * 0.4;
         const classScore = this.matchScore(item.className, queryText) * 0.3;
         const methodScore = this.matchScore(item.methodName, queryText) * 0.2;
         const httpScore = this.matchScore(item.httpMethod, queryText) * 0.1;
+        const total = pathScore + classScore + methodScore + httpScore;
 
-        return {
-            pathScore,
-            classScore,
-            methodScore,
-            httpScore,
-            total: pathScore + classScore + methodScore + httpScore
-        };
+        if (total === 0) {
+            return false;
+        }
+
+        accumulator.total += total;
+        accumulator.pathScore = Math.max(accumulator.pathScore, pathScore);
+        accumulator.classScore = Math.max(accumulator.classScore, classScore);
+        accumulator.methodScore = Math.max(accumulator.methodScore, methodScore);
+        accumulator.httpScore = Math.max(accumulator.httpScore, httpScore);
+        return true;
     }
 
     private matchScore(field: SearchableField, query: string): number {
