@@ -2,7 +2,7 @@
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
 [![Version](https://img.shields.io/badge/version-0.0.8-green.svg)](https://github.com/tedburner/RestfulToolkit)
-[![Installs](https://img.shields.io/badge/installs-315-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
+[![Installs](https://img.shields.io/badge/installs-318-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](README.md) | **中文**
