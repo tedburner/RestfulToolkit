@@ -68,18 +68,22 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - 命令注册后后台执行首次扫描，索引期间搜索仍可用，扫描完成后按当前查询刷新 QuickPick
 - 强制刷新在当前扫描后排队执行，当前轮异常也不会丢失；失败文件保留重试资格
 - 工作区与 watcher 扫描共用状态记录；以内存中的 `mtime + size` 判断变化，删除文件同步清理扫描记录
+- 解析失败与成功空结果明确区分；失败保留旧端点，空结果清理旧端点
+- `.restful-toolkit.json` watcher 在配置文件变化时重载配置并全量刷新
 - 停用时释放配置订阅，并等待配置重载与任意当前扫描安全收束
 - 文件扫描防抖（500ms 延迟）用于实时更新
 - 扫描期间显示状态栏进度
 
 **解析层** (`src/parsers/AnnotationParser.ts`):
 - 协调 SpringMvcParser 和 JaxRsParser
+- 显式报告失败状态，避免扫描器将异常当作空端点覆盖缓存
 - 遮罩后代类型后分别解析类块，嵌套类端点归属和绝对行号保持准确
 - Kotlin 预处理以处理字符串模板
 
 **Spring MVC 解析器** (`src/parsers/SpringMvcParser.ts`):
 - 解析 `@RequestMapping`, `@GetMapping`, `@PostMapping` 等
 - 类级路径限定在类型声明前；方法声明使用结构扫描而非固定字符窗口
+- 路径为空的 mapping 继承类级路径或映射到 `/`
 - 处理多路径注解：`@GetMapping({"/users", "/list"})`
 - 类级别 + 方法级别路径组合
 
@@ -103,9 +107,10 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 
 **参数提取层** (`src/extractor/`):
 - **ParameterExtractor.ts** — 入口：检测框架、查找方法（含类级路径拼接）、解析参数、解析 DTO 字段
+- 复制命令从活动文档调用共享路由解析器；支持 package-private Java 与 Kotlin 方法声明
 - **SpringParameterParser.ts** — Spring 注解参数解析（@RequestParam, @PathVariable, @RequestBody, @RequestHeader 等），跟踪括号深度
 - **JaxRsParameterParser.ts** — JAX-RS 注解参数解析（@PathParam, @QueryParam, @FormParam, @HeaderParam）
-- **DtoFieldExtractor.ts** — 异步嵌套 DTO 字段提取（最多 3 层，循环引用保护），支持 @JsonProperty/@JsonAlias/@JSONField/@JsonNaming，支持泛型集合（List\<T\>、Set\<T\>、Map\<K,V\>）内嵌 DTO 解析
+- **DtoFieldExtractor.ts** — 异步嵌套 DTO 字段提取（最多 3 层，按递归分支循环保护），兄弟字段引用同一 DTO 时分别展开；支持 @JsonProperty/@JsonAlias/@JSONField/@JsonNaming 和泛型集合
 - **FormatConverter.ts** — 格式转换：URL Params、JSON Body（body 参数展开）、Form Data（form 参数展开）、x-www-form-urlencoded
 - **UrlGenerator.ts** — 完整 URL 生成（Base URL + 路径 + 查询参数）
 - **CurlConverter.ts** — cURL 命令生成（方法 + URL + 请求头 + 请求体）
@@ -131,12 +136,14 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 3. DEFAULT_CONFIG（最低）
 
 **使用模式**: 始终使用 `ConfigManager.getInstance().getScanConfig()` 而非硬编码后备值。
+资源相关命令传入资源 URI，使 Base URL 与搜索结果上限按所属工作区解析；全工作区扫描合并多个项目的 glob。
 
 ### 文件监视 (`src/utils/FileWatcher.ts`)
 - VS Code FileSystemWatcher 用于实时更新
 - onCreate, onChange, onDelete 回调
 - 文件变更时自动整体替换缓存，并在调度前对绝对路径和所属工作区相对路径应用 `excludePaths`
 - Base URL 配置 watcher 仅覆盖 `main/resources` 下的 application/bootstrap 配置
+- `.restful-toolkit.json` watcher 在项目配置创建、修改或删除后重载配置并刷新端点
 
 ### Base URL 解析 (`src/utils/BaseUrlResolver.ts`)
 - 自动检测 `application.yml` / `application.properties` 中的 `server.port` 和 `server.servlet.context-path`

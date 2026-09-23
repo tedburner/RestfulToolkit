@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.8-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.9-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![Installs](https://img.shields.io/badge/installs-384-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -20,6 +20,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于在 Java/Kotlin 的 Spring MVC�
 | 参数复制 | 将端点参数复制为 URL Params、JSON Body、Form Data 或 x-www-form-urlencoded |
 | DTO 展开 | 自动展开最多 3 层嵌套请求 DTO 字段，并支持常见 JSON 命名注解 |
 | URL 和 cURL 复制 | 生成包含请求头、查询参数和请求体的完整 URL/cURL |
+| 路由信息一致 | 搜索和复制共用路由解析；未写方法路径的 Spring mapping 使用类路径或根路径 |
 | Base URL 检测 | 通过工作区级、事件失效的内存缓存异步读取 Spring 配置 |
 | JSON 转 DTO | 从选中文本或剪贴板 JSON 生成 Java/Kotlin DTO 类 |
 | 实时更新 | 监听 Java/Kotlin 文件变更、遵守工作区相对排除规则，并只在扫描元数据稳定后原子替换端点 |
@@ -103,7 +104,7 @@ npm run compile
 - Form Data
 - x-www-form-urlencoded
 
-当工作区中能解析到 DTO 类时，`@RequestBody` 和 `@ModelAttribute` 参数会自动展开字段。
+当工作区中能解析到 DTO 类时，`@RequestBody` 和 `@ModelAttribute` 参数会自动展开字段；多个字段引用同一 DTO 时会分别展开，并限制循环引用。
 
 ### 复制完整 URL
 
@@ -120,11 +121,12 @@ http://localhost:8080/api/users/{id}?keyword=
 Base URL 解析顺序：
 
 1. `restfulToolkit.baseUrl` VS Code 设置
-2. 工作区根目录下的 `.restful-toolkit.json`
+2. 当前资源所属工作区根目录下的 `.restful-toolkit.json`
 3. Spring 配置文件，例如 `application.yml`、`application.properties`、`bootstrap.yml` 和 profile 文件
 4. 默认值 `http://localhost:8080`
 
 自动检测结果只保存在 Extension Host 内存中。创建、修改或删除受支持的 Spring 配置文件时，会主动使所属工作区缓存失效。
+修改 `.restful-toolkit.json` 后会自动重新加载配置并刷新端点；多根工作区按当前资源所属文件夹选择 Base URL 和 `maxResults`。
 
 ### 复制为 cURL
 

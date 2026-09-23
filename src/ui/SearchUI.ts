@@ -3,6 +3,7 @@ import { RestEndpoint } from '../models/types';
 import { EndpointCache } from '../cache/EndpointCache';
 import { Logger } from '../utils/Logger';
 import { getLabels } from '../extractor/i18n';
+import { ConfigManager } from '../config/ConfigManager';
 
 interface ScanStateSource {
     isScanning(): boolean;
@@ -17,6 +18,7 @@ export class SearchUI implements vscode.Disposable {
     private logger: Logger;
     private searchDebounceTimer: NodeJS.Timeout | undefined;
     private readonly scanState: ScanStateSource;
+    private resourceUri: vscode.Uri | undefined;
 
     constructor(cache: EndpointCache, scanState?: ScanStateSource) {
         this.cache = cache;
@@ -34,6 +36,7 @@ export class SearchUI implements vscode.Disposable {
      * 关闭选择器并提示用户。选择端点后会打开源码并跳转到对应行。
      */
     async show(): Promise<void> {
+        this.resourceUri = vscode.window.activeTextEditor?.document.uri;
         const labels = getLabels();
         const quickPick = vscode.window.createQuickPick();
         (quickPick as vscode.QuickPick<vscode.QuickPickItem> & { sortByLabel?: boolean }).sortByLabel = false;
@@ -131,9 +134,7 @@ export class SearchUI implements vscode.Disposable {
     }
 
     private getMaxResults(): number {
-        const configured = vscode.workspace
-            .getConfiguration('restfulToolkit')
-            .get<number>('maxResults', 100) ?? 100;
+        const configured = ConfigManager.getInstance().getScanConfig(this.resourceUri).maxResults;
         return Math.min(1000, Math.max(1, Math.floor(configured)));
     }
 

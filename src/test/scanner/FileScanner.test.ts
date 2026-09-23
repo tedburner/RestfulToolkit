@@ -18,7 +18,7 @@ suite('FileScanner Test Suite', () => {
         parseFile(uri: vscode.Uri): Promise<FileScanResult & { endpoints: unknown[] }>;
         scanFileDebounced(uri: vscode.Uri, delay?: number): void;
         removeFile(uri: vscode.Uri): void;
-        annotationParser: { parseFile(content: string, filePath: string): unknown[] };
+        annotationParser: { parseFileResult(content: string, filePath: string): { success: boolean; endpoints: unknown[] } };
         dispose(): void;
     };
 
@@ -126,7 +126,7 @@ suite('FileScanner Test Suite', () => {
         vscode.workspace.fs.readFile = async () => Buffer.from('public class PlainService {}');
         const scanner = new FileScanner(cache) as unknown as ScannerInternals;
         scanner.annotationParser = {
-            parseFile: () => { throw new Error('prefilter should skip the full parser'); }
+            parseFileResult: () => { throw new Error('prefilter should skip the full parser'); }
         };
 
         try {
@@ -152,9 +152,9 @@ suite('FileScanner Test Suite', () => {
         let parserCalls = 0;
         const scanner = new FileScanner(cache) as unknown as ScannerInternals;
         scanner.annotationParser = {
-            parseFile: () => {
+            parseFileResult: () => {
                 parserCalls++;
-                return [{ method: 'GET', path: '/api', className: 'Api', methodName: 'api', file: filePath, line: 1, framework: 'Spring' }];
+                return { success: true, endpoints: [{ method: 'GET', path: '/api', className: 'Api', methodName: 'api', file: filePath, line: 1, framework: 'Spring' }] };
             }
         };
         try {
@@ -164,6 +164,31 @@ suite('FileScanner Test Suite', () => {
             );
             assert.strictEqual(parserCalls, 1);
             assert.strictEqual(cache.getByFile(filePath).length, 1);
+        } finally {
+            vscode.workspace.fs.readFile = originalReadFile;
+            scanner.dispose();
+        }
+    });
+
+    test('preserves cached endpoints when the parser reports failure', async () => {
+        vscode.window.createStatusBarItem = () => ({
+            text: '', show: () => undefined, hide: () => undefined, dispose: () => undefined
+        } as vscode.StatusBarItem);
+        const filePath = 'C:\\workspace\\BrokenController.java';
+        const cache = new EndpointCache();
+        const previous = {
+            method: 'GET' as const, path: '/last-known-good', className: 'BrokenController', methodName: 'list',
+            file: filePath, line: 2, framework: 'Spring' as const
+        };
+        cache.add(previous);
+        const originalReadFile = vscode.workspace.fs.readFile;
+        vscode.workspace.fs.readFile = async () => Buffer.from('@GetMapping("/new")\nclass BrokenController {}');
+        const scanner = new FileScanner(cache) as unknown as ScannerInternals;
+        scanner.annotationParser = { parseFileResult: () => ({ success: false, endpoints: [] }) };
+        try {
+            const result = await scanner.scanFile({ fsPath: filePath } as vscode.Uri);
+            assert.deepStrictEqual(result, { success: false, endpointCount: 0 });
+            assert.deepStrictEqual(cache.getByFile(filePath), [previous]);
         } finally {
             vscode.workspace.fs.readFile = originalReadFile;
             scanner.dispose();

@@ -196,7 +196,7 @@ suite('SearchUI Test Suite', () => {
             show: () => setTimeout(() => hiddenListener?.(), 0), hide: () => undefined, dispose: () => undefined
         };
         vscode.window.createQuickPick = ((() => quickPick) as unknown) as typeof vscode.window.createQuickPick;
-        vscode.workspace.getConfiguration = ((() => ({ get: () => 2 })) as unknown) as typeof vscode.workspace.getConfiguration;
+        vscode.workspace.getConfiguration = ((() => ({ inspect: () => ({ workspaceValue: 2 }) })) as unknown) as typeof vscode.workspace.getConfiguration;
         const cache = new EndpointCache();
         for (let i = 0; i < 5; i++) {
             cache.add({ method: 'GET', path: `/api/${i}`, className: 'Api', methodName: `get${i}`, file: `Api${i}.java`, line: i + 1, framework: 'Spring' });

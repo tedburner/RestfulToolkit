@@ -48,7 +48,8 @@ suite('Extension Activation Test Suite', () => {
             await new Promise(resolve => setTimeout(resolve, 0));
             assert.ok(registered.includes('restfulToolkit.searchEndpoints'));
             assert.deepStrictEqual(watcherPatterns, [
-                '**/main/resources/{application,application-*,bootstrap}.{yml,yaml,properties}'
+                '**/main/resources/{application,application-*,bootstrap}.{yml,yaml,properties}',
+                '**/.restful-toolkit.json'
             ]);
         } finally {
             finishScan();

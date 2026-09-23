@@ -5,6 +5,7 @@ import { JaxRsParameterParser } from './JaxRsParameterParser';
 import { DtoFieldExtractor, PRIMITIVE_TYPES } from './DtoFieldExtractor';
 import { Logger } from '../utils/Logger';
 import { TextProcessor } from '../utils/TextProcessor';
+import { AnnotationParser } from '../parsers/AnnotationParser';
 
 export class ParameterExtractor {
     private springParser: SpringParameterParser;
@@ -19,6 +20,13 @@ export class ParameterExtractor {
         this.logger = Logger.getInstance();
     }
 
+    /**
+     * 从当前编辑器文本提取端点参数，并复用索引解析器获取路由和 HTTP 方法。
+     *
+     * @param document 当前 Java 或 Kotlin 文档，包含尚未保存的编辑内容
+     * @param position 光标位置，用于定位所属方法
+     * @returns 可复制的端点参数信息；光标不在受支持的方法上时返回 null
+     */
     async extract(document: vscode.TextDocument, position: vscode.Position): Promise<EndpointCopyInfo | null> {
         const text = document.getText();
 
@@ -29,6 +37,14 @@ export class ParameterExtractor {
         // 查找光标所在方法
         const methodInfo = this.findMethodAtPosition(text, position.line);
         if (!methodInfo) { return null; }
+        const parsed = new AnnotationParser().parseFileResult(text, document.uri.fsPath);
+        const route = parsed.success
+            ? parsed.endpoints
+                .filter(endpoint => endpoint.className === methodInfo.className
+                    && endpoint.methodName === methodInfo.methodName
+                    && endpoint.line <= methodInfo.declarationLine + 1)
+                .sort((left, right) => right.line - left.line)[0]
+            : undefined;
 
         // 解析参数
         let parameters: EndpointParameter[];
@@ -43,12 +59,12 @@ export class ParameterExtractor {
             // 解析 @RequestBody 参数的 DTO 字段
             const dtoFields = await this.resolveDtoFields(parameters, text);
 
-            const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework);
+            const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework, route?.method);
 
             return {
                 httpMethod,
                 contentType,
-                path: methodInfo.fullPath,
+                path: route?.path ?? methodInfo.fullPath,
                 parameters: [],
                 framework,
                 dtoFields
@@ -56,7 +72,7 @@ export class ParameterExtractor {
         }
 
         // 检测 HTTP 方法和内容类型
-        const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework);
+        const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework, route?.method);
 
         // 解析 @RequestBody 参数的 DTO 字段
         const dtoFields = await this.resolveDtoFields(parameters, text);
@@ -64,7 +80,7 @@ export class ParameterExtractor {
         return {
             httpMethod,
             contentType,
-            path: methodInfo.fullPath,
+            path: route?.path ?? methodInfo.fullPath,
             parameters,
             framework,
             dtoFields
@@ -89,6 +105,9 @@ export class ParameterExtractor {
     private findMethodAtPosition(text: string, cursorLine: number): {
         signature: string;
         annotations: string;
+        methodName: string;
+        className: string;
+        declarationLine: number;
         methodPath: string;
         classPath: string;
         fullPath: string;
@@ -102,7 +121,7 @@ export class ParameterExtractor {
         let braceDepth = 0;
         for (let i = cursorLine; i >= 0; i--) {
             const line = sanitizedLines[i].trim();
-            if (/\b(public|private|protected)\b/.test(line)) {
+            if (this.isMethodDeclaration(line)) {
                 declLine = i;
                 break;
             }
@@ -122,7 +141,7 @@ export class ParameterExtractor {
         if (declLine === -1) {
             for (let i = cursorLine; i < sanitizedLines.length; i++) {
                 const line = sanitizedLines[i].trim();
-                if (/\b(public|private|protected)\b/.test(line)) {
+                if (this.isMethodDeclaration(line)) {
                     declLine = i;
                     break;
                 }
@@ -161,14 +180,19 @@ export class ParameterExtractor {
                         // 找到方法参数的闭合 ')'，从 sigText（原签名文本）中截取到此位置
                         const matchEnd = sigText.lastIndexOf(')') + 1;
                         const sigUpToClose = sigText.substring(0, matchEnd);
-                        const methodMatch = sigUpToClose.match(/((?:public|private|protected)[^{]*\)\s*)/s);
-                        if (methodMatch) {
+                        const methodName = this.extractMethodName(sigUpToClose);
+                        if (methodName) {
+                            const methodMatch = sigUpToClose.match(/((?:(?:public|private|protected|static|final|abstract|synchronized|override|suspend)\s+)*(?:fun\s+)?[^{]*\)\s*)/s);
+                            if (!methodMatch) { return null; }
                             const methodPath = this.extractPathFromAnnotations(annotationLines.join('\n'));
                             const classPath = this.findClassLevelPath(lines, declLine);
                             const fullPath = this.concatenatePaths(classPath, methodPath);
                             return {
                                 signature: [...annotationLines, methodMatch[1]].join('\n'),
                                 annotations: annotationLines.join('\n'),
+                                methodName,
+                                className: this.findClassName(lines, declLine),
+                                declarationLine: declLine,
                                 methodPath,
                                 classPath,
                                 fullPath
@@ -181,6 +205,26 @@ export class ParameterExtractor {
         }
 
         return null;
+    }
+
+    private isMethodDeclaration(line: string): boolean {
+        const trimmed = line.trim();
+        return /^(?:(?:public|private|protected|static|final|abstract|synchronized|override|suspend)\s+)*(?:fun\s+\w+|(?:[\w.$<>?,]+\s+)+\w+)\s*\(/.test(trimmed);
+    }
+
+    private extractMethodName(signature: string): string | null {
+        const kotlin = signature.match(/\bfun\s+(\w+)\s*\(/);
+        if (kotlin) { return kotlin[1]; }
+        const java = signature.match(/(?:^|\s)(\w+)\s*\([^()]*\)\s*$/s);
+        return java?.[1] ?? null;
+    }
+
+    private findClassName(lines: string[], methodDeclLine: number): string {
+        for (let index = methodDeclLine - 1; index >= 0; index--) {
+            const match = lines[index].match(/\b(?:class|interface|object)\s+(\w+)/);
+            if (match) { return match[1]; }
+        }
+        return '';
     }
 
     /**
@@ -262,13 +306,15 @@ export class ParameterExtractor {
         return directPath ? directPath[1] : null;
     }
 
-    private detectHttpAndContentType(annotations: string, framework: string): {
+    private detectHttpAndContentType(annotations: string, framework: string, parsedMethod?: string): {
         httpMethod: string;
         contentType: 'json' | 'form-data' | 'x-www-form-urlencoded' | 'url-params';
     } {
         let httpMethod = 'GET';
 
-        if (framework === 'Spring') {
+        if (parsedMethod) {
+            httpMethod = parsedMethod;
+        } else if (framework === 'Spring') {
             httpMethod = this.detectSpringHttpMethod(annotations);
         } else {
             if (/@POST\b/.test(annotations)) { httpMethod = 'POST'; }

@@ -5,6 +5,24 @@ All notable changes to RestfulToolkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.9] - 2026-09-23
+
+- **Fixed**: Spring mappings without a method path now inherit the class path or resolve to `/`, and endpoint copy commands share route metadata parsing with workspace indexing, including package-private Java and Kotlin methods
+- **Fixed**: Parse failures now preserve the last successful endpoint snapshot, while successful empty parses still remove stale endpoints
+- **Fixed**: Multi-root copy and search settings now resolve from the resource's workspace folder; changing `.restful-toolkit.json` reloads settings and refreshes endpoints
+- **Fixed**: DTOs repeated in sibling fields expand independently while cycles remain bounded to the active branch
+- **Fixed**: VSIX packaging excludes the local `.kapibala` history directory
+- **Added**: Regression coverage for pathless routes, shared copy metadata, failed scans, workspace-scoped configuration, and sibling DTO expansion
+
+---
+
+- **修复**: Spring 方法映射未声明路径时继承类级路径或解析为 `/`；端点复制与工作区索引共用路由解析，并支持 package-private Java 方法和 Kotlin 方法
+- **修复**: 解析失败时保留最近一次成功端点快照；成功但无端点的解析仍会清理旧结果
+- **修复**: 多根工作区的复制与搜索配置按资源所属文件夹解析；`.restful-toolkit.json` 变更后自动重载配置并刷新端点
+- **修复**: DTO 相同类型的兄弟字段分别展开，同时限制当前递归分支中的循环引用
+- **修复**: VSIX 打包排除本地 `.kapibala` 历史目录
+- **新增**: 为无路径映射、复制路由一致性、扫描失败、工作区配置和 DTO 兄弟字段展开补充回归测试
+
 ## [0.0.8] - 2026-08-12
 
 - **Fixed**: Spring and JAX-RS class paths are now scoped to type declarations; nested controllers retain endpoint ownership and absolute navigation lines, and long method declarations no longer depend on fixed character windows

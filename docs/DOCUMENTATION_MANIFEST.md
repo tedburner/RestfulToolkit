@@ -2,9 +2,16 @@
 
 ## 整理完成 ✅
 
-**整理日期**: 2026-04-20 | **更新日期**: 2026-08-12（扫描原子提交、索引完成刷新、重复 JAX-RS 注解行号与工作区相对排除规则）
+**整理日期**: 2026-04-20 | **更新日期**: 2026-09-23（复制路由共享解析、多根配置作用域、失败缓存保护与 DTO 分支循环处理）
 
-**当前新增与更新（截至 2026-08-12）**:
+**当前新增与更新（截至 2026-09-23）**:
+- `openspec/changes/endpoint-copy-and-workspace-consistency/` — v0.0.9 端点复制一致性、扫描失败安全、多根工作区配置和 DTO 递归展开规范、设计与任务
+- `src/parsers/AnnotationParser.ts` / `src/extractor/ParameterExtractor.ts` — 搜索与复制共用端点路由解析，覆盖无路径 Spring mapping、package-private Java 和 Kotlin 方法
+- `src/scanner/FileScanner.ts` — 显式区分解析失败与成功空结果，失败时保留最近一次成功缓存
+- `src/config/ConfigManager.ts` / `src/extension.ts` / `src/ui/SearchUI.ts` — 资源所属工作区设置、项目配置文件 watcher 与搜索结果上限统一解析
+- `src/extractor/DtoFieldExtractor.ts` — DTO 循环检测按当前递归分支维护，兄弟字段可分别展开同类型 DTO
+- `.vscodeignore` — 发布包排除本地 `.kapibala` 历史数据
+- `src/test/config/ConfigManager.test.ts` 与相关 parser/scanner/extractor 测试 — 覆盖多根配置、复制路由、失败缓存、pathless mapping 和 DTO 递归
 - `src/scanner/FileScanner.ts` — 解析前后校验 `mtime + size`，仅在文件状态稳定时原子提交端点缓存与扫描记录
 - `src/ui/SearchUI.ts` — 后台索引完成后按当前查询刷新已打开的 QuickPick，无端点时关闭并提示
 - `src/parsers/JaxRsParser.ts` / `src/utils/FileWatcher.ts` — 重复注解块保留精确源码行号，watcher 支持工作区相对排除模式
@@ -246,7 +253,7 @@ restful-toolkit/
 
 ## 五、统计
 
-### v0.0.8 当前状态
+### v0.0.9 当前状态
 
 | 类别 | 数量 |
 |------|------|
@@ -254,7 +261,7 @@ restful-toolkit/
 | 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
 | docs 顶层文档 | 8 个（7 个 Markdown、1 个 screenshot） |
 | 源代码模块 | 30个（含 extractor/ 9、commands/ 4、generator/ 2、utils/ 4） |
-| 单元测试 | 272 个 Mocha 用例（含解析器集成、复制 URL/cURL 命令、FileScanner、ScanStateManager、EndpointCache、BaseUrlResolver、激活与 UI） |
+| 单元测试 | 277 个 Mocha 用例（含解析器集成、复制 URL/cURL 命令、FileScanner、ConfigManager、DTO 递归、ScanStateManager、EndpointCache、BaseUrlResolver、激活与 UI） |
 | 自动化脚本 | 4个（50端点验证 + 78参数复制 + 115 URL/cURL + 86 JSON-to-DTO） |
 | 测试 Controller | 3个（Spring 25 + JAX-RS 11 + Form） |
 | 测试 DTO | 7个 |
@@ -268,6 +275,7 @@ restful-toolkit/
 - **v0.0.6 更新**（2026-06-02）：优先修复代码审查 P0/P1 与中低优先级小问题，恢复编译与本地验证脚本稳定性
 - **v0.0.7 更新**（2026-06-15）：FileScanner 去重重叠 glob 匹配，限制增量 stat 检查并发；SpringMvcParser 改为单次源码顺序扫描；EndpointCache 预计算搜索字段、维护 top-K 候选并隔离返回值变异；DtoFieldExtractor 缓存一次命令内 DTO 查找和直接字段解析；BaseUrlResolver 缓存 workspace 自动检测结果并按配置文件 mtime/ctime/size 变化失效；完成优化任务清单
 - **v0.0.8 发布**（2026-08-12）：修复类型级路径、嵌套 Controller 所有权和重复 JAX-RS 注解行号；扫描结果与 `mtime + size` 状态仅在解析前后元数据稳定时原子提交；后台索引完成后刷新当前搜索；watcher 支持工作区相对排除模式；Base URL 删除同步文件系统入口并收窄配置 watcher；优化稳定 top-K 搜索与内存缓存
+- **v0.0.9 更新**（2026-09-23）：搜索与复制共用路由解析；Spring 无路径 mapping 使用类级或根路径；失败解析保留旧端点缓存；多根工作区按资源解析项目配置和 `maxResults`，并监听 `.restful-toolkit.json`；DTO 同类型兄弟字段分别展开且循环限制在当前路径
 
 ---
 

@@ -109,18 +109,27 @@ export class ConfigManager {
         return Math.min(1000, Math.max(1, Math.floor(value)));
     }
 
-    getScanConfig(): ScanConfig {
-        const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit');
+    /**
+     * 获取有效扫描与运行配置；资源参数用于在多根工作区中选择对应文件夹的项目设置。
+     * 全工作区扫描不传资源时仍合并各项目的扫描路径，标量配置按首个项目值兜底。
+     *
+     * @param resourceUri 可选的当前资源，用于选择所属工作区文件夹配置
+     * @returns 按 VS Code 设置、项目配置、默认值优先级合成的配置
+     */
+    getScanConfig(resourceUri?: vscode.Uri): ScanConfig {
+        const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit', resourceUri);
+        const workspaceFolder = this.getWorkspaceFolderForResource(resourceUri) ?? (!resourceUri ? this.workspaceFolders[0] : undefined);
+        const projectConfig = workspaceFolder ? this.projectConfigs.get(workspaceFolder) : undefined;
         const vsCodeScanPaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.scanPaths);
         const vsCodeExcludePaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.excludePaths);
         const vsCodeMaxResults = this.getExplicitVsCodeSetting<number>(vsCodeConfig, CONFIG_KEYS.maxResults);
         const vsCodeBaseUrl = this.getExplicitVsCodeSetting<string>(vsCodeConfig, 'baseUrl');
 
         const config: ScanConfig = {
-            scanPaths: vsCodeScanPaths ?? this.mergeProjectArrays('scanPaths') ?? DEFAULT_CONFIG.scanPaths,
-            excludePaths: vsCodeExcludePaths ?? this.mergeProjectArrays('excludePaths') ?? DEFAULT_CONFIG.excludePaths,
-            maxResults: this.clampMaxResults(vsCodeMaxResults ?? this.firstProjectValue('maxResults') ?? DEFAULT_CONFIG.maxResults),
-            baseUrl: vsCodeBaseUrl ?? this.firstProjectValue('baseUrl')
+            scanPaths: vsCodeScanPaths ?? (resourceUri ? projectConfig?.scanPaths : this.mergeProjectArrays('scanPaths')) ?? DEFAULT_CONFIG.scanPaths,
+            excludePaths: vsCodeExcludePaths ?? (resourceUri ? projectConfig?.excludePaths : this.mergeProjectArrays('excludePaths')) ?? DEFAULT_CONFIG.excludePaths,
+            maxResults: this.clampMaxResults(vsCodeMaxResults ?? projectConfig?.maxResults ?? (!resourceUri ? this.firstProjectValue('maxResults') : undefined) ?? DEFAULT_CONFIG.maxResults),
+            baseUrl: vsCodeBaseUrl ?? projectConfig?.baseUrl ?? (!resourceUri ? this.firstProjectValue('baseUrl') : undefined)
         };
 
         this.logger.info(`Effective scan config: scanPaths=${JSON.stringify(config.scanPaths)}`);
@@ -181,7 +190,7 @@ export class ConfigManager {
      * @returns 可直接用于 URL 与 cURL 生成的 Base URL
      */
     async getBaseUrlAsync(resourceUri?: vscode.Uri): Promise<string> {
-        const scanConfig = this.getScanConfig();
+        const scanConfig = this.getScanConfig(resourceUri);
         if (scanConfig.baseUrl) { return scanConfig.baseUrl; }
 
         const workspaceFolder = this.getWorkspaceFolderForResource(resourceUri) ?? this.workspaceFolders[0];

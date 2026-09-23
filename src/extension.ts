@@ -21,6 +21,7 @@ let searchUI: SearchUI;
 let configManager: ConfigManager;
 let scanStateManager: ScanStateManager;
 let baseUrlConfigWatcher: vscode.FileSystemWatcher | undefined;
+let projectConfigWatcher: vscode.FileSystemWatcher | undefined;
 let initialScanPromise: Promise<void> | undefined;
 let configChangeSubscription: vscode.Disposable | undefined;
 let workspaceFoldersSubscription: vscode.Disposable | undefined;
@@ -63,7 +64,7 @@ export async function activate(context: vscode.ExtensionContext) {
     deactivating = false;
     lifecycleTasks.clear();
     logger = Logger.getInstance();
-    logger.info('=== RestfulToolkit v0.0.8 loaded ===');
+    logger.info('=== RestfulToolkit v0.0.9 loaded ===');
 
     // 初始化配置管理器
     configManager = ConfigManager.getInstance();
@@ -126,6 +127,19 @@ export async function activate(context: vscode.ExtensionContext) {
     baseUrlConfigWatcher.onDidCreate(invalidateBaseUrl);
     baseUrlConfigWatcher.onDidChange(invalidateBaseUrl);
     baseUrlConfigWatcher.onDidDelete(invalidateBaseUrl);
+
+    projectConfigWatcher = vscode.workspace.createFileSystemWatcher('**/.restful-toolkit.json');
+    const reloadProjectConfig = (uri: vscode.Uri) => {
+        if (vscode.workspace.getWorkspaceFolder(uri)) {
+            requestWorkspaceReload(
+                `Project configuration changed: ${uri.fsPath}; reloading configuration and endpoints`,
+                'Project configuration reload'
+            );
+        }
+    };
+    projectConfigWatcher.onDidCreate(reloadProjectConfig);
+    projectConfigWatcher.onDidChange(reloadProjectConfig);
+    projectConfigWatcher.onDidDelete(reloadProjectConfig);
 
     const searchCommand = vscode.commands.registerCommand(
         'restfulToolkit.searchEndpoints',
@@ -244,7 +258,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
         searchCommand, refreshCommand, createConfigCommand, copyCommand, copyUrlCommand, copyCurlCommand,
-        jsonToClassInFolderCommand, configChangeSubscription, workspaceFoldersSubscription, baseUrlConfigWatcher,
+        jsonToClassInFolderCommand, configChangeSubscription, workspaceFoldersSubscription, baseUrlConfigWatcher, projectConfigWatcher,
         scanner, watcher, searchUI, logger
     );
 
@@ -263,6 +277,8 @@ export async function deactivate() {
     workspaceFoldersSubscription = undefined;
     baseUrlConfigWatcher?.dispose();
     baseUrlConfigWatcher = undefined;
+    projectConfigWatcher?.dispose();
+    projectConfigWatcher = undefined;
     watcher?.dispose();
     scanner?.dispose();
     await Promise.allSettled([

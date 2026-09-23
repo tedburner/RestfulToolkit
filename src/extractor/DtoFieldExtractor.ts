@@ -60,6 +60,8 @@ export class DtoFieldExtractor {
             return await this.resolveNestedFields(sanitized, visited, depth + 1, directFields);
         } catch {
             return [];
+        } finally {
+            visited.delete(dtoTypeName);
         }
     }
 

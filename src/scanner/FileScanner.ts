@@ -312,10 +312,10 @@ export class FileScanner implements vscode.Disposable {
                 return { success: false, endpointCount: 0, endpoints: [] };
             }
 
-            const endpoints = FileScanner.endpointAnnotationPattern.test(content)
-                ? this.annotationParser.parseFile(content, filePath)
-                : [];
-            return { success: true, endpointCount: endpoints.length, endpoints };
+            const parsed = FileScanner.endpointAnnotationPattern.test(content)
+                ? this.annotationParser.parseFileResult(content, filePath)
+                : { success: true, endpoints: [] };
+            return { success: parsed.success, endpointCount: parsed.endpoints.length, endpoints: parsed.endpoints };
 
         } catch (error) {
             const err = error as Error;

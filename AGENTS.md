@@ -50,6 +50,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
   - `CHANGELOG.md` 版本标题与变更
   - `docs/DOCUMENTATION_MANIFEST.md` 版本引用
   - `.vscodeignore` 发布包排除项
+- `.vscodeignore` 必须排除 `.kapibala/**` 等本地 Agent 历史目录，避免将工作区数据打进 VSIX
 
 ### 扩展开发
 - **F5 调试**: 在 VS Code 中按 F5 启动扩展开发宿主
@@ -67,18 +68,21 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - 读取文件后先执行受支持 REST 注解预筛选，普通 Java/Kotlin 类不进入完整解析器
 - 文件解析前后校验 `mtime + size`，仅在元数据稳定时同时提交端点缓存与扫描状态；扫描期间再次变化的文件保留旧缓存和重试资格
 - 每次成功解析都整体替换该文件缓存，空结果会清除已删除的旧端点
+- 解析器显式区分失败与成功空结果；失败保留最近一次成功缓存并保留重试资格
 - 扩展先注册命令再后台启动首次扫描，索引期间仍可搜索当前已发现端点，扫描完成后按当前查询刷新 QuickPick
 - 强制刷新在当前扫描后排队执行，当前轮异常也不会丢失
 - 读取/解析失败不会记录成功状态；新扫描会取消上一轮状态栏隐藏定时器
 - 工作区扫描与 watcher 防抖扫描共用成功状态记录；以内存中的 `mtime + size` 判断增量变化，删除文件同步移除端点与扫描记录
 - 扩展停用会释放配置订阅，并等待配置重载与任意当前扫描安全收束后再重置单例
 - 文件扫描防抖（500ms 延迟）用于实时更新
+- `.restful-toolkit.json` 创建、修改或删除会重载项目配置、重建 watcher 并触发全量刷新
 
 **解析层** (`src/parsers/AnnotationParser.ts`):
 - 协调 SpringMvcParser 和 JaxRsParser
 - 提取所有类型范围并遮罩后代类型，确保嵌套类端点只归属声明它的类
 - 复用文件级行索引与绝对字符偏移，保持嵌套类行号准确
 - Kotlin 预处理以处理字符串模板
+- `parseFileResult` 显式返回完整解析状态；扫描器不会把异常折叠为成功空端点
 
 **Spring MVC 解析器** (`src/parsers/SpringMvcParser.ts`):
 - 解析 `@RequestMapping`, `@GetMapping`, `@PostMapping` 等
@@ -86,6 +90,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - 类级路径只从类型声明前的注解区提取；方法声明使用结构扫描，不依赖固定字符窗口
 - 处理多路径注解：`@GetMapping({"/users", "/list"})`
 - 类级别 + 方法级别路径组合
+- 方法级路径为空时使用类级路径；没有类级路径时索引根路径 `/`
 
 **JAX-RS 解析器** (`src/parsers/JaxRsParser.ts`):
 - 解析 `@Path`, `@GET`, `@POST` 等
@@ -106,7 +111,8 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 
 **参数提取层** (`src/extractor/`):
 - `ParameterExtractor` 协调 Spring/JAX-RS 参数解析、方法定位和 DTO 字段提取
-- `DtoFieldExtractor` 异步展开最多 3 层 DTO，支持常见 JSON 命名注解、泛型集合、循环保护和单命令生命周期缓存
+- 复制命令从当前编辑器文本调用共享注解解析器获取路由与 HTTP 方法，支持 package-private Java 和 Kotlin 方法
+- `DtoFieldExtractor` 异步展开最多 3 层 DTO，支持常见 JSON 命名注解、泛型集合、按递归分支循环保护和单命令生命周期缓存
 - `FormatConverter`、`UrlGenerator`、`CurlConverter` 负责复制格式、完整 URL 与 cURL 输出
 
 **命令层** (`src/commands/`):
@@ -128,13 +134,14 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 2. 项目配置文件 `.restful-toolkit.json`
 3. DEFAULT_CONFIG（最低）
 
-**使用模式**: 始终使用 `ConfigManager.getInstance().getScanConfig()` 而非硬编码后备值。
+**使用模式**: 始终使用 `ConfigManager.getInstance().getScanConfig()` 而非硬编码后备值。资源相关命令传入资源 URI，使多根工作区的标量设置按所属文件夹解析；全工作区扫描仍合并各项目 glob。
 
 ### 文件监视 (`src/utils/FileWatcher.ts`)
 - VS Code FileSystemWatcher 用于实时更新
 - onCreate, onChange, onDelete 回调
 - 文件变更时自动整体替换缓存，并在调度前对绝对路径和所属工作区相对路径应用 `excludePaths`
 - Spring Base URL 配置 watcher 限定为 `**/main/resources/{application,application-*,bootstrap}.{yml,yaml,properties}`
+- 项目配置 watcher 监听 `**/.restful-toolkit.json` 并触发配置重载与端点刷新
 
 ### Base URL 解析 (`src/utils/BaseUrlResolver.ts`)
 - 自动检测 `application.yml` / `application.properties` 中的 `server.port` 和 `server.servlet.context-path`

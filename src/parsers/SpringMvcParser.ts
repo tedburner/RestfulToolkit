@@ -197,15 +197,13 @@ export class SpringMvcParser {
             // 简写注解（@GetMapping 等）
             if (pathValues.length > 0) {
                 this.addEndpoints(endpoints, [httpMethod], pathValues, classPath, className, methodName, filePath, line);
-            } else if (annotationText.includes('(') && annotationText.includes(')')) {
-                // 有括号但没有路径参数，可能是默认路径
-                // 例如：@GetMapping() 这种情况忽略
+            } else {
+                // Spring mapping 未声明方法路径时继承类级路径；无类路径时映射到根路径。
+                this.addEndpoints(endpoints, [httpMethod], [''], classPath, className, methodName, filePath, line);
             }
         } else if (annotationName === 'RequestMapping') {
             // @RequestMapping 注解（需要提取 method 参数）
-            if (pathValues.length > 0) {
-                this.addEndpoints(endpoints, this.extractRequestMethods(annotationText), pathValues, classPath, className, methodName, filePath, line);
-            }
+            this.addEndpoints(endpoints, this.extractRequestMethods(annotationText), pathValues.length > 0 ? pathValues : [''], classPath, className, methodName, filePath, line);
         }
 
         return endpoints;

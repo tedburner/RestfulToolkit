@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.8-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.9-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![Installs](https://img.shields.io/badge/installs-384-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -20,6 +20,7 @@ It scans controller annotations, builds a searchable endpoint index, and lets yo
 | Parameter copy | Copy endpoint parameters as URL Params, JSON Body, Form Data, or x-www-form-urlencoded |
 | DTO expansion | Expand nested request DTO fields up to 3 levels, including common JSON naming annotations |
 | URL and cURL copy | Generate full URLs and cURL commands with headers, query params, and request bodies |
+| Consistent route metadata | Search and copy share route parsing; pathless Spring mappings use the class path or root path |
 | Base URL detection | Read Spring configuration asynchronously through a workspace-scoped, event-invalidated in-memory cache |
 | JSON to DTO | Generate Java/Kotlin DTO classes from selected JSON or clipboard JSON |
 | Realtime updates | Watch Java/Kotlin files, honor workspace-relative exclusions, and atomically replace endpoints only after scan metadata remains stable |
@@ -103,7 +104,7 @@ Output formats:
 - Form Data
 - x-www-form-urlencoded
 
-`@RequestBody` and `@ModelAttribute` DTOs are expanded when their fields can be resolved in the workspace.
+`@RequestBody` and `@ModelAttribute` DTOs are expanded when their fields can be resolved in the workspace. Repeated sibling DTO types expand independently, while cycles stay bounded.
 
 ### Copy Full URL
 
@@ -120,11 +121,11 @@ http://localhost:8080/api/users/{id}?keyword=
 Base URL resolution order:
 
 1. `restfulToolkit.baseUrl` VS Code setting
-2. `.restful-toolkit.json` project config
+2. `.restful-toolkit.json` in the resource's workspace folder
 3. Spring config files such as `application.yml`, `application.properties`, `bootstrap.yml`, and profile files
 4. Default `http://localhost:8080`
 
-Detected values remain in Extension Host memory only. Creating, changing, or deleting a supported Spring configuration file invalidates the owning workspace cache.
+Detected values remain in Extension Host memory only. Creating, changing, or deleting a supported Spring configuration file invalidates the owning workspace cache. Changes to `.restful-toolkit.json` reload settings and refresh endpoints; multi-root projects resolve Base URL and `maxResults` for the active resource's folder.
 
 ### Copy as cURL
 

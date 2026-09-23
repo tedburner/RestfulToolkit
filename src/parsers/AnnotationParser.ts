@@ -11,6 +11,12 @@ interface ClassBlockRange {
     endIndex: number;
 }
 
+/** 完整注解解析状态；失败结果不可用于替换已缓存的端点快照。 */
+export interface AnnotationParseResult {
+    success: boolean;
+    endpoints: RestEndpoint[];
+}
+
 export class AnnotationParser {
     private springMvcParser: SpringMvcParser;
     private jaxRsParser: JaxRsParser;
@@ -23,6 +29,18 @@ export class AnnotationParser {
     }
 
     parseFile(content: string, filePath: string): RestEndpoint[] {
+        const result = this.parseFileResult(content, filePath);
+        return result.success ? result.endpoints : [];
+    }
+
+    /**
+     * 解析源码并显式区分成功空结果与解析失败，供扫描器安全维护端点快照。
+     *
+     * @param content 当前源码文本
+     * @param filePath 源文件路径，用于 Kotlin 预处理和错误日志
+     * @returns 完整解析状态及端点；任一类解析器异常时 success 为 false
+     */
+    parseFileResult(content: string, filePath: string): AnnotationParseResult {
         const endpoints: RestEndpoint[] = [];
 
         try {
@@ -57,37 +75,26 @@ export class AnnotationParser {
         } catch (error) {
             const err = error as Error;
             this.logger.error(`Parse failed: ${filePath}`, err);
+            return { success: false, endpoints: [] };
         }
 
-        return endpoints;
+        return { success: true, endpoints };
     }
 
     private parseSpringMvc(content: string, className: string, filePath: string, lineIndex: number[], contentOffset: number): RestEndpoint[] {
-        try {
-            const classPath = this.springMvcParser.parseClassLevelPath(content);
-            const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath, lineIndex, contentOffset);
+        const classPath = this.springMvcParser.parseClassLevelPath(content);
+        const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath, lineIndex, contentOffset);
 
             if (classPath && endpoints.length > 0) {
                 this.logger.info(`Class ${className}: @RequestMapping("${classPath}") → ${endpoints.length} endpoints`);
             }
 
-            return endpoints;
-        } catch (error) {
-            return [];
-        }
+        return endpoints;
     }
 
     private parseJaxRs(content: string, sanitizedContent: string, className: string, filePath: string, lineIndex: number[], contentOffset: number): RestEndpoint[] {
-        try {
-            const classPath = this.jaxRsParser.parseClassLevelPath(content);
-            const endpoints = this.jaxRsParser.parseMethodAnnotations(content, sanitizedContent, className, classPath, filePath, lineIndex, contentOffset);
-
-            return endpoints;
-        } catch (error) {
-            const err = error as Error;
-            this.logger.warning(`JAX-RS parsing failed for class ${className} in ${filePath}: ${err.message}`);
-            return [];
-        }
+        const classPath = this.jaxRsParser.parseClassLevelPath(content);
+        return this.jaxRsParser.parseMethodAnnotations(content, sanitizedContent, className, classPath, filePath, lineIndex, contentOffset);
     }
 
     private preprocessKotlin(content: string): string {

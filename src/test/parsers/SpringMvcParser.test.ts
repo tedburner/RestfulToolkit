@@ -154,15 +154,16 @@ suite('SpringMvcParser Test Suite', () => {
         assert.strictEqual(classPath, '/api/v1');
     });
 
-    test('Should not treat produces value as method path', () => {
+    test('Should map pathless method mappings to the class path', () => {
         const content = `
             public class UserController {
                 @GetMapping(produces = "application/json")
                 public User getUser() {}
             }
         `;
-        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
-        assert.strictEqual(endpoints.length, 0);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', '/users', 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/users');
     });
 
     test('Should handle path variables in paths', () => {
@@ -436,8 +437,8 @@ public class UserController {
             }
         `;
         const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
-        // 没有路径参数的注解不应该生成端点
-        assert.strictEqual(endpoints.length, 0);
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/');
     });
 
     test('Should parse annotation spanning many lines', () => {

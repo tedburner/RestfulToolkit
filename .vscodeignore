@@ -18,6 +18,7 @@ docs/**
 AGENTS.md
 CLAUDE.md
 .agents/**
+.kapibala/**
 .claude/**
 .workbuddy/**
 .codex/**
