@@ -14,6 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 require('./mock-vscode');
+require('./lib/dist-check').ensureFreshDist();
 
 const scriptDir = __dirname;
 const projectRoot = path.resolve(scriptDir, '../../..');

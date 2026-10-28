@@ -26,14 +26,21 @@ export class CopyCurlCommand {
         const position = selection.active;
 
         try {
-            const copyInfo = await this.extractor.extract(document, position);
+            // cURL 只在 JSON 正文使用 DTO 字段；其余内容类型跳过 DTO 文件 I/O，
+            // Base URL 解析与必要的 DTO 展开并行执行
+            const copyInfo = await this.extractor.extract(document, position, { expandDto: false });
 
             if (!copyInfo) {
                 vscode.window.showWarningMessage(labels.notRestFile);
                 return;
             }
 
-            const baseUrl = await ConfigManager.getInstance().getBaseUrlAsync(document.uri);
+            const [baseUrl] = await Promise.all([
+                ConfigManager.getInstance().getBaseUrlAsync(document.uri),
+                copyInfo.contentType === 'json'
+                    ? this.extractor.expandDtoFields(copyInfo, document)
+                    : Promise.resolve()
+            ]);
             const curl = this.converter.generate(copyInfo, baseUrl);
 
             await vscode.env.clipboard.writeText(curl);

@@ -12,6 +12,7 @@ import { CopyCurlCommand } from './commands/CopyCurlCommand';
 import { JsonToClassCommand } from './commands/JsonToClassCommand';
 import { getLabels } from './extractor/i18n';
 import { BaseUrlResolver } from './utils/BaseUrlResolver';
+import { WatcherScope } from './utils/FileWatcher';
 
 let cache: EndpointCache;
 let scanner: FileScanner;
@@ -26,10 +27,30 @@ let initialScanPromise: Promise<void> | undefined;
 let configChangeSubscription: vscode.Disposable | undefined;
 let workspaceFoldersSubscription: vscode.Disposable | undefined;
 let deactivating = false;
+let configReloadActive = false;
+let configReloadQueued = false;
 const lifecycleTasks = new Set<Promise<void>>();
 
 function getWorkspaceFolderPaths(): string[] {
     return vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [];
+}
+
+/**
+ * 按当前配置重建 watcher：多根工作区每个根使用自己的扫描与排除模式。
+ */
+function startWatcherWithCurrentConfig(): void {
+    const folderConfigs = configManager.getFolderScanConfigs();
+    const scopes: WatcherScope[] = folderConfigs.length > 0
+        ? folderConfigs.map(folderConfig => ({
+            folderUri: folderConfig.folder,
+            patterns: folderConfig.scanPaths,
+            excludePatterns: folderConfig.excludePaths
+        }))
+        : (() => {
+            const config = configManager.getScanConfig();
+            return [{ patterns: config.scanPaths, excludePatterns: config.excludePaths }];
+        })();
+    watcher.start(scopes);
 }
 
 async function reloadConfigAndRefreshWatchers(): Promise<void> {
@@ -37,15 +58,39 @@ async function reloadConfigAndRefreshWatchers(): Promise<void> {
     if (deactivating) {
         return;
     }
-    const updatedConfig = configManager.getScanConfig();
-    watcher.start(updatedConfig.scanPaths, updatedConfig.excludePaths);
+    startWatcherWithCurrentConfig();
     await scanner.refresh(true);
 }
 
+/**
+ * 请求配置重载；并发请求合并为一次执行 + 一次排队执行，避免重复重建 watcher
+ * 与重复全量刷新。
+ */
 function requestWorkspaceReload(logMessage: string, taskDescription: string): void {
     logger.info(logMessage);
     BaseUrlResolver.reset();
-    trackLifecycleTask(reloadConfigAndRefreshWatchers(), taskDescription);
+    if (configReloadActive) {
+        configReloadQueued = true;
+        return;
+    }
+    configReloadActive = true;
+    trackLifecycleTask((async () => {
+        try {
+            do {
+                configReloadQueued = false;
+                try {
+                    await reloadConfigAndRefreshWatchers();
+                } catch (error) {
+                    if (!configReloadQueued || deactivating) {
+                        throw error;
+                    }
+                    logger.error('Configuration reload failed; continuing with queued reload', error instanceof Error ? error : new Error(String(error)));
+                }
+            } while (configReloadQueued && !deactivating);
+        } finally {
+            configReloadActive = false;
+        }
+    })(), taskDescription);
 }
 
 function trackLifecycleTask(task: Promise<void>, description: string): void {
@@ -80,10 +125,6 @@ export async function activate(context: vscode.ExtensionContext) {
     watcher = new FileWatcher();
     searchUI = new SearchUI(cache, scanner);
 
-    // 使用 ConfigManager 获取配置
-    const config = configManager.getScanConfig();
-    const scanPatterns = config.scanPaths;
-
     watcher.setOnCreate(async (uri) => {
         await scanner.scanFileDebounced(uri);
     });
@@ -96,10 +137,16 @@ export async function activate(context: vscode.ExtensionContext) {
         scanner.removeFile(uri);
     });
 
-    watcher.start(scanPatterns, config.excludePaths);
+    startWatcherWithCurrentConfig();
 
     configChangeSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
         if (!event.affectsConfiguration('restfulToolkit')) {
+            return;
+        }
+        // 只有扫描范围变化需要重载并全量刷新；maxResults/baseUrl 等每次读取都是实时值
+        if (!event.affectsConfiguration('restfulToolkit.scanPaths')
+            && !event.affectsConfiguration('restfulToolkit.excludePaths')) {
+            logger.info('RestfulToolkit non-scan configuration changed; live values apply without a rescan');
             return;
         }
         requestWorkspaceReload(
@@ -280,12 +327,13 @@ export async function deactivate() {
     projectConfigWatcher?.dispose();
     projectConfigWatcher = undefined;
     watcher?.dispose();
-    scanner?.dispose();
+    // dispose 会清空防抖定时器与待处理队列，必须先让扫描器收束再释放，否则停用时的等待形同虚设
     await Promise.allSettled([
         ...lifecycleTasks,
-        initialScanPromise ?? Promise.resolve(),
-        scanner?.waitForIdle() ?? Promise.resolve()
+        initialScanPromise ?? Promise.resolve()
     ]);
+    await Promise.allSettled([scanner?.waitForIdle() ?? Promise.resolve()]);
+    scanner?.dispose();
     lifecycleTasks.clear();
     initialScanPromise = undefined;
     ConfigManager.reset();

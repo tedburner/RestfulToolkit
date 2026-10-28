@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 require('./mock-vscode');
+require('./lib/dist-check').ensureFreshDist();
 
 // 从脚本位置计算项目根目录
 const scriptDir = __dirname; // src/test/scripts/

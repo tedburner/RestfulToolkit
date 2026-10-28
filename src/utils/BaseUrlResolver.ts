@@ -12,6 +12,12 @@ interface BaseUrlCacheEntry {
     value: ResolvedBaseUrl | null;
 }
 
+interface InflightResolution {
+    epoch: number;
+    generation: number;
+    promise: Promise<ResolvedBaseUrl | null>;
+}
+
 interface ConfigValues {
     port: string | null;
     contextPath: string | null;
@@ -30,6 +36,7 @@ interface ConfigValues {
 export class BaseUrlResolver {
     private static readonly cache = new Map<string, BaseUrlCacheEntry>();
     private static readonly generations = new Map<string, number>();
+    private static readonly inflightResolutions = new Map<string, InflightResolution>();
     private static cacheEpoch = 0;
     private logger: Logger;
 
@@ -42,6 +49,8 @@ export class BaseUrlResolver {
      *
      * 仅通过 VS Code 文件系统 API 访问资源目录和配置文件，解析结果缓存在 Extension Host
      * 内存中；调用 {@link invalidate} 后，失效期间已经启动的旧解析结果不会重新写入缓存。
+     * 冷缓存期间的并发调用复用同版本在途 Promise，避免重复发现目录；失效后的新请求
+     * 不会复用旧 Promise。
      *
      * @param workspaceFolder 工作区根目录
      * @returns 自动识别的主机、端口和上下文路径；未发现有效配置时返回 null
@@ -52,15 +61,24 @@ export class BaseUrlResolver {
         if (cached) {
             return this.cloneResult(cached.value);
         }
+
         const cacheEpoch = BaseUrlResolver.cacheEpoch;
         const generation = BaseUrlResolver.generations.get(cacheKey) ?? 0;
-        const resourcesDirs = await this.findResourcesDirsAsync(workspaceFolder);
-        const files: string[] = [];
-        for (const dir of resourcesDirs) {
-            files.push(...await this.collectConfigFilesAsync(dir));
+
+        const inflight = BaseUrlResolver.inflightResolutions.get(cacheKey);
+        if (inflight && inflight.epoch === cacheEpoch && inflight.generation === generation) {
+            return this.cloneResult(await inflight.promise);
         }
 
-        const value = await this.resolveFromConfigFilesAsync(files);
+        const discovery = this.discoverAndResolve(workspaceFolder);
+        BaseUrlResolver.inflightResolutions.set(cacheKey, { epoch: cacheEpoch, generation, promise: discovery });
+        const value = await discovery.finally(() => {
+            const current = BaseUrlResolver.inflightResolutions.get(cacheKey);
+            if (current && current.promise === discovery) {
+                BaseUrlResolver.inflightResolutions.delete(cacheKey);
+            }
+        });
+
         if (cacheEpoch === BaseUrlResolver.cacheEpoch
             && generation === (BaseUrlResolver.generations.get(cacheKey) ?? 0)) {
             BaseUrlResolver.cache.set(cacheKey, { value: this.cloneResult(value) });
@@ -71,13 +89,25 @@ export class BaseUrlResolver {
     static invalidate(workspaceFolder: string): void {
         const cacheKey = BaseUrlResolver.normalizePath(workspaceFolder);
         BaseUrlResolver.cache.delete(cacheKey);
+        BaseUrlResolver.inflightResolutions.delete(cacheKey);
         BaseUrlResolver.generations.set(cacheKey, (BaseUrlResolver.generations.get(cacheKey) ?? 0) + 1);
     }
 
     static reset(): void {
         BaseUrlResolver.cache.clear();
         BaseUrlResolver.generations.clear();
+        BaseUrlResolver.inflightResolutions.clear();
         BaseUrlResolver.cacheEpoch++;
+    }
+
+    private async discoverAndResolve(workspaceFolder: string): Promise<ResolvedBaseUrl | null> {
+        const resourcesDirs = await this.findResourcesDirsAsync(workspaceFolder);
+        const files: string[] = [];
+        for (const dir of resourcesDirs) {
+            files.push(...await this.collectConfigFilesAsync(dir));
+        }
+
+        return this.resolveFromConfigFilesAsync(files);
     }
 
     private async resolveFromConfigFilesAsync(files: string[]): Promise<ResolvedBaseUrl | null> {

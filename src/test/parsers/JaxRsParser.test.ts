@@ -310,4 +310,262 @@ suite('JaxRsParser Test Suite', () => {
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/api/users');
     });
+
+    test('does not treat method-body invocations as endpoints', () => {
+        const content = `
+            @Path("/api")
+            class Api {
+                @GET
+                @Path("/a")
+                public String a() {
+                    return service();
+                }
+                @POST
+                @Path("/b")
+                public String b() {
+                    return "ok";
+                }
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.java');
+
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => `${endpoint.methodName} ${endpoint.path}`),
+            ['a /api/a', 'b /api/b']
+        );
+    });
+
+    test('parses interface methods without a body', () => {
+        const content = `
+            public interface Api {
+                @GET
+                @Path("/x")
+                String a();
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].methodName, 'a');
+        assert.strictEqual(endpoints[0].path, '/x');
+    });
+
+    test('parses multi-line @Path annotations', () => {
+        const content = `
+            public class Api {
+                @GET
+                @Path(
+                    "/multi"
+                )
+                public String a() { return "ok"; }
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/multi');
+    });
+
+    test('scans each method body only once without rescanning statements', () => {
+        const content = `
+            public class Api {
+                @GET
+                @Path("/a")
+                public String a() { return helperOne(); }
+
+                @POST
+                @Path("/b")
+                public String b() { return helperTwo(); }
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', null, 'test.java');
+        assert.strictEqual(endpoints.length, 2);
+        assert.ok(endpoints.every(endpoint => !endpoint.methodName.startsWith('helper')));
+    });
+
+    test('parses Kotlin methods with explicit return types', () => {
+        const content = `
+            @Path("/api")
+            class Api {
+                @GET
+                @Path("/a")
+                fun a(): String {
+                    return "ok"
+                }
+
+                @POST
+                @Path("/b")
+                fun b() {
+                }
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.kt');
+
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => `${endpoint.method} ${endpoint.path} ${endpoint.methodName}`),
+            ['GET /api/a a', 'POST /api/b b']
+        );
+    });
+
+    test('parses Kotlin methods with nullable return types', () => {
+        const content = `
+            @Path("/api")
+            class Api {
+                @GET
+                @Path("/n")
+                fun n(): String? {
+                    return null
+                }
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.kt');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].method, 'GET');
+        assert.strictEqual(endpoints[0].path, '/api/n');
+        assert.strictEqual(endpoints[0].methodName, 'n');
+    });
+
+    test('parses generic methods in Java and Kotlin', () => {
+        const content = `
+            @Path("/api")
+            class Api {
+                @GET
+                @Path("/j")
+                public <T> Response j() { return null; }
+
+                @POST
+                @Path("/k")
+                fun <T> k(item: T): T {
+                    return item
+                }
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.java');
+
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => `${endpoint.method} ${endpoint.path} ${endpoint.methodName}`),
+            ['GET /api/j j', 'POST /api/k k']
+        );
+    });
+
+    test('does not leak annotations from skipped expression-body methods to the next method', () => {
+        const content = `
+            @Path("/api")
+            class Api {
+                @GET
+                @Path("/e")
+                fun e() = service()
+
+                @PUT
+                @Path("/f")
+                fun f() {}
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.kt');
+
+        // 表达式函数体 e 不产生端点（已知限制），且其注解不得泄漏给 f 生成幻影 GET /api/f
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => `${endpoint.method} ${endpoint.path} ${endpoint.methodName}`),
+            ['PUT /api/f f']
+        );
+    });
+
+    test('does not leak annotations from skipped nullable expression-body methods', () => {
+        const content = `
+            @Path("/api")
+            class Api {
+                @GET
+                @Path("/n")
+                fun n(): String? = null
+
+                @POST
+                @Path("/b")
+                fun b() {}
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.kt');
+
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => `${endpoint.method} ${endpoint.path} ${endpoint.methodName}`),
+            ['POST /api/b b']
+        );
+    });
+
+    test('does not leak annotations from Kotlin properties to the next method', () => {
+        const content = `
+            @Path("/api")
+            class Api {
+                @GET
+                @JvmField
+                val helper = 1
+
+                fun notEndpoint() {}
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.kt');
+
+        // 携带 HTTP 动词的字段不是端点，其注解不得泄漏给后续函数生成幻影 GET /api/notEndpoint
+        assert.deepStrictEqual(endpoints, []);
+    });
+
+    test('does not leak annotations from Java constants to the next interface method', () => {
+        const content = `
+            @Path("/api")
+            public interface Api {
+                @GET
+                String VERSION = "v1";
+
+                @POST
+                @Path("/create")
+                void create();
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.java');
+
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => `${endpoint.method} ${endpoint.path} ${endpoint.methodName}`),
+            ['POST /api/create create']
+        );
+    });
+
+    test('still parses a real endpoint that follows an annotated non-method member', () => {
+        const content = `
+            @Path("/api")
+            class Api {
+                @GET
+                @JvmField
+                val helper = 1
+
+                @POST
+                @Path("/real")
+                fun real() {}
+            }
+        `;
+        const sanitized = TextProcessor.sanitize(content);
+        const classPath = parser.parseClassLevelPath(content);
+        const endpoints = parser.parseMethodAnnotations(content, sanitized, 'Api', classPath, 'test.kt');
+
+        // 重置注解收集起点后，后续真实端点自己的注解仍然完整可用
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => `${endpoint.method} ${endpoint.path} ${endpoint.methodName}`),
+            ['POST /api/real real']
+        );
+    });
 });

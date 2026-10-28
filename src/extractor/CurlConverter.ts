@@ -2,6 +2,11 @@ import { EndpointCopyInfo, DtoField } from '../models/types';
 
 /**
  * cURL 命令生成器
+ *
+ * 按参数来源组装请求：查询参数通常拼入 URL；Spring 表单请求中的 @RequestParam
+ * 默认按表单字段处理（源码不能区分它来自 URL 还是表单）；
+ * 正文按内容类型分别输出 JSON（-d）、urlencoded（-d）或 multipart（-F，
+ * 由 cURL 生成 boundary，不手写 Content-Type 头）。
  */
 export class CurlConverter {
     generate(copyInfo: EndpointCopyInfo, baseUrl: string): string {
@@ -16,9 +21,9 @@ export class CurlConverter {
         }
 
         // Body
-        const body = this.buildBody(copyInfo);
-        if (body) {
-            parts.push(`  -d '${this.escapeShellSingleQuote(body)}'`);
+        const bodyParts = this.buildBodyParts(copyInfo);
+        for (const bodyPart of bodyParts) {
+            parts.push(bodyPart);
         }
 
         return parts.join(' \\\n');
@@ -32,19 +37,15 @@ export class CurlConverter {
     }
 
     /**
-     * 构建 URL（GET/DELETE 拼接查询参数）
+     * 构建 URL：查询参数对所有 HTTP 方法拼接到 URL，路径参数保留 {placeholder}
      */
     private buildUrl(copyInfo: EndpointCopyInfo, baseUrl: string): string {
-        const { httpMethod, path, parameters } = copyInfo;
-        let url = `${baseUrl}${path}`;
+        let url = `${baseUrl}${copyInfo.path}`;
 
-        // GET/DELETE 拼接查询参数
-        if (httpMethod === 'GET' || httpMethod === 'DELETE') {
-            const queryParams = parameters.filter(p => p.source === 'query');
-            if (queryParams.length > 0) {
-                const query = queryParams.map(p => `${encodeURIComponent(p.name)}=`).join('&');
-                url += '?' + query;
-            }
+        const queryParams = copyInfo.parameters.filter(p => p.source === 'query' && !this.isSpringFormRequest(copyInfo));
+        if (queryParams.length > 0) {
+            const query = queryParams.map(p => `${encodeURIComponent(p.name)}=`).join('&');
+            url += '?' + query;
         }
 
         return url;
@@ -60,14 +61,11 @@ export class CurlConverter {
         // 检查请求参数中是否已指定 Content-Type 头
         const hasContentType = headerParams.some(p => p.name.toLowerCase() === 'content-type');
 
-        // 根据内容类型添加默认 Content-Type
-        if (!hasContentType) {
+        // multipart 由 -F 生成带 boundary 的 Content-Type，手写头部反而破坏分段结构
+        if (!hasContentType && copyInfo.contentType !== 'form-data') {
             switch (copyInfo.contentType) {
                 case 'json':
                     headers.push('Content-Type: application/json');
-                    break;
-                case 'form-data':
-                    headers.push('Content-Type: multipart/form-data');
                     break;
                 case 'x-www-form-urlencoded':
                     headers.push('Content-Type: application/x-www-form-urlencoded');
@@ -85,27 +83,64 @@ export class CurlConverter {
     }
 
     /**
-     * 构建 Body
+     * 按内容类型构建正文参数行；无正文时返回空数组。
      */
-    private buildBody(copyInfo: EndpointCopyInfo): string | null {
+    private buildBodyParts(copyInfo: EndpointCopyInfo): string[] {
         const { httpMethod, contentType, parameters } = copyInfo;
 
         // 只有 POST/PUT/PATCH 有 Body
-        if (!['POST', 'PUT', 'PATCH'].includes(httpMethod)) { return null; }
-
-        if (contentType === 'json') {
-            return this.buildJsonBody(parameters, copyInfo);
-        }
+        if (!['POST', 'PUT', 'PATCH'].includes(httpMethod)) { return []; }
 
         if (contentType === 'form-data') {
-            return this.buildFormBody(parameters);
+            return this.buildMultipartParts(parameters, this.isSpringFormRequest(copyInfo));
         }
 
         if (contentType === 'x-www-form-urlencoded') {
-            return this.buildFormBody(parameters);
+            return this.buildUrlencodedPart(parameters, this.isSpringFormRequest(copyInfo));
         }
 
-        return null;
+        if (contentType === 'json') {
+            const body = this.buildJsonBody(parameters, copyInfo);
+            return body ? [`  -d '${this.escapeShellSingleQuote(body)}'`] : [];
+        }
+
+        return [];
+    }
+
+    /**
+     * multipart 表单：文件参数输出 `-F 'name=@file'` 占位，其余输出 `-F 'name='`。
+     */
+    private isSpringFormRequest(copyInfo: EndpointCopyInfo): boolean {
+        return copyInfo.framework === 'Spring'
+            && ['POST', 'PUT', 'PATCH'].includes(copyInfo.httpMethod)
+            && (copyInfo.contentType === 'form-data' || copyInfo.contentType === 'x-www-form-urlencoded');
+    }
+
+    private buildMultipartParts(parameters: EndpointCopyInfo['parameters'], springForm: boolean): string[] {
+        const parts: string[] = [];
+        for (const param of parameters) {
+            if (param.source !== 'form' && !(springForm && param.source === 'query')) { continue; }
+            if (this.isFileUploadType(param.type)) {
+                parts.push(`  -F '${this.escapeShellSingleQuote(param.name)}=@/path/to/file'`);
+            } else {
+                parts.push(`  -F '${this.escapeShellSingleQuote(param.name)}='`);
+            }
+        }
+        return parts;
+    }
+
+    private isFileUploadType(type: string): boolean {
+        return type === 'File' || /MultipartFile|InputStreamResource|Resource/.test(type);
+    }
+
+    /**
+     * urlencoded 正文使用表单字段和 Spring 表单请求的 @RequestParam。
+     */
+    private buildUrlencodedPart(parameters: EndpointCopyInfo['parameters'], springForm: boolean): string[] {
+        const fields = parameters.filter(p => p.source === 'form' || (springForm && p.source === 'query'));
+        if (fields.length === 0) { return []; }
+        const body = fields.map(p => `${encodeURIComponent(p.name)}=`).join('&');
+        return [`  -d '${this.escapeShellSingleQuote(body)}'`];
     }
 
     private buildJsonBody(parameters: EndpointCopyInfo['parameters'], copyInfo: EndpointCopyInfo): string | null {
@@ -137,23 +172,4 @@ export class CurlConverter {
         }
         return `${JSON.stringify(field.name)}: ""`;
     }
-
-    private buildFormBody(parameters: EndpointCopyInfo['parameters']): string | null {
-        const fields = this.flattenFormFields(parameters);
-        if (fields.length === 0) { return null; }
-        return fields.map(f => `${encodeURIComponent(f)}=`).join('&');
-    }
-
-    private flattenFormFields(parameters: EndpointCopyInfo['parameters']): string[] {
-        const fields: string[] = [];
-        for (const param of parameters) {
-            if (param.source === 'form') {
-                fields.push(param.name);
-            } else if (param.source !== 'header' && param.source !== 'path') {
-                fields.push(param.name);
-            }
-        }
-        return fields;
-    }
 }
-

@@ -47,7 +47,8 @@ export class SearchUI implements vscode.Disposable {
         quickPick.busy = indexing;
 
         const maxResults = this.getMaxResults();
-        const allEndpoints = this.cache.getAll().slice(0, maxResults);
+        // 空查询走有界读取，避免为取前 K 条克隆全部端点
+        const allEndpoints = this.cache.search({ text: '' }, maxResults);
 
         if (allEndpoints.length === 0 && !indexing) {
             vscode.window.showWarningMessage(labels.searchNoEndpoints);
@@ -125,10 +126,7 @@ export class SearchUI implements vscode.Disposable {
 
     private filterEndpoints(query: string): EndpointQuickPickItem[] {
         const maxResults = this.getMaxResults();
-        if (!query || query.trim() === '') {
-            return this.cache.getAll().slice(0, maxResults).map(endpoint => this.createQuickPickItem(endpoint));
-        }
-
+        // 空查询与有查询共用有界搜索入口，保持相同的读取与克隆语义
         return this.cache.search({ text: query }, maxResults)
             .map(endpoint => this.createQuickPickItem(endpoint));
     }

@@ -5,6 +5,42 @@ All notable changes to RestfulToolkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- **Fixed**: Copy commands now locate methods through structured parameter ranges, so annotated parameters (`@RequestParam("q")`) no longer break extraction and Kotlin `name: Type` parameters report their real type
+- **Fixed**: JAX-RS scanning resolves method declarations at the direct-member level and skips method bodies, eliminating phantom endpoints from body calls while adding support for interface/abstract methods, multi-line `@Path` annotations, Kotlin explicit/nullable return types, and generic type parameters; skipped members (including annotated fields and Kotlin properties) no longer leak their annotations to the next method
+- **Fixed**: File deletions can no longer be overridden by in-flight scans via per-file version tokens, and incremental scans reconcile indexed files against discovery results to self-heal missed delete events
+- **Fixed**: cURL emits multipart bodies via `-F` and treats Spring `@RequestParam` as form fields for form content types; other query parameters remain in the URL
+- **Fixed**: Spring class-level multi-path mappings now expand to all path combinations, and parentheses inside path strings no longer break annotation extraction
+- **Fixed**: Single-file cache updates patch indexes incrementally again instead of rebuilding the whole endpoint array, keeping the watcher save path responsive on large workspaces
+- **Fixed**: Empty per-folder scan scopes preserve indexed endpoints, while reconciliation also removes cached files whose scan records were lost; queued configuration reloads survive a failed active reload
+- **Fixed**: JSON-to-class generation avoids reserved keywords and duplicate field or nested class names, and Kotlin output uses nullable types for null/empty-array values
+- **Changed**: Watcher and workspace scans wait for each other and share bounded concurrency with per-file merging; extension shutdown waits for the shared queue
+- **Changed**: Multi-root workspaces compose scan paths and exclusions per folder for discovery and watchers; concurrent config reloads are merged, and only scan-scope setting changes trigger a full refresh
+- **Changed**: Workspace scans commit file results in batches so a scan round rebuilds the endpoint array once; the search QuickPick reads bounded results without cloning the whole index
+- **Changed**: Extension shutdown waits for pending debounce timers in addition to the scan and watcher queues
+- **Changed**: Copy URL skips DTO expansion and parameter copy defers it until a chosen format needs it, removing unnecessary file I/O from cancellable flows; cURL expands DTO fields only when the body content type is JSON
+- **Changed**: Base URL cold-cache requests within the same cache version share one in-flight discovery
+- **Added**: Regression coverage reproducing all review findings (copy extraction, JAX-RS boundaries, deletion races, cURL semantics, multi-path mappings, generator legality) and platform-independent config/watcher tests
+
+---
+
+- **修复**: 复制命令改为结构化定位参数区，带注解的参数（`@RequestParam("q")`）不再导致提取失败，Kotlin `name: Type` 参数返回真实类型
+- **修复**: JAX-RS 扫描限定在类型直接成员层级并跳过方法体，方法体调用不再产生幻影端点；同时支持接口/抽象方法、跨行 `@Path` 注解、Kotlin 显式/可空返回类型与泛型类型参数，被跳过成员（含携带注解的字段与 Kotlin 属性）的注解不再泄漏给下一个方法
+- **修复**: 删除事件通过文件版本令牌阻止在途扫描写回旧端点；增量扫描将已索引文件与发现结果对账，漏掉的删除事件可自愈
+- **修复**: cURL 的 multipart 正文使用 `-F`；Spring 表单内容类型下的 `@RequestParam` 默认作为表单字段，其他查询参数保留在 URL
+- **修复**: Spring 类级多路径映射展开为全部路径组合；路径字符串内的括号不再破坏注解提取
+- **修复**: 单文件缓存更新恢复增量修补，不再整体重建端点数组，大仓库下 watcher 保存保持响应
+- **修复**: 空的单根扫描范围保留已索引端点；对账也能清理扫描记录已丢失的缓存文件，当前配置重载失败后仍执行排队请求
+- **修复**: JSON 转 DTO 规避保留字、重名字段和重复嵌套类名；Kotlin 输出对 null/空数组使用可空类型
+- **变更**: watcher 扫描与工作区扫描相互等待、共用有界并发并按文件合并事件；扩展停用等待共享队列收束
+- **变更**: 多根工作区按根目录分别合成扫描与排除模式（发现与监听互不污染）；并发配置重载合并执行，仅扫描范围变化触发全量刷新
+- **变更**: 工作区扫描按批提交文件结果，一轮扫描只重建一次端点数组；搜索首屏走有界读取，不再克隆全部索引
+- **变更**: 扩展停用在等待扫描与 watcher 队列之外，同时等待尚未触发的防抖定时器
+- **变更**: 复制 URL 跳过 DTO 展开；参数复制在选择需要 DTO 的格式后才展开，取消流程不再产生多余文件 I/O；cURL 仅在 JSON 正文时展开 DTO 字段
+- **变更**: Base URL 冷缓存期间同版本并发请求共用一次在途发现
+- **新增**: 覆盖全部审查结论的最小复现回归（复制提取、JAX-RS 边界、删除竞态、cURL 语义、多路径映射、生成器合法性），以及平台无关的配置/监听测试
+
 ## [0.0.9] - 2026-09-23
 
 - **Fixed**: Spring mappings without a method path now inherit the class path or resolve to `/`, and endpoint copy commands share route metadata parsing with workspace indexing, including package-private Java and Kotlin methods

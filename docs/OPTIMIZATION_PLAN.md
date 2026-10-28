@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-29
 
-This document tracks the current core-code optimization backlog. It replaces the older completed optimization plan so future work can proceed item by item without relying on stale status.
+This document tracks the core-code optimization backlog through 2026-07-29; all listed items are done. The current review backlog and its implementation status live in `LOGIC_PERFORMANCE_REVIEW_2026-10-25.md`, so new work should start there instead of extending this list.
 
 ## Scope
 

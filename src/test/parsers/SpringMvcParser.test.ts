@@ -17,7 +17,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content);
+        const classPath = parser.parseClassLevelPaths(content)[0] ?? null;
         assert.strictEqual(classPath, '/api');
     });
 
@@ -70,7 +70,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content);
+        const classPath = parser.parseClassLevelPaths(content)[0] ?? null;
         const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].path, '/api/users');
@@ -150,7 +150,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content);
+        const classPath = parser.parseClassLevelPaths(content)[0] ?? null;
         assert.strictEqual(classPath, '/api/v1');
     });
 
@@ -189,7 +189,7 @@ suite('SpringMvcParser Test Suite', () => {
                 public WebResult test() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content);
+        const classPath = parser.parseClassLevelPaths(content)[0] ?? null;
         assert.strictEqual(classPath, '/document/rag');
 
         const endpoints = parser.parseMethodAnnotations(content, 'DocumentRagController', classPath, 'test.java');
@@ -374,7 +374,7 @@ public class UserController {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content);
+        const classPath = parser.parseClassLevelPaths(content)[0] ?? null;
         const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(classPath, '/api');
         assert.strictEqual(endpoints.length, 1);
@@ -389,7 +389,7 @@ public class UserController {
                 List<User> getUsers();
             }
         `;
-        const classPath = parser.parseClassLevelPath(content);
+        const classPath = parser.parseClassLevelPaths(content)[0] ?? null;
         const endpoints = parser.parseMethodAnnotations(content, 'UserApi', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'GET');
@@ -407,7 +407,7 @@ public class UserController {
                 public List<User> getUsers() {}
             }
         `;
-        const classPath = parser.parseClassLevelPath(content);
+        const classPath = parser.parseClassLevelPaths(content)[0] ?? null;
         const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPath, 'test.java');
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].method, 'GET');
@@ -540,5 +540,47 @@ public class UserController {
 
         assert.strictEqual(endpoints.length, 1);
         assert.strictEqual(endpoints[0].methodName, 'annotatedMethod');
+    });
+
+    test('Should expand class-level multi-path annotations as a cartesian product', () => {
+        const content = `
+            @RequestMapping({"/api", "/v2"})
+            public class UserController {
+                @GetMapping("/users")
+                public List<User> getUsers() {}
+            }
+        `;
+        const classPaths = parser.parseClassLevelPaths(content);
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', classPaths, 'test.java');
+
+        assert.deepStrictEqual(classPaths, ['/api', '/v2']);
+        assert.deepStrictEqual(
+            endpoints.map(endpoint => endpoint.path).sort(),
+            ['/api/users', '/v2/users']
+        );
+    });
+
+    test('Should keep an endpoint when a path string contains parentheses', () => {
+        const content = `
+            public class UserController {
+                @GetMapping("/a(b")
+                public User getUser() { return null; }
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/a(b');
+    });
+
+    test('Should parse an annotation with whitespace before the argument list', () => {
+        const content = `
+            public class UserController {
+                @GetMapping ("/spaced")
+                public User getUser() { return null; }
+            }
+        `;
+        const endpoints = parser.parseMethodAnnotations(content, 'UserController', null, 'test.java');
+        assert.strictEqual(endpoints.length, 1);
+        assert.strictEqual(endpoints[0].path, '/spaced');
     });
 });

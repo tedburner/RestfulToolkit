@@ -2,7 +2,11 @@
 
 ## 整理完成 ✅
 
-**整理日期**: 2026-04-20 | **更新日期**: 2026-09-23（复制路由共享解析、多根配置作用域、失败缓存保护与 DTO 分支循环处理）
+**整理日期**: 2026-04-20 | **更新日期**: 2026-10-25（审查全部 14 项已实施修复并登记）
+
+**2026-10-25 审查文档**:
+
+- `docs/LOGIC_PERFORMANCE_REVIEW_2026-10-25.md` — 全局逻辑与性能审查（14 个候选工作项）；其中 L1-L8 与 F1-F6 已全部实施修复，验证入口见 CHANGELOG `[Unreleased]` 与 `src/test/` 对应回归
 
 **当前新增与更新（截至 2026-09-23）**:
 - `openspec/changes/endpoint-copy-and-workspace-consistency/` — v0.0.9 端点复制一致性、扫描失败安全、多根工作区配置和 DTO 递归展开规范、设计与任务
@@ -11,7 +15,8 @@
 - `src/config/ConfigManager.ts` / `src/extension.ts` / `src/ui/SearchUI.ts` — 资源所属工作区设置、项目配置文件 watcher 与搜索结果上限统一解析
 - `src/extractor/DtoFieldExtractor.ts` — DTO 循环检测按当前递归分支维护，兄弟字段可分别展开同类型 DTO
 - `.vscodeignore` — 发布包排除本地 `.kapibala` 历史数据
-- `src/test/config/ConfigManager.test.ts` 与相关 parser/scanner/extractor 测试 — 覆盖多根配置、复制路由、失败缓存、pathless mapping 和 DTO 递归
+- `src/test/config/ConfigManager.test.ts` 与相关 parser/scanner/extractor 测试 — 覆盖多根配置、并发配置快照丢弃旧读取、每根工作区独立合成扫描范围、复制路由、失败缓存、pathless mapping 和 DTO 递归
+- `src/test/commands/CopyEndpointParametersCommand.test.ts` — 复制参数命令的格式选择、取消短路与 DTO 延迟展开时机回归测试
 - `src/scanner/FileScanner.ts` — 解析前后校验 `mtime + size`，仅在文件状态稳定时原子提交端点缓存与扫描记录
 - `src/ui/SearchUI.ts` — 后台索引完成后按当前查询刷新已打开的 QuickPick，无端点时关闭并提示
 - `src/parsers/JaxRsParser.ts` / `src/utils/FileWatcher.ts` — 重复注解块保留精确源码行号，watcher 支持工作区相对排除模式
@@ -88,8 +93,8 @@ restful-toolkit/
 │   ├── CONFIG_SYSTEM.md     # 配置系统文档
 │   ├── DOCUMENTATION_MANIFEST.md # 本清单
 │   ├── INCREMENTAL_SCAN.md  # 增量扫描文档
-│   ├── OPTIMIZATION_PLAN.md # 当前核心代码优化任务清单
-│   ├── CODE_AUDIT_2026-06-01.md # 代码审查报告（待修复）
+│   ├── OPTIMIZATION_PLAN.md # 核心代码优化任务清单（已完成，当前待办见 LOGIC_PERFORMANCE_REVIEW_2026-10-25.md）
+│   ├── CODE_AUDIT_2026-06-01.md # 代码审查报告（2026-06-02 处置完毕）
 │   ├── CODE_REVIEW_2026-07-29.md # 本轮优化审查与处置结果
 │   ├── TESTING_GUIDE.md     # 测试指南
 │   └── screenshot.png       # 扩展截图演示
@@ -110,9 +115,9 @@ restful-toolkit/
 │
 ├── src/test/scripts/ (自动化测试脚本)
 │   ├── mock-vscode.js            # Node 脚本最小 VS Code API mock
-│   ├── test-all-files.js         # 端点验证脚本（50端点）
+│   ├── test-all-files.js         # 端点验证脚本（53端点）
 │   ├── test-parameter-copy.js    # 参数复制批量测试（78测试）
-│   ├── test-copy-url-curl.js     # URL/cURL 自动化测试（115测试）
+│   ├── test-copy-url-curl.js     # URL/cURL 自动化测试（113测试）
 │   └── test-json-to-class.js     # JSON 转 DTO 自动化测试（86测试）
 │
 ├── openspec/ (OpenSpec规范 - 保持不变)
@@ -140,8 +145,8 @@ restful-toolkit/
 | extractor/ParameterExtractor.test.ts | 多路径 mapping 的复制命令首路径选择规则测试 |
 | cache/EndpointCache.test.ts | 缓存、搜索排序与预计算复用测试 |
 | cache/ScanStateManager.test.ts | `mtime + size` 会话内增量判断测试 |
-| scanner/FileScanner.test.ts | 文件扫描单次发现、并发限流、注解预筛选、扫描期间文件变化的原子提交、异常后排队强制刷新与状态栏 timer 所有权测试 |
-| extension.test.ts | 命令先于后台扫描完成注册，以及停用等待配置重载和扫描收束的生命周期测试 |
+| scanner/FileScanner.test.ts | 文件扫描单次发现、并发限流、工作区与 watcher 扫描协调、注解预筛选、原子提交及强制刷新测试 |
+| extension.test.ts | 命令注册、配置重载失败后的排队重试，以及停用等待扫描收束的生命周期测试 |
 | commands/CopyUrlCurlCommand.test.ts | Copy Full URL/Copy as cURL 的端点提取、Base URL 与剪贴板命令编排测试 |
 | ui/SearchUI.test.ts | 索引中搜索、索引完成刷新/空结果提示与 QuickPick 结果上限测试 |
 | utils/FileWatcher.test.ts | watcher 默认及工作区相对排除规则测试 |
@@ -159,17 +164,21 @@ restful-toolkit/
 
 **运行**: `npm test`
 
-### 自动化验证 - 4个脚本 + 1个 mock ✅
+### 自动化验证 - 6个脚本 + 1个 mock + 共享 lib ✅
 
 **位置**: `src/test/scripts/`
 
 | 脚本 | 说明 | 运行 |
 |------|------|------|
-| test-all-files.js | 50个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
+| test-all-files.js | 53个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
 | test-parameter-copy.js | 78个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node src/test/scripts/test-parameter-copy.js` |
-| test-copy-url-curl.js | 115个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
+| test-copy-url-curl.js | 113个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
 | test-json-to-class.js | 86个测试（命名转换、类型推断、Java/Kotlin 生成、边界情况） | `node src/test/scripts/test-json-to-class.js` |
+| test-curl-semantic.js | 17项cURL语义验证（真实curl进程 + 本地HTTP接收端核对方法、查询参数、Content-Type、multipart分段、Shell转义往返） | `npm run test:curl-semantic` |
+| test-dto-compile.js | 22项JSON生成冒烟（保留字/重名字段、嵌套类命名、可空类型结构断言；javac/kotlinc 可用时真实编译） | `npm run test:dto-compile` |
 | mock-vscode.js | 为 Node 自动化脚本提供最小 VS Code API mock | 由脚本自动加载 |
+| lib/dist-check.js | 批量脚本前置检查：dist 落后于 src 生产源码时拒绝运行（`SKIP_DIST_CHECK=1` 跳过） | 由脚本自动加载 |
+| lib/copy-info-fixture.js | 与 Mocha 侧一致的 `makeCopyInfo` EndpointCopyInfo 夹具 | 由脚本自动加载 |
 
 ---
 
@@ -262,7 +271,7 @@ restful-toolkit/
 | docs 顶层文档 | 8 个（7 个 Markdown、1 个 screenshot） |
 | 源代码模块 | 30个（含 extractor/ 9、commands/ 4、generator/ 2、utils/ 4） |
 | 单元测试 | 277 个 Mocha 用例（含解析器集成、复制 URL/cURL 命令、FileScanner、ConfigManager、DTO 递归、ScanStateManager、EndpointCache、BaseUrlResolver、激活与 UI） |
-| 自动化脚本 | 4个（50端点验证 + 78参数复制 + 115 URL/cURL + 86 JSON-to-DTO） |
+| 自动化脚本 | 4个（53端点验证 + 78参数复制 + 113 URL/cURL + 86 JSON-to-DTO） |
 | 测试 Controller | 3个（Spring 25 + JAX-RS 11 + Form） |
 | 测试 DTO | 7个 |
 

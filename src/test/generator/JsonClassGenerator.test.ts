@@ -56,6 +56,35 @@ suite('JsonClassGenerator Test Suite', () => {
             const result = generator.generate(json, 'Dto', 'com.example', 'java');
             assert.ok(result.includes('private Object data;'));
         });
+
+        test('Should map null to Any? for Kotlin', () => {
+            const json = JSON.stringify({ data: null });
+            const result = generator.generate(json, 'Dto', 'com.example', 'kotlin');
+            assert.ok(result.includes('val data: Any?'));
+        });
+
+        test('Should map empty array with language-aware item type', () => {
+            const json = JSON.stringify({ items: [] });
+            const javaResult = generator.generate(json, 'Dto', 'com.example', 'java');
+            assert.ok(javaResult.includes('private List<Object> items;'));
+            const kotlinResult = generator.generate(json, 'Dto', 'com.example', 'kotlin');
+            assert.ok(kotlinResult.includes('val items: List<Any?>'));
+        });
+
+        test('Should avoid reserved keywords and duplicate field names', () => {
+            const input: Record<string, number> = {};
+            input['class'] = 1;
+            input['a-b'] = 1;
+            input['a_b'] = 2;
+            const json = JSON.stringify(input);
+            const result = generator.generate(json, 'Dto', 'com.example', 'java');
+
+            assert.ok(result.includes('@JsonProperty("class")'));
+            assert.ok(!result.includes('private Long class;'), 'keyword fields must be renamed');
+            assert.ok(result.includes('private Long class2;'));
+            assert.ok(result.includes('private Long aB;'));
+            assert.ok(result.includes('private Long aB2;'), 'colliding sanitized keys must get unique names');
+        });
     });
 
     suite('Nested objects', () => {
@@ -157,6 +186,15 @@ suite('JsonClassGenerator Test Suite', () => {
             const result = generator.generate(json, 'Dto', 'com.example', 'java');
             assert.ok(result.includes('import java.util.List;'));
         });
+    });
+
+    test('allocates unique nested class names when suffixes collide with other keys', () => {
+        const json = JSON.stringify({ foo: { a: 1 }, foo2: { b: 1 } });
+        for (const language of ['java', 'kotlin'] as const) {
+            const result = generator.generate(json, 'Foo', 'example', language);
+            const names = [...result.matchAll(/(?:static class|data class)\s+(\w+)/g)].map(match => match[1]);
+            assert.strictEqual(new Set(names).size, names.length, result);
+        }
     });
 
     suite('Error handling', () => {

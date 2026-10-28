@@ -131,6 +131,8 @@ Detected values remain in Extension Host memory only. Creating, changing, or del
 
 Right-click an endpoint and choose `RestfulToolkit: Copy as cURL`.
 
+For Spring form requests, `@RequestParam` is placed in the form body by default; its annotation does not distinguish form fields from URL query parameters.
+
 Example output:
 
 ```bash
@@ -189,6 +191,7 @@ Project config example:
 - Does not resolve route placeholders such as `${api.path}`.
 - Does not detect routes registered through `@Configuration` classes.
 - Kotlin string template support is limited.
+- Endpoints declared as Kotlin expression bodies (`fun e() = service()`) are not detected.
 - Conditional annotations such as `@ConditionalOnProperty` are not evaluated.
 
 Expected endpoint detection accuracy is about 80-85% for typical Spring Boot projects.

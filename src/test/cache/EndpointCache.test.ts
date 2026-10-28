@@ -97,6 +97,97 @@ suite('EndpointCache Test Suite', () => {
         assert.strictEqual(fileEndpoints[0].method, 'POST');
     });
 
+    test('batch file updates replace files atomically and keep survivor order', () => {
+        for (let i = 0; i < 5; i++) {
+            cache.add({
+                method: 'GET', path: `/api/keep/${i}`, className: 'Keep', methodName: `keep${i}`,
+                file: `Keep${i}.java`, line: i + 1, framework: 'Spring'
+            });
+        }
+        cache.add({
+            method: 'GET', path: '/api/old', className: 'Replaced', methodName: 'old',
+            file: 'Replaced.java', line: 1, framework: 'Spring'
+        });
+
+        cache.updateFiles([
+            { file: 'Replaced.java', endpoints: [] },
+            {
+                file: 'Added.java',
+                endpoints: [{
+                    method: 'POST', path: '/api/added', className: 'Added', methodName: 'create',
+                    file: 'Added.java', line: 2, framework: 'Spring'
+                }]
+            }
+        ]);
+
+        assert.strictEqual(cache.size(), 6);
+        assert.deepStrictEqual(cache.getByFile('Replaced.java'), []);
+        assert.strictEqual(cache.getByFile('Added.java').length, 1);
+        // 未涉及文件保持原顺序，新端点追加在末尾
+        const all = cache.search({ text: '' }, 100);
+        assert.strictEqual(all[all.length - 1].path, '/api/added');
+        assert.ok(all.slice(0, 5).every((endpoint, index) => endpoint.path === `/api/keep/${index}`));
+    });
+
+    test('single-file update patches indexes in place instead of rebuilding', () => {
+        for (let i = 0; i < 5; i++) {
+            cache.add({
+                method: 'GET', path: `/api/keep/${i}`, className: 'Keep', methodName: `keep${i}`,
+                file: `Keep${i}.java`, line: i + 1, framework: 'Spring'
+            });
+        }
+        cache.add({
+            method: 'GET', path: '/api/old', className: 'Replaced', methodName: 'old',
+            file: 'Replaced.java', line: 1, framework: 'Spring'
+        });
+
+        const internals = cache as unknown as { allEndpoints: unknown[] };
+        const arrayBefore = internals.allEndpoints;
+
+        cache.updateFile('Replaced.java', [{
+            method: 'POST', path: '/api/replaced', className: 'Replaced', methodName: 'create',
+            file: 'Replaced.java', line: 2, framework: 'Spring'
+        }]);
+
+        assert.strictEqual(
+            internals.allEndpoints,
+            arrayBefore,
+            'updateFile must patch the existing endpoint array instead of reallocating it'
+        );
+        assert.strictEqual(cache.size(), 6);
+        assert.deepStrictEqual(cache.getByFile('Replaced.java').map(e => e.path), ['/api/replaced']);
+        // 路径索引同步修补：旧路径不可再搜到，新路径可以
+        assert.strictEqual(cache.search({ text: 'old' }).length, 0);
+        const replaced = cache.search({ text: 'replaced' });
+        assert.strictEqual(replaced.length, 1);
+        assert.strictEqual(replaced[0].method, 'POST');
+        // 顺序契约：未涉及文件保持原顺序，新端点追加在末尾
+        const all = cache.search({ text: '' }, 100);
+        assert.strictEqual(all[all.length - 1].path, '/api/replaced');
+        assert.ok(all.slice(0, 5).every((endpoint, index) => endpoint.path === `/api/keep/${index}`));
+    });
+
+    test('single-file update with an empty result removes the file without reallocating', () => {
+        cache.add({
+            method: 'GET', path: '/api/old', className: 'Replaced', methodName: 'old',
+            file: 'Replaced.java', line: 1, framework: 'Spring'
+        });
+        cache.add({
+            method: 'GET', path: '/api/keep', className: 'Keep', methodName: 'keep',
+            file: 'Keep.java', line: 2, framework: 'Spring'
+        });
+
+        const internals = cache as unknown as { allEndpoints: unknown[] };
+        const arrayBefore = internals.allEndpoints;
+
+        cache.updateFile('Replaced.java', []);
+
+        assert.strictEqual(internals.allEndpoints, arrayBefore);
+        assert.strictEqual(cache.size(), 1);
+        assert.deepStrictEqual(cache.search({ text: '' }, 10).map(e => e.file), ['Keep.java']);
+        assert.strictEqual(cache.search({ text: 'old' }).length, 0);
+    });
+
     test('broad search avoids ordered-array insertion while preserving stable results', () => {
         for (let i = 0; i < 2000; i++) {
             cache.add({
@@ -273,7 +364,7 @@ suite('EndpointCache Test Suite', () => {
         assert.strictEqual(cache.size(), 0);
     });
 
-    test('Should get all endpoints', () => {
+    test('Empty query returns every cached endpoint', () => {
         const endpoint1: RestEndpoint = {
             method: 'GET',
             path: '/api/users',
@@ -297,7 +388,7 @@ suite('EndpointCache Test Suite', () => {
         cache.add(endpoint1);
         cache.add(endpoint2);
 
-        const all = cache.getAll();
+        const all = cache.search({ text: '' }, 100);
         assert.strictEqual(all.length, 2);
     });
 
@@ -320,7 +411,7 @@ suite('EndpointCache Test Suite', () => {
         assert.strictEqual(results[0].path, '/api/users');
 
         results[0].path = '/api/products';
-        assert.strictEqual(cache.getAll()[0].path, '/api/users');
+        assert.strictEqual(cache.search({ text: '' }, 10)[0].path, '/api/users');
         assert.strictEqual(cache.search({ text: 'products' }).length, 0);
     });
 

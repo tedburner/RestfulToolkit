@@ -26,7 +26,8 @@ export class CopyUrlCommand {
         const position = selection.active;
 
         try {
-            const copyInfo = await this.extractor.extract(document, position);
+            // URL 只需要路由与参数来源，跳过会触发文件 I/O 的 DTO 递归展开
+            const copyInfo = await this.extractor.extract(document, position, { expandDto: false });
 
             if (!copyInfo) {
                 vscode.window.showWarningMessage(labels.notRestFile);

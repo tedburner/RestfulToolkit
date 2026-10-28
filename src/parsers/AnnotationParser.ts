@@ -52,21 +52,14 @@ export class AnnotationParser {
             const lineIndex = TextProcessor.buildLineIndex(content);
 
             const classBlocks = this.collectClassBlocks(sanitized);
+            const directChildren = this.collectDirectChildren(classBlocks);
             for (const blockRange of classBlocks) {
-                let classBlock = content.substring(blockRange.startIndex, blockRange.endIndex);
-                let classBlockSanitized = sanitized.substring(blockRange.startIndex, blockRange.endIndex);
+                const children = directChildren.get(blockRange) ?? [];
+                // 一次性遮罩直接子类型区间；孙辈已包含在子类型范围内，无需重复处理
+                const classBlock = this.extractMaskedBlock(content, blockRange, children);
+                const classBlockSanitized = this.extractMaskedBlock(sanitized, blockRange, children);
 
-                for (const descendant of classBlocks) {
-                    if (descendant.declarationIndex <= blockRange.declarationIndex || descendant.endIndex > blockRange.endIndex) {
-                        continue;
-                    }
-                    const maskStart = descendant.startIndex - blockRange.startIndex;
-                    const maskEnd = descendant.endIndex - blockRange.startIndex;
-                    classBlock = this.maskRange(classBlock, maskStart, maskEnd);
-                    classBlockSanitized = this.maskRange(classBlockSanitized, maskStart, maskEnd);
-                }
-
-                const springEndpoints = this.parseSpringMvc(classBlock, blockRange.className, filePath, lineIndex, blockRange.startIndex);
+                const springEndpoints = this.parseSpringMvc(classBlock, classBlockSanitized, blockRange.className, filePath, lineIndex, blockRange.startIndex);
                 const jaxRsEndpoints = this.parseJaxRs(classBlock, classBlockSanitized, blockRange.className, filePath, lineIndex, blockRange.startIndex);
 
                 endpoints.push(...springEndpoints, ...jaxRsEndpoints);
@@ -81,19 +74,70 @@ export class AnnotationParser {
         return { success: true, endpoints };
     }
 
-    private parseSpringMvc(content: string, className: string, filePath: string, lineIndex: number[], contentOffset: number): RestEndpoint[] {
-        const classPath = this.springMvcParser.parseClassLevelPath(content);
-        const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPath, filePath, lineIndex, contentOffset);
+    /**
+     * 提取类块并用一次字符遍历遮罩全部直接子类型区间（保留换行符）。
+     */
+    private extractMaskedBlock(content: string, blockRange: ClassBlockRange, children: ClassBlockRange[]): string {
+        const block = content.substring(blockRange.startIndex, blockRange.endIndex);
+        if (children.length === 0) {
+            return block;
+        }
 
-            if (classPath && endpoints.length > 0) {
-                this.logger.info(`Class ${className}: @RequestMapping("${classPath}") → ${endpoints.length} endpoints`);
+        const chars = block.split('');
+        for (const child of children) {
+            const start = Math.max(0, child.startIndex - blockRange.startIndex);
+            const end = Math.min(chars.length, child.endIndex - blockRange.startIndex);
+            for (let index = start; index < end; index++) {
+                if (chars[index] !== '\n' && chars[index] !== '\r') {
+                    chars[index] = ' ';
+                }
             }
+        }
+        return chars.join('');
+    }
+
+    /**
+     * 用栈建立类型包含关系，返回每个块的直接子类型映射。
+     */
+    private collectDirectChildren(classBlocks: ClassBlockRange[]): Map<ClassBlockRange, ClassBlockRange[]> {
+        const sorted = [...classBlocks].sort((left, right) =>
+            left.startIndex - right.startIndex || right.endIndex - left.endIndex);
+        const directChildren = new Map<ClassBlockRange, ClassBlockRange[]>();
+        const stack: ClassBlockRange[] = [];
+
+        for (const block of sorted) {
+            // 兄弟块的 endIndex 等于下一个块的 startIndex（共享边界字符），非包含关系
+            while (stack.length > 0 && stack[stack.length - 1].endIndex <= block.startIndex) {
+                stack.pop();
+            }
+            const parent = stack[stack.length - 1];
+            if (parent) {
+                const siblings = directChildren.get(parent);
+                if (siblings) {
+                    siblings.push(block);
+                } else {
+                    directChildren.set(parent, [block]);
+                }
+            }
+            stack.push(block);
+        }
+
+        return directChildren;
+    }
+
+    private parseSpringMvc(content: string, sanitizedContent: string, className: string, filePath: string, lineIndex: number[], contentOffset: number): RestEndpoint[] {
+        const classPaths = this.springMvcParser.parseClassLevelPaths(content, sanitizedContent);
+        const endpoints = this.springMvcParser.parseMethodAnnotations(content, className, classPaths, filePath, lineIndex, contentOffset, sanitizedContent);
+
+        if (classPaths.length > 0 && endpoints.length > 0) {
+            this.logger.info(`Class ${className}: @RequestMapping("${classPaths.join('", "')}") → ${endpoints.length} endpoints`);
+        }
 
         return endpoints;
     }
 
     private parseJaxRs(content: string, sanitizedContent: string, className: string, filePath: string, lineIndex: number[], contentOffset: number): RestEndpoint[] {
-        const classPath = this.jaxRsParser.parseClassLevelPath(content);
+        const classPath = this.jaxRsParser.parseClassLevelPath(content, sanitizedContent);
         return this.jaxRsParser.parseMethodAnnotations(content, sanitizedContent, className, classPath, filePath, lineIndex, contentOffset);
     }
 
@@ -189,17 +233,5 @@ export class AnnotationParser {
             }
         }
         return 0;
-    }
-
-    private maskRange(content: string, startIndex: number, endIndex: number): string {
-        const chars = content.split('');
-        const start = Math.max(0, startIndex);
-        const end = Math.min(chars.length, endIndex);
-        for (let index = start; index < end; index++) {
-            if (chars[index] !== '\n' && chars[index] !== '\r') {
-                chars[index] = ' ';
-            }
-        }
-        return chars.join('');
     }
 }

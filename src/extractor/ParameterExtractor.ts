@@ -25,9 +25,15 @@ export class ParameterExtractor {
      *
      * @param document 当前 Java 或 Kotlin 文档，包含尚未保存的编辑内容
      * @param position 光标位置，用于定位所属方法
+     * @param options.expandDto 为 false 时跳过 DTO 递归展开（不触发文件 I/O），
+     *        供复制 URL 等只需要路由与参数来源的命令使用
      * @returns 可复制的端点参数信息；光标不在受支持的方法上时返回 null
      */
-    async extract(document: vscode.TextDocument, position: vscode.Position): Promise<EndpointCopyInfo | null> {
+    async extract(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        options?: { expandDto?: boolean }
+    ): Promise<EndpointCopyInfo | null> {
         const text = document.getText();
 
         // 检测框架
@@ -54,37 +60,33 @@ export class ParameterExtractor {
             parameters = this.jaxRsParser.parseMethodParameters(methodInfo.signature);
         }
 
-        // 无参数时仍可提取端点信息（用于 Copy URL / cURL）
-        if (parameters.length === 0) {
-            // 解析 @RequestBody 参数的 DTO 字段
-            const dtoFields = await this.resolveDtoFields(parameters, text);
-
-            const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework, route?.method);
-
-            return {
-                httpMethod,
-                contentType,
-                path: route?.path ?? methodInfo.fullPath,
-                parameters: [],
-                framework,
-                dtoFields
-            };
-        }
-
         // 检测 HTTP 方法和内容类型
         const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework, route?.method);
 
-        // 解析 @RequestBody 参数的 DTO 字段
-        const dtoFields = await this.resolveDtoFields(parameters, text);
-
-        return {
+        const copyInfo: EndpointCopyInfo = {
             httpMethod,
             contentType,
             path: route?.path ?? methodInfo.fullPath,
             parameters,
             framework,
-            dtoFields
+            dtoFields: new Map()
         };
+
+        // 无参数时无需展开 DTO；expandDto 为 false 时不触发 DTO 文件 I/O
+        if (copyInfo.parameters.length > 0 && options?.expandDto !== false) {
+            copyInfo.dtoFields = await this.resolveDtoFields(copyInfo.parameters, text);
+        }
+
+        return copyInfo;
+    }
+
+    /**
+     * 为已提取的端点信息补充 DTO 字段展开，供需要按内容类型延迟展开的命令复用。
+     */
+    async expandDtoFields(copyInfo: EndpointCopyInfo, document: vscode.TextDocument): Promise<EndpointCopyInfo> {
+        if (copyInfo.parameters.length === 0) { return copyInfo; }
+        copyInfo.dtoFields = await this.resolveDtoFields(copyInfo.parameters, document.getText());
+        return copyInfo;
     }
 
     private detectFramework(text: string): 'Spring' | 'JAX-RS' | null {
@@ -165,58 +167,67 @@ export class ParameterExtractor {
             // 空行跳过
         }
 
-        // Step 3: 从声明行向后收集完整方法签名（使用净化内容进行括号深度匹配，防止字符串/注释干扰）
-        let sigText = '';
+        // Step 3: 结构化定位参数区。括号深度在净化内容上计算（防字符串/注释干扰），
+        // 但截取使用原文绝对偏移，mapping 注解不会进入参数区。
+        const lineStartOffsets: number[] = new Array(lines.length);
+        {
+            let offset = 0;
+            for (let i = 0; i < lines.length; i++) {
+                lineStartOffsets[i] = offset;
+                offset += lines[i].length + 1;
+            }
+        }
+
+        let firstParenOffset = -1;
+        let closeParenOffset = -1;
         let parenDepth = 0;
-        let foundOpenParen = false;
+        scan:
         for (let j = declLine; j < lines.length; j++) {
-            sigText += (sigText ? '\n' : '') + lines[j];
             const sanitizedLine = sanitizedLines[j];
-            for (const ch of sanitizedLine) {
-                if (ch === '(') { parenDepth++; foundOpenParen = true; }
-                else if (ch === ')') {
+            const lineStart = lineStartOffsets[j];
+            for (let k = 0; k < sanitizedLine.length; k++) {
+                const ch = sanitizedLine[k];
+                if (ch === '(') {
+                    if (firstParenOffset === -1) { firstParenOffset = lineStart + k; }
+                    parenDepth++;
+                } else if (ch === ')') {
                     parenDepth--;
-                    if (foundOpenParen && parenDepth === 0) {
-                        // 找到方法参数的闭合 ')'，从 sigText（原签名文本）中截取到此位置
-                        const matchEnd = sigText.lastIndexOf(')') + 1;
-                        const sigUpToClose = sigText.substring(0, matchEnd);
-                        const methodName = this.extractMethodName(sigUpToClose);
-                        if (methodName) {
-                            const methodMatch = sigUpToClose.match(/((?:(?:public|private|protected|static|final|abstract|synchronized|override|suspend)\s+)*(?:fun\s+)?[^{]*\)\s*)/s);
-                            if (!methodMatch) { return null; }
-                            const methodPath = this.extractPathFromAnnotations(annotationLines.join('\n'));
-                            const classPath = this.findClassLevelPath(lines, declLine);
-                            const fullPath = this.concatenatePaths(classPath, methodPath);
-                            return {
-                                signature: [...annotationLines, methodMatch[1]].join('\n'),
-                                annotations: annotationLines.join('\n'),
-                                methodName,
-                                className: this.findClassName(lines, declLine),
-                                declarationLine: declLine,
-                                methodPath,
-                                classPath,
-                                fullPath
-                            };
-                        }
-                        return null;
+                    if (firstParenOffset !== -1 && parenDepth === 0) {
+                        closeParenOffset = lineStart + k;
+                        break scan;
                     }
                 }
             }
         }
+        if (firstParenOffset === -1 || closeParenOffset === -1) { return null; }
 
-        return null;
+        const declarationPrefix = text.substring(lineStartOffsets[declLine], firstParenOffset);
+        const methodNameMatch = declarationPrefix.match(/([A-Za-z_$][\w$]*)\s*$/);
+        if (!methodNameMatch) { return null; }
+        const methodName = methodNameMatch[1];
+
+        // 仅传方法名 + 参数区给参数解析器，避免把路由注解也拼入“签名”
+        const paramSection = text.substring(firstParenOffset + 1, closeParenOffset);
+        const signature = `${methodName}(${paramSection})`;
+
+        const methodPath = this.extractPathFromAnnotations(annotationLines.join('\n'));
+        const classPath = this.findClassLevelPath(lines, declLine);
+        const fullPath = this.concatenatePaths(classPath, methodPath);
+        return {
+            signature,
+            annotations: annotationLines.join('\n'),
+            methodName,
+            className: this.findClassName(lines, declLine),
+            declarationLine: declLine,
+            methodPath,
+            classPath,
+            fullPath
+        };
     }
 
     private isMethodDeclaration(line: string): boolean {
         const trimmed = line.trim();
         return /^(?:(?:public|private|protected|static|final|abstract|synchronized|override|suspend)\s+)*(?:fun\s+\w+|(?:[\w.$<>?,]+\s+)+\w+)\s*\(/.test(trimmed);
-    }
-
-    private extractMethodName(signature: string): string | null {
-        const kotlin = signature.match(/\bfun\s+(\w+)\s*\(/);
-        if (kotlin) { return kotlin[1]; }
-        const java = signature.match(/(?:^|\s)(\w+)\s*\([^()]*\)\s*$/s);
-        return java?.[1] ?? null;
     }
 
     private findClassName(lines: string[], methodDeclLine: number): string {

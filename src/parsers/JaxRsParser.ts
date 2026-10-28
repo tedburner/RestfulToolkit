@@ -2,23 +2,66 @@ import { RestEndpoint, HttpMethod } from '../models/types';
 import { Logger } from '../utils/Logger';
 import { TextProcessor } from '../utils/TextProcessor';
 
-interface MethodAnnotationBlock {
-    content: string;
-    startIndex: number;
+/** 方法级注解在类块原文中的连续片段（跨行注解完整保留）。 */
+interface MethodAnnotationSpan {
+    /** 注解 '@' 符号在类块中的偏移；净化文本与原文等长，坐标通用 */
+    start: number;
+    /** 注解原文（含参数） */
+    raw: string;
+}
+
+interface MethodDeclaration {
+    name: string;
+    /** 声明起始偏移（净化文本坐标） */
+    start: number;
+    /** 参数列表左括号偏移 */
+    parenIndex: number;
+    /** 声明前的连续方法级注解 */
+    annotations: MethodAnnotationSpan[];
+}
+
+interface DeclarationTerminator {
+    kind: 'body' | 'semicolon' | 'other';
+    index: number;
+    /** kind 为 body 时，方法体结束括号的下一位置 */
+    bodyEnd?: number;
 }
 
 /**
  * 解析 JAX-RS 类型级路径和方法级 HTTP 注解，并保留每个注解在原文件中的精确行号。
+ *
+ * 方法扫描限定在类型的直接成员层级：先匹配方法声明（返回类型 + 名称 + 参数列表），
+ * 再按 `;`（接口/抽象方法）或 `{`（方法体）终结，并把整个方法体从扫描中跳过，
+ * 因此方法体内的调用、局部语句不会产生幻影端点。
  */
 export class JaxRsParser {
+    private static readonly declarationPattern = new RegExp(
+        '(?:(?:public|private|protected|internal|static|final|abstract|synchronized|default|native'
+        + '|open|override|suspend|inline|operator|infix|tailrec)\\s+)*'
+        + '(?:fun\\s+)?'
+        // 类型参数：Java 在返回类型前（public <T> Response g()），Kotlin 在 fun 后（fun <T> foo()）
+        + '(?:<[^<>]*>\\s*)?'
+        + '(?:[\\w.$]+(?:\\s*<[^<>]*>)?\\s+)?'
+        + '([A-Za-z_$][\\w$]*)\\s*\\(',
+        'y'
+    );
+
+    private static readonly httpVerbAnnotations: ReadonlyArray<{ name: string; method: HttpMethod }> = [
+        { name: 'GET', method: 'GET' },
+        { name: 'POST', method: 'POST' },
+        { name: 'PUT', method: 'PUT' },
+        { name: 'DELETE', method: 'DELETE' },
+        { name: 'PATCH', method: 'PATCH' }
+    ];
+
     private logger: Logger;
 
     constructor() {
         this.logger = Logger.getInstance();
     }
 
-    parseClassLevelPath(content: string): string | null {
-        const sanitized = TextProcessor.sanitize(content);
+    parseClassLevelPath(content: string, precomputedSanitized?: string): string | null {
+        const sanitized = precomputedSanitized ?? TextProcessor.sanitize(content);
         const typeDeclarationIndex = sanitized.search(/\b(?:class|interface|object)\s+\w+/);
         if (typeDeclarationIndex === -1) {
             return null;
@@ -41,7 +84,7 @@ export class JaxRsParser {
      * 解析方法级别的 JAX-RS 注解。
      *
      * @param content 原始类块内容（用于提取注解文本和路径值）
-     * @param sanitizedContent 净化后的类块内容（用于括号匹配，避免字符串/注释干扰）
+     * @param sanitizedContent 净化后的类块内容（用于结构扫描，避免字符串/注释干扰）
      * @param className 类名
      * @param classPath 类级别 @Path 路径
      * @param filePath 文件路径
@@ -52,105 +95,23 @@ export class JaxRsParser {
     parseMethodAnnotations(content: string, sanitizedContent: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[], contentOffset: number = 0): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
 
-        // 使用更准确的方法匹配：先找方法签名，然后用括号深度匹配方法体
-        const methodSignaturePattern = /(?:public|private|protected)?\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:\w+(?:<[^>]+>)?\s+)+(\w+)\s*\(/g;
-        let methodMatch;
-
-        while ((methodMatch = methodSignaturePattern.exec(sanitizedContent)) !== null) {
-            const methodName = methodMatch[1];
-            const signatureStartIndex = methodMatch.index;
-
-            // 在净化文本上查找方法体的 { 和 }，避免字符串/注释中的括号干扰
-            let braceStart = -1;
-            for (let i = signatureStartIndex; i < sanitizedContent.length; i++) {
-                if (sanitizedContent[i] === '{') {
-                    braceStart = i;
-                    break;
+        for (const declaration of this.collectDirectMethodDeclarations(content, sanitizedContent)) {
+            for (const verb of JaxRsParser.httpVerbAnnotations) {
+                const verbSpan = declaration.annotations.find(span => this.annotationSimpleName(span) === verb.name);
+                if (!verbSpan) {
+                    continue;
                 }
-            }
 
-            if (braceStart === -1) {
-                continue; // 方法体开始括号未找到
-            }
-
-            // 在净化文本上计算括号深度找到方法体结束
-            let braceDepth = 1;
-            let braceEnd = braceStart + 1;
-            while (braceEnd < sanitizedContent.length && braceDepth > 0) {
-                if (sanitizedContent[braceEnd] === '{') {
-                    braceDepth++;
-                } else if (sanitizedContent[braceEnd] === '}') {
-                    braceDepth--;
-                }
-                braceEnd++;
-            }
-
-            // 从方法体开始位置向前扫描，找到 { 之前的内容
-            // 注意：需要区分方法注解和参数注解（如 @FormParam），只收集 public/private/protected 之前的注解
-            const annotationBlock = this.findMethodAnnotationBlock(content, braceStart);
-            if (!annotationBlock) {
-                continue;
-            }
-
-            const methodEndpoints = this.parseJaxRsAnnotations(
-                annotationBlock.content,
-                annotationBlock.startIndex,
-                classPath || '',
-                className,
-                methodName,
-                filePath,
-                content,
-                lineIndex,
-                contentOffset
-            );
-
-            endpoints.push(...methodEndpoints);
-        }
-
-        return endpoints;
-    }
-
-    private parseJaxRsAnnotations(
-        annotationBlock: string,
-        annotationBlockStart: number,
-        classPath: string,
-        className: string,
-        methodName: string,
-        filePath: string,
-        content: string,
-        lineIndex?: number[],
-        contentOffset: number = 0
-    ): RestEndpoint[] {
-        const endpoints: RestEndpoint[] = [];
-
-        const httpMethods: { pattern: RegExp; method: HttpMethod }[] = [
-            { pattern: /@(?:[\w.]+\.)?GET\b/, method: 'GET' },
-            { pattern: /@(?:[\w.]+\.)?POST\b/, method: 'POST' },
-            { pattern: /@(?:[\w.]+\.)?PUT\b/, method: 'PUT' },
-            { pattern: /@(?:[\w.]+\.)?DELETE\b/, method: 'DELETE' },
-            { pattern: /@(?:[\w.]+\.)?PATCH\b/, method: 'PATCH' }
-        ];
-
-        for (const httpMethod of httpMethods) {
-            const match = annotationBlock.match(httpMethod.pattern);
-            if (match) {
-                // 使用正则匹配返回的精确位置
-                const httpMethodIndexInBlock = match.index!;
-                // 计算在原始content中的绝对位置
-                const absolutePosition = annotationBlockStart + httpMethodIndexInBlock;
-                // 使用快速行号计算
                 const line = lineIndex
-                    ? TextProcessor.getLineNumber(lineIndex, contentOffset + absolutePosition)
-                    : TextProcessor.getLineNumberFallback(content, absolutePosition);
+                    ? TextProcessor.getLineNumber(lineIndex, contentOffset + verbSpan.start)
+                    : TextProcessor.getLineNumberFallback(content, verbSpan.start);
 
-                // 查找方法级别的 @Path（取最后一个，避免匹配到类级 @Path）
-                const methodPath = this.extractMethodPath(annotationBlock);
-
+                const methodPath = this.extractMethodPath(declaration.annotations);
                 endpoints.push(this.createEndpoint(
-                    httpMethod.method,
-                    this.combinePath(classPath, methodPath),
+                    verb.method,
+                    this.combinePath(classPath || '', methodPath),
                     className,
-                    methodName,
+                    declaration.name,
                     filePath,
                     line
                 ));
@@ -161,83 +122,242 @@ export class JaxRsParser {
     }
 
     /**
-     * 从方法体 { 向前扫描，收集方法级注解（@GET/@POST/@Path 等）。
-     * 跳过参数注解（@PathParam/@FormParam 等）。
-     *
-     * 策略：从 { 向前扫描，连续收集 @ 行，跳过非 @ 行（方法签名、参数），
-     * 遇到 }（上一方法体结束）或 class（类声明）时停止。
+     * 在净化文本上按直接成员层级扫描方法声明，返回声明前的注解片段。
      */
-    private findMethodAnnotationBlock(content: string, braceIndex: number): MethodAnnotationBlock | null {
-        let scanPos = braceIndex;
-        while (scanPos > 0 && content[scanPos - 1] !== '\n') {
-            scanPos--;
+    private collectDirectMethodDeclarations(content: string, sanitized: string): MethodDeclaration[] {
+        const declarations: MethodDeclaration[] = [];
+        const bodyStart = this.findClassBodyStart(sanitized);
+        if (bodyStart === -1) {
+            return declarations;
         }
 
-        const methodAnnotations: string[] = [];
-        let annotationBlockStart = -1;
+        let index = bodyStart;
+        let memberStart = bodyStart;
 
-        while (scanPos > 0) {
-            const prevNewlineIndex = scanPos - 1;
-            if (prevNewlineIndex < 0) { break; }
-
-            let prevLineStart = prevNewlineIndex;
-            while (prevLineStart > 0 && content[prevLineStart - 1] !== '\n') {
-                prevLineStart--;
+        while (index < sanitized.length) {
+            const ch = sanitized[index];
+            if (/\s/.test(ch)) {
+                index++;
+                continue;
             }
-
-            const prevLine = content.substring(prevLineStart, prevNewlineIndex).trim();
-
-            if (prevLine === '') {
-                // 空行：如果已收集到注解，停止；否则继续
-                if (methodAnnotations.length > 0) { break; }
-                scanPos = prevLineStart;
+            if (ch === '}') {
+                break;
+            }
+            if (ch === ';') {
+                index++;
+                memberStart = index;
+                continue;
+            }
+            if (ch === '@') {
+                index = this.skipAnnotation(sanitized, index);
+                continue;
+            }
+            if (ch === '{') {
+                // 初始化块或字段初始化中的花括号块，不属于直接方法声明
+                index = this.skipBraceBlock(sanitized, index);
+                memberStart = index;
                 continue;
             }
 
-            // 方法体闭括号 → 停止（防止跨到上一方法）
-            if (prevLine === '}' || prevLine.startsWith('} ')) { break; }
-
-            // 类声明 → 停止
-            if (/\b(class|interface|object)\b/.test(prevLine)) { break; }
-
-            // return 语句 → 停止（方法体内容）
-            if (prevLine.startsWith('return ')) { break; }
-
-            if (prevLine.startsWith('@')) {
-                // 注解行：跳过参数注解
-                if (/@(Path|Query|Form|Header)Param\s*\(/.test(prevLine)) {
-                    scanPos = prevLineStart;
-                    continue;
-                }
-                // 方法级注解，收集
-                methodAnnotations.unshift(content.substring(prevLineStart, prevNewlineIndex));
-                annotationBlockStart = prevLineStart;
-                scanPos = prevLineStart;
-            } else {
-                // 非注解非空行（方法签名行、返回类型行等）→ 跳过，继续向前
-                scanPos = prevLineStart;
+            const declaration = this.matchDeclaration(sanitized, index);
+            if (!declaration) {
+                // 非方法成员（字段、属性等）：跳到下一个成员边界并重置注解收集起点，
+                // 避免被跳过成员的注解（如携带 HTTP 动词的字段）泄漏给下一个方法
+                index = Math.max(this.skipToMemberBoundary(sanitized, index), index + 1);
+                memberStart = index;
                 continue;
             }
+
+            const closeParen = this.findMatchingParen(sanitized, declaration.parenIndex);
+            if (closeParen === -1) {
+                index = declaration.parenIndex + 1;
+                memberStart = index;
+                continue;
+            }
+
+            const terminator = this.findDeclarationTerminator(sanitized, closeParen + 1);
+            if (terminator.kind === 'other') {
+                // 字段初始化等非方法声明，跳到下一个成员边界；重置注解收集起点，
+                // 避免被跳过声明的注解（如 Kotlin 表达式函数体前的 @GET）泄漏给下一个方法
+                index = Math.max(this.skipToMemberBoundary(sanitized, terminator.index), closeParen + 1);
+                memberStart = index;
+                continue;
+            }
+
+            declaration.annotations = this.collectAnnotationSpans(content, sanitized, memberStart, declaration.start);
+            declarations.push(declaration);
+
+            index = terminator.kind === 'body' && terminator.bodyEnd !== undefined
+                ? terminator.bodyEnd
+                : terminator.index + 1;
+            memberStart = index;
         }
 
-        if (methodAnnotations.length === 0) { return null; }
+        return declarations;
+    }
+
+    private findClassBodyStart(sanitized: string): number {
+        const declarationMatch = sanitized.match(/\b(?:class|interface|object)\s+\w+/);
+        if (!declarationMatch || declarationMatch.index === undefined) {
+            return -1;
+        }
+        const braceIndex = sanitized.indexOf('{', declarationMatch.index + declarationMatch[0].length);
+        return braceIndex === -1 ? -1 : braceIndex + 1;
+    }
+
+    private matchDeclaration(sanitized: string, index: number): MethodDeclaration | null {
+        JaxRsParser.declarationPattern.lastIndex = index;
+        const match = JaxRsParser.declarationPattern.exec(sanitized);
+        if (!match) {
+            return null;
+        }
         return {
-            content: methodAnnotations.join('\n'),
-            startIndex: annotationBlockStart
+            name: match[1],
+            start: index,
+            parenIndex: index + match[0].length - 1,
+            annotations: []
         };
     }
 
     /**
-     * 提取方法级别的 @Path（取最后一个，避免匹配类级 @Path）
+     * 提取范围 [rangeStart, rangeEnd) 内的注解片段；净化文本中字符串与注释已被清空，
+     * 只有真实注解的 '@' 会出现在该范围内。
      */
-    private extractMethodPath(annotationBlock: string): string {
-        const pattern = /@(?:[\w.]+\.)?Path\s*\(\s*"([^"]+)"\s*\)/g;
-        let match: RegExpExecArray | null;
+    private collectAnnotationSpans(content: string, sanitized: string, rangeStart: number, rangeEnd: number): MethodAnnotationSpan[] {
+        const spans: MethodAnnotationSpan[] = [];
+        let index = rangeStart;
+        while (index < rangeEnd) {
+            if (sanitized[index] !== '@') {
+                index++;
+                continue;
+            }
+            const end = this.skipAnnotation(sanitized, index);
+            spans.push({ start: index, raw: content.substring(index, end) });
+            index = end;
+        }
+        return spans;
+    }
+
+    private annotationSimpleName(span: MethodAnnotationSpan): string {
+        const nameMatch = span.raw.match(/@([\w.]+)/);
+        return nameMatch ? nameMatch[1].split('.').pop()! : '';
+    }
+
+    /**
+     * 提取方法级别的 @Path（取最后一个，避免匹配到类级 @Path）。
+     */
+    private extractMethodPath(annotations: MethodAnnotationSpan[]): string {
         let lastPath = '';
-        while ((match = pattern.exec(annotationBlock)) !== null) {
-            lastPath = match[1].replace(/\s+/g, '');
+        for (const span of annotations) {
+            if (this.annotationSimpleName(span) !== 'Path') {
+                continue;
+            }
+            const pathMatch = span.raw.match(/@(?:[\w.]+\.)?Path\s*\(\s*"([^"]+)"\s*\)/);
+            if (pathMatch) {
+                lastPath = pathMatch[1].replace(/\s+/g, '');
+            }
         }
         return lastPath;
+    }
+
+    /**
+     * 声明参数列表闭合后，识别 `;`（接口/抽象方法）或 `{`（方法体）终结符；
+     * 中间只允许 throws/default 等子句字符，以及 Kotlin 返回类型的 `:` 与可空 `?`。
+     */
+    private findDeclarationTerminator(sanitized: string, from: number): DeclarationTerminator {
+        for (let index = from; index < sanitized.length; index++) {
+            const ch = sanitized[index];
+            if (ch === '{') {
+                return { kind: 'body', index, bodyEnd: this.skipBraceBlock(sanitized, index) };
+            }
+            if (ch === ';') {
+                return { kind: 'semicolon', index };
+            }
+            if (!/[\w\s.,<>[\]&:?]/.test(ch)) {
+                return { kind: 'other', index };
+            }
+        }
+        return { kind: 'other', index: sanitized.length };
+    }
+
+    /**
+     * 跳过非声明成员（字段等）到下一个成员边界：`;`、`@`、`{`、`}` 或行尾（Kotlin 无分号）。
+     */
+    private skipToMemberBoundary(sanitized: string, from: number): number {
+        let parenDepth = 0;
+        let braceDepth = 0;
+        for (let index = from; index < sanitized.length; index++) {
+            const ch = sanitized[index];
+            if (ch === '(') {
+                parenDepth++;
+            } else if (ch === ')') {
+                parenDepth--;
+            } else if (ch === '{') {
+                if (parenDepth === 0 && braceDepth === 0) {
+                    return index;
+                }
+                braceDepth++;
+            } else if (ch === '}') {
+                if (braceDepth === 0) {
+                    return index;
+                }
+                braceDepth--;
+            } else if (ch === ';' || ch === '@' || ch === '\n') {
+                if (parenDepth === 0 && braceDepth === 0) {
+                    return ch === ';' ? index + 1 : index;
+                }
+            }
+        }
+        return sanitized.length;
+    }
+
+    private skipAnnotation(sanitized: string, atIndex: number): number {
+        let index = atIndex + 1;
+        while (index < sanitized.length && /[\w.]/.test(sanitized[index])) {
+            index++;
+        }
+        while (index < sanitized.length && /\s/.test(sanitized[index])) {
+            index++;
+        }
+        if (sanitized[index] === '(') {
+            const closeIndex = this.findMatchingParen(sanitized, index);
+            if (closeIndex !== -1) {
+                return closeIndex + 1;
+            }
+        }
+        return index;
+    }
+
+    private findMatchingParen(sanitized: string, openIndex: number): number {
+        let depth = 0;
+        for (let index = openIndex; index < sanitized.length; index++) {
+            const ch = sanitized[index];
+            if (ch === '(') {
+                depth++;
+            } else if (ch === ')') {
+                depth--;
+                if (depth === 0) {
+                    return index;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private skipBraceBlock(sanitized: string, openIndex: number): number {
+        let depth = 0;
+        for (let index = openIndex; index < sanitized.length; index++) {
+            const ch = sanitized[index];
+            if (ch === '{') {
+                depth++;
+            } else if (ch === '}') {
+                depth--;
+                if (depth === 0) {
+                    return index + 1;
+                }
+            }
+        }
+        return sanitized.length;
     }
 
     private extractAnnotationForward(content: string, startIndex: number): string | null {
@@ -287,7 +407,7 @@ export class JaxRsParser {
             return base; // 方法路径为空，只返回类路径
         }
 
-        const method = methodPath.replace(/^\/+/, ''); // 去除开头所有斜杠
+        const method = methodPath.replace(/^\/+/, '');
         return base + '/' + method;
     }
 

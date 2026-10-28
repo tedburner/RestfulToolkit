@@ -9,6 +9,8 @@ export class ConfigManager {
     private logger: Logger;
     private projectConfigs: Map<string, ScanConfig> = new Map();
     private workspaceFolders: string[] = [];
+    /** 加载版本令牌：并发的旧一轮读取完成后不得覆盖新一轮结果 */
+    private configLoadVersion = 0;
 
     private constructor() {
         this.logger = Logger.getInstance();
@@ -31,10 +33,14 @@ export class ConfigManager {
     }
 
     /**
-     * 异步加载项目配置文件，避免阻塞 Extension Host
+     * 异步加载项目配置文件，避免阻塞 Extension Host。
+     *
+     * 读取结果先积累到局部 Map，全部完成后按加载版本一次性替换共享快照；
+     * 旧一轮异步读取在提交前发现版本已推进时直接丢弃，防止过期文件夹配置混入。
      */
     private async loadProjectConfigs(): Promise<void> {
-        this.projectConfigs.clear();
+        const loadVersion = ++this.configLoadVersion;
+        const loaded = new Map<string, ScanConfig>();
 
         for (const folder of this.workspaceFolders) {
             const configPath = path.join(folder, PROJECT_CONFIG_FILE);
@@ -44,13 +50,24 @@ export class ConfigManager {
                 const text = Buffer.from(content).toString('utf-8');
                 const config = this.validateProjectConfig(this.safeJsonParse(text));
                 if (config) {
-                    this.projectConfigs.set(folder, config);
+                    loaded.set(folder, config);
                 }
                 this.logger.info(`Loaded project config from ${configPath}`);
-            } catch {
-                // 文件不存在或读取失败，跳过
+            } catch (error) {
+                if ((error as { code?: string })?.code === 'FileNotFound') {
+                    this.logger.info(`No project config at ${configPath}`);
+                } else {
+                    const message = error instanceof Error ? error.message : String(error);
+                    this.logger.warning(`Failed to load project config from ${configPath}: ${message}`);
+                }
             }
         }
+
+        if (loadVersion !== this.configLoadVersion) {
+            this.logger.info('Discarding stale project config snapshot; a newer reload is in progress');
+            return;
+        }
+        this.projectConfigs = loaded;
     }
 
     private safeJsonParse(content: string): unknown {
@@ -142,6 +159,29 @@ export class ConfigManager {
         return inspected?.workspaceFolderValue
             ?? inspected?.workspaceValue
             ?? inspected?.globalValue;
+    }
+
+    /**
+     * 按工作区根目录分别合成扫描范围配置：folder 级 VS Code 设置 → 该根的项目配置 → 默认值。
+     *
+     * 多根工作区中各根的 scanPaths/excludePaths 互不合并，避免一个根的自定义
+     * glob 顶掉另一个根的默认扫描模式。无根（未初始化）时返回空数组，调用方回退
+     * 到 {@link getScanConfig} 的全局合并配置。
+     */
+    getFolderScanConfigs(): Array<{ folder: vscode.Uri; scanPaths: string[]; excludePaths: string[] }> {
+        return this.workspaceFolders.map(folderPath => {
+            const folderUri = vscode.Uri.file(folderPath);
+            const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit', folderUri);
+            const vsCodeScanPaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.scanPaths);
+            const vsCodeExcludePaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.excludePaths);
+            const projectConfig = this.projectConfigs.get(folderPath);
+
+            return {
+                folder: folderUri,
+                scanPaths: vsCodeScanPaths ?? projectConfig?.scanPaths ?? DEFAULT_CONFIG.scanPaths,
+                excludePaths: vsCodeExcludePaths ?? projectConfig?.excludePaths ?? DEFAULT_CONFIG.excludePaths
+            };
+        });
     }
 
     private getProjectConfigs(): ScanConfig[] {

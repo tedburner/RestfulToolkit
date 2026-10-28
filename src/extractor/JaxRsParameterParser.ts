@@ -24,7 +24,7 @@ export class JaxRsParameterParser {
         const paramSection = methodSignature.substring(parenStart + 1, parenEnd).trim();
         if (!paramSection) { return params; }
 
-        const paramStrings = this.splitParameters(paramSection);
+        const paramStrings = SpringParameterParser.splitParameters(paramSection);
 
         for (const paramStr of paramStrings) {
             const param = this.parseSingleParameter(paramStr.trim());
@@ -36,27 +36,24 @@ export class JaxRsParameterParser {
         return params;
     }
 
-    private splitParameters(paramSection: string): string[] {
-        const params: string[] = [];
-        let depth = 0;
-        let parenDepth = 0;
-        let current = '';
-
-        for (const char of paramSection) {
-            if (char === '<') { depth++; }
-            else if (char === '>') { depth--; }
-            else if (char === '(') { parenDepth++; }
-            else if (char === ')') { parenDepth--; }
-            else if (char === ',' && depth === 0 && parenDepth === 0) {
-                params.push(current.trim());
-                current = '';
-                continue;
+    private extractTypeAndName(afterAnnotation: string): { type: string; varName: string } | null {
+        // Kotlin: "id: Long"、"q: String?"
+        const kotlinMatch = afterAnnotation.match(/^(\w+)\s*:\s*(.+?)(?:\s*=.*)?$/);
+        if (kotlinMatch) {
+            const kotlinType = kotlinMatch[2].trim().replace(/\?$/, '').trim();
+            if (kotlinType) {
+                return { type: kotlinType, varName: kotlinMatch[1] };
             }
-            current += char;
         }
-        if (current.trim()) { params.push(current.trim()); }
-
-        return params;
+        const match = afterAnnotation.match(/([\w<>]+)\s+(\w+)/);
+        if (match) {
+            return { type: match[1], varName: match[2] };
+        }
+        const typeOnly = afterAnnotation.match(/^([\w<>]+)/);
+        if (typeOnly) {
+            return { type: typeOnly[1], varName: typeOnly[1].toLowerCase() };
+        }
+        return null;
     }
 
     private parseSingleParameter(paramStr: string): EndpointParameter | null {
@@ -92,18 +89,6 @@ export class JaxRsParameterParser {
             return springParams[0];
         }
 
-        return null;
-    }
-
-    private extractTypeAndName(afterAnnotation: string): { type: string; varName: string } | null {
-        const match = afterAnnotation.match(/([\w<>]+)\s+(\w+)/);
-        if (match) {
-            return { type: match[1], varName: match[2] };
-        }
-        const typeOnly = afterAnnotation.match(/^([\w<>]+)/);
-        if (typeOnly) {
-            return { type: typeOnly[1], varName: typeOnly[1].toLowerCase() };
-        }
         return null;
     }
 }

@@ -33,7 +33,8 @@ export class CopyEndpointParametersCommand {
         const position = selection.active;
 
         try {
-            const copyInfo = await this.extractor.extract(document, position);
+            // 先提取路由与参数并让用户选择格式；取消或选择不需要 DTO 的格式时不做额外文件 I/O
+            const copyInfo = await this.extractor.extract(document, position, { expandDto: false });
 
             if (!copyInfo || copyInfo.parameters.length === 0) {
                 vscode.window.showWarningMessage(labels.noParams);
@@ -42,6 +43,10 @@ export class CopyEndpointParametersCommand {
 
             const format = await this.showFormatPicker(copyInfo, labels);
             if (!format) { return; }
+
+            if (format !== 'url-params') {
+                await this.extractor.expandDtoFields(copyInfo, document);
+            }
 
             const nameTransform = this.autoDetectNameTransform(copyInfo);
 

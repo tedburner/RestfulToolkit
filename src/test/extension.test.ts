@@ -5,6 +5,52 @@ import { FileScanner } from '../scanner/FileScanner';
 import { FileWatcher } from '../utils/FileWatcher';
 
 suite('Extension Activation Test Suite', () => {
+    test('runs a queued configuration reload after the active reload fails', async () => {
+        const originalRegister = vscode.commands.registerCommand;
+        const originalStatus = vscode.window.createStatusBarItem;
+        const originalCreateWatcher = vscode.workspace.createFileSystemWatcher;
+        const originalListener = vscode.workspace.onDidChangeConfiguration;
+        const originalSetFolders = ConfigManager.prototype.setWorkspaceFolders;
+        const originalStart = FileWatcher.prototype.start;
+        const originalScan = FileScanner.prototype.scanWorkspace;
+        let listener!: (event: vscode.ConfigurationChangeEvent) => void;
+        let release!: () => void;
+        let started!: () => void;
+        const blocked = new Promise<void>(resolve => { release = resolve; });
+        const entered = new Promise<void>(resolve => { started = resolve; });
+        let calls = 0;
+        vscode.commands.registerCommand = (() => ({ dispose: () => undefined })) as typeof vscode.commands.registerCommand;
+        vscode.window.createStatusBarItem = (() => ({ text: '', show: () => undefined, hide: () => undefined, dispose: () => undefined })) as typeof vscode.window.createStatusBarItem;
+        vscode.workspace.createFileSystemWatcher = ((() => ({ onDidCreate: () => ({ dispose: () => undefined }), onDidChange: () => ({ dispose: () => undefined }), onDidDelete: () => ({ dispose: () => undefined }), dispose: () => undefined })) as unknown) as typeof vscode.workspace.createFileSystemWatcher;
+        (vscode.workspace as unknown as { onDidChangeConfiguration: typeof vscode.workspace.onDidChangeConfiguration }).onDidChangeConfiguration = ((fn: typeof listener) => { listener = fn; return { dispose: () => undefined }; }) as typeof vscode.workspace.onDidChangeConfiguration;
+        ConfigManager.prototype.setWorkspaceFolders = async () => {
+            calls++;
+            if (calls === 2) { started(); await blocked; throw new Error('reload failed'); }
+        };
+        FileWatcher.prototype.start = () => undefined;
+        FileScanner.prototype.scanWorkspace = async () => undefined;
+        const extension = await import('../extension');
+        try {
+            await extension.activate({ subscriptions: [] } as unknown as vscode.ExtensionContext);
+            const event = { affectsConfiguration: () => true } as vscode.ConfigurationChangeEvent;
+            listener(event);
+            await entered;
+            listener(event);
+            release();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            assert.strictEqual(calls, 3, 'queued reload must run after the failure');
+            await extension.deactivate();
+        } finally {
+            release();
+            vscode.commands.registerCommand = originalRegister;
+            vscode.window.createStatusBarItem = originalStatus;
+            vscode.workspace.createFileSystemWatcher = originalCreateWatcher;
+            (vscode.workspace as unknown as { onDidChangeConfiguration: typeof vscode.workspace.onDidChangeConfiguration }).onDidChangeConfiguration = originalListener;
+            ConfigManager.prototype.setWorkspaceFolders = originalSetFolders;
+            FileWatcher.prototype.start = originalStart;
+            FileScanner.prototype.scanWorkspace = originalScan;
+        }
+    });
     test('registers commands before the initial scan completes', async () => {
         const originalRegisterCommand = vscode.commands.registerCommand;
         const originalStatusBar = vscode.window.createStatusBarItem;
@@ -65,7 +111,7 @@ suite('Extension Activation Test Suite', () => {
         }
     });
 
-    test('deactivation disposes the scanner and waits for the background scan to settle', async () => {
+    test('deactivation drains the background scan before disposing the scanner', async () => {
         const originalRegisterCommand = vscode.commands.registerCommand;
         const originalStatusBar = vscode.window.createStatusBarItem;
         const originalCreateWatcher = vscode.workspace.createFileSystemWatcher;
@@ -107,12 +153,13 @@ suite('Extension Activation Test Suite', () => {
             const deactivation = extension.deactivate().then(() => { deactivated = true; });
             await new Promise(resolve => setTimeout(resolve, 0));
 
-            assert.strictEqual(scannerDisposeCalls, 1, 'deactivation must stop scanner work first');
+            assert.strictEqual(scannerDisposeCalls, 0, 'deactivation must drain pending scans before disposing the scanner');
             assert.strictEqual(deactivated, false, 'deactivation must wait for the active background scan');
 
             finishScan();
             await deactivation;
             assert.strictEqual(deactivated, true);
+            assert.strictEqual(scannerDisposeCalls, 1, 'deactivation must dispose the scanner once the scan settles');
         } finally {
             vscode.commands.registerCommand = originalRegisterCommand;
             vscode.window.createStatusBarItem = originalStatusBar;

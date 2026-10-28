@@ -17,28 +17,36 @@ export class SpringMvcParser {
         this.logger = Logger.getInstance();
     }
 
-    parseClassLevelPath(content: string): string | null {
-        const sanitized = TextProcessor.sanitize(content);
+    /**
+     * 解析类级 @RequestMapping 的完整路径集合（多路径注解不再缩减为首个）。
+     */
+    parseClassLevelPaths(content: string, precomputedSanitized?: string): string[] {
+        const sanitized = precomputedSanitized ?? TextProcessor.sanitize(content);
         const typeDeclarationIndex = this.findTypeDeclarationIndex(sanitized);
         if (typeDeclarationIndex === -1) {
-            return null;
+            return [];
         }
 
         const pattern = /@(?:[\w.]+\.)?RequestMapping(?:\s|\(|$)/g;
         let match: RegExpExecArray | null;
         let annotationText: string | null = null;
         while ((match = pattern.exec(sanitized)) !== null && match.index < typeDeclarationIndex) {
-            annotationText = this.extractAnnotationForward(content, match.index);
+            annotationText = this.extractAnnotationForward(content, match.index, sanitized);
         }
 
-        const paths = annotationText ? this.extractPathValues(annotationText) : [];
-        return paths.length > 0 ? paths[0] : null;
+        return annotationText ? this.extractPathValues(annotationText) : [];
     }
 
-    parseMethodAnnotations(content: string, className: string, classPath: string | null, filePath: string, lineIndex?: number[], contentOffset: number = 0): RestEndpoint[] {
+    /**
+     * @param precomputedSanitized 调用方已生成的净化文本（与原文等长）；缺省时本地净化
+     */
+    parseMethodAnnotations(content: string, className: string, classPath: string | string[] | null, filePath: string, lineIndex?: number[], contentOffset: number = 0, precomputedSanitized?: string): RestEndpoint[] {
         const endpoints: RestEndpoint[] = [];
-        const sanitized = TextProcessor.sanitize(content);
+        const sanitized = precomputedSanitized ?? TextProcessor.sanitize(content);
         const typeDeclarationIndex = this.findTypeDeclarationIndex(sanitized);
+        const classPaths = classPath === null || classPath === undefined
+            ? []
+            : Array.isArray(classPath) ? classPath : [classPath];
 
         const annotationPattern = /@(?:[\w.]+\.)?(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)(?:\s|\(|$)/g;
         let annotationMatch: RegExpExecArray | null;
@@ -48,7 +56,7 @@ export class SpringMvcParser {
             const simpleName = annotationMatch[1];
 
             // 从注解位置向后提取完整注解文本（包括跨行）
-            const annotationText = this.extractAnnotationForward(content, annotationIndex);
+            const annotationText = this.extractAnnotationForward(content, annotationIndex, sanitized);
             if (!annotationText) {
                 continue;
             }
@@ -70,7 +78,7 @@ export class SpringMvcParser {
                 : TextProcessor.getLineNumberFallback(content, annotationIndex);
             const methodEndpoints = this.parseAnnotationText(
                 annotationText,
-                classPath || '',
+                classPaths,
                 className,
                 methodName,
                 filePath,
@@ -83,29 +91,38 @@ export class SpringMvcParser {
         return endpoints;
     }
 
-    private extractAnnotationForward(content: string, startIndex: number): string | null {
+    /**
+     * 在净化文本上定位注解的完整范围并截取原文：字符串/注释中的括号已被清空，
+     * 字符串内括号（如 "/a(b"）不会破坏配对；注解名与左括号之间允许空白。
+     */
+    private extractAnnotationForward(content: string, startIndex: number, sanitized?: string): string | null {
         // 确保 startIndex 指向 @ 符号
         if (content[startIndex] !== '@') {
             return null;
         }
+        const lexical = sanitized ?? content;
 
-        // 查找注解名称结束位置（空格或左括号）
-        let nameEnd = startIndex;
-        while (nameEnd < content.length && content[nameEnd] !== '(' && content[nameEnd] !== ' ' && content[nameEnd] !== '\n') {
+        // 查找注解名称结束位置
+        let nameEnd = startIndex + 1;
+        while (nameEnd < lexical.length && /[\w.]/.test(lexical[nameEnd])) {
             nameEnd++;
         }
 
-        // 如果没有括号，说明是简写注解（如 @GetMapping）
-        if (content[nameEnd] !== '(') {
+        // 跳过注解名与左括号之间的空白
+        let cursor = nameEnd;
+        while (cursor < lexical.length && /\s/.test(lexical[cursor])) {
+            cursor++;
+        }
+
+        if (lexical[cursor] !== '(') {
             return content.substring(startIndex, nameEnd);
         }
 
-        // 有括号，需要找到对应的闭合括号（考虑嵌套）
+        // 在净化文本上配对括号（考虑嵌套）
         let depth = 1;
-        let endIndex = nameEnd + 1;
-
-        while (endIndex < content.length && depth > 0) {
-            const char = content[endIndex];
+        let endIndex = cursor + 1;
+        while (endIndex < lexical.length && depth > 0) {
+            const char = lexical[endIndex];
             if (char === '(') {
                 depth++;
             } else if (char === ')') {
@@ -168,11 +185,11 @@ export class SpringMvcParser {
     }
 
     /**
-     * 解析单个注解文本（支持跨行格式）
+     * 解析单个注解文本（支持跨行格式）；类级多路径与方法路径做笛卡尔积。
      */
     private parseAnnotationText(
         annotationText: string,
-        classPath: string,
+        classPaths: string[],
         className: string,
         methodName: string,
         filePath: string,
@@ -196,14 +213,14 @@ export class SpringMvcParser {
         if (httpMethod) {
             // 简写注解（@GetMapping 等）
             if (pathValues.length > 0) {
-                this.addEndpoints(endpoints, [httpMethod], pathValues, classPath, className, methodName, filePath, line);
+                this.addEndpoints(endpoints, [httpMethod], pathValues, classPaths, className, methodName, filePath, line);
             } else {
                 // Spring mapping 未声明方法路径时继承类级路径；无类路径时映射到根路径。
-                this.addEndpoints(endpoints, [httpMethod], [''], classPath, className, methodName, filePath, line);
+                this.addEndpoints(endpoints, [httpMethod], [''], classPaths, className, methodName, filePath, line);
             }
         } else if (annotationName === 'RequestMapping') {
             // @RequestMapping 注解（需要提取 method 参数）
-            this.addEndpoints(endpoints, this.extractRequestMethods(annotationText), pathValues.length > 0 ? pathValues : [''], classPath, className, methodName, filePath, line);
+            this.addEndpoints(endpoints, this.extractRequestMethods(annotationText), pathValues.length > 0 ? pathValues : [''], classPaths, className, methodName, filePath, line);
         }
 
         return endpoints;
@@ -213,22 +230,25 @@ export class SpringMvcParser {
         endpoints: RestEndpoint[],
         methods: HttpMethod[],
         paths: string[],
-        classPath: string,
+        classPaths: string[],
         className: string,
         methodName: string,
         filePath: string,
         line: number
     ): void {
+        const effectiveClassPaths = classPaths.length > 0 ? classPaths : [''];
         for (const method of methods) {
-            for (const path of paths) {
-                endpoints.push(this.createEndpoint(
-                    method,
-                    this.combinePath(classPath, path),
-                    className,
-                    methodName,
-                    filePath,
-                    line
-                ));
+            for (const classPath of effectiveClassPaths) {
+                for (const path of paths) {
+                    endpoints.push(this.createEndpoint(
+                        method,
+                        this.combinePath(classPath, path),
+                        className,
+                        methodName,
+                        filePath,
+                        line
+                    ));
+                }
             }
         }
     }
@@ -276,9 +296,23 @@ export class SpringMvcParser {
             return null;
         }
 
+        // 引号感知的括号配对：字符串字面量中的括号（如 "/a(b"）不参与计数
         let depth = 0;
+        let inString: string | null = null;
         for (let i = parenStart; i < annotationText.length; i++) {
             const char = annotationText[i];
+            if (inString) {
+                if (char === '\\') {
+                    i++;
+                } else if (char === inString) {
+                    inString = null;
+                }
+                continue;
+            }
+            if (char === '"' || char === "'") {
+                inString = char;
+                continue;
+            }
             if (char === '(') {
                 depth++;
             } else if (char === ')') {

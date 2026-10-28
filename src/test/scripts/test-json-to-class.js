@@ -17,6 +17,7 @@ const path = require('path');
 const scriptDir = __dirname;
 const projectRoot = path.resolve(scriptDir, '../../..');
 process.chdir(projectRoot);
+require('./lib/dist-check').ensureFreshDist();
 
 // 加载模块
 const { inferTypeFromValue, getImportStatements } = require(path.join(projectRoot, 'dist/generator/JsonTypeMapper'));

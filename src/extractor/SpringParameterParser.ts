@@ -25,7 +25,7 @@ export class SpringParameterParser {
         if (!paramSection) { return params; }
 
         // 按逗号分割参数，需尊重泛型 <T> 的括号嵌套
-        const paramStrings = this.splitParameters(paramSection);
+        const paramStrings = SpringParameterParser.splitParameters(paramSection);
 
         for (const paramStr of paramStrings) {
             const param = this.parseSingleParameter(paramStr.trim());
@@ -37,7 +37,7 @@ export class SpringParameterParser {
         return params;
     }
 
-    private splitParameters(paramSection: string): string[] {
+    static splitParameters(paramSection: string): string[] {
         const params: string[] = [];
         let depth = 0;
         let parenDepth = 0;
@@ -157,7 +157,15 @@ export class SpringParameterParser {
     }
 
     private extractTypeAndName(afterAnnotation: string): { type: string; varName: string } | null {
-        // 匹配: "String keyword"、"Long id"、"UserDto userDto"、"MultipartFile file"
+        // Kotlin: "q: String"、"q: List<String>?"，可带默认值
+        const kotlinMatch = afterAnnotation.match(/^(\w+)\s*:\s*(.+?)(?:\s*=.*)?$/);
+        if (kotlinMatch) {
+            const kotlinType = kotlinMatch[2].trim().replace(/\?$/, '').trim();
+            if (kotlinType) {
+                return { type: kotlinType, varName: kotlinMatch[1] };
+            }
+        }
+        // Java: "String keyword"、"Long id"、"UserDto userDto"、"MultipartFile file"
         const match = afterAnnotation.match(/([\w<>]+)\s+(\w+)/);
         if (match) {
             return { type: match[1], varName: match[2] };

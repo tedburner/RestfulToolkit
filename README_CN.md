@@ -132,6 +132,8 @@ Base URL 解析顺序：
 
 在端点上右键，选择 `RestfulToolkit: Copy as cURL`。
 
+Spring 表单请求中的 `@RequestParam` 默认放入表单正文；源码注解无法区分表单字段与 URL 查询参数。
+
 输出示例：
 
 ```bash
@@ -190,6 +192,7 @@ RestfulToolkit 按以下优先级读取配置：
 - 无法解析 `${api.path}` 这类路由占位符。
 - 无法检测通过 `@Configuration` 类注册的路由。
 - Kotlin 字符串模板支持有限。
+- Kotlin 表达式函数体（`fun e() = service()`）声明的端点暂不识别。
 - 不会评估 `@ConditionalOnProperty` 等条件注解。
 
 对典型 Spring Boot 项目的预期端点检测准确率约为 80-85%。

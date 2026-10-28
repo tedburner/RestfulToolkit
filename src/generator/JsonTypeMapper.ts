@@ -14,13 +14,16 @@ export function inferTypeFromValue(value: unknown, language: TargetLanguage): st
         return Number.isInteger(value) ? 'Long' : 'Double';
     }
     if (Array.isArray(value)) {
-        const itemType = value.length > 0 ? inferTypeFromValue(value[0], language) : 'Object';
+        // 空数组与异构数组退化为平台通配类型；非空数组按首个元素推断
+        const itemType = value.length > 0
+            ? inferTypeFromValue(value[0], language)
+            : (language === 'java' ? 'Object' : 'Any?');
         return `List<${itemType}>`;
     }
     if (typeof value === 'object') {
-        return 'Object';
+        return language === 'java' ? 'Object' : 'Any';
     }
-    return 'Object';
+    return language === 'java' ? 'Object' : 'Any?';
 }
 
 export function getImportStatements(language: TargetLanguage, useLombok = false): string {

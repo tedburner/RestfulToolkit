@@ -58,6 +58,10 @@ export class EndpointCache {
         return (this.fileIndex.get(file) || []).map(item => this.cloneEndpoint(item.endpoint));
     }
 
+    getIndexedFiles(): string[] {
+        return Array.from(this.fileIndex.keys());
+    }
+
     removeByFile(file: string): void {
         const endpoints = this.fileIndex.get(file);
         if (!endpoints) {
@@ -81,10 +85,102 @@ export class EndpointCache {
         this.allEndpoints = this.allEndpoints.filter(e => e.endpoint.file !== file);
     }
 
+    /**
+     * 单文件整体替换端点：就地压缩全量数组并增量修补文件/路径索引，成本与
+     * 该文件的端点数（外加一次全量数组指针压缩）成正比，供 watcher 保存等
+     * 单文件热路径使用；不重建缓存数组。
+     *
+     * 顺序契约与批量更新一致：未涉及文件的端点保持原顺序，新端点追加到末尾。
+     */
     updateFile(file: string, endpoints: RestEndpoint[]): void {
-        this.removeByFile(file);
-        for (const endpoint of endpoints) {
-            this.add(endpoint);
+        const previousItems = this.fileIndex.get(file);
+        const newItems = endpoints.map(endpoint => this.createSearchableEndpoint(endpoint));
+
+        if (newItems.length > 0) {
+            this.fileIndex.set(file, newItems);
+        } else {
+            this.fileIndex.delete(file);
+        }
+
+        if (previousItems) {
+            let removedCount = 0;
+            let writeIndex = 0;
+            for (let index = 0; index < this.allEndpoints.length; index++) {
+                const item = this.allEndpoints[index];
+                if (item.endpoint.file === file) {
+                    removedCount++;
+                    continue;
+                }
+                this.allEndpoints[writeIndex++] = item;
+            }
+            this.allEndpoints.length = writeIndex;
+            this.endpointCount -= removedCount;
+
+            for (const item of previousItems) {
+                const pathEndpoints = this.endpoints.get(item.endpoint.path);
+                if (!pathEndpoints) {
+                    continue;
+                }
+                const remaining = pathEndpoints.filter(e => e.endpoint.file !== file);
+                if (remaining.length === 0) {
+                    this.endpoints.delete(item.endpoint.path);
+                } else {
+                    this.endpoints.set(item.endpoint.path, remaining);
+                }
+            }
+        }
+
+        for (const item of newItems) {
+            this.allEndpoints.push(item);
+            this.indexEndpoint(this.endpoints, item.endpoint.path, item);
+        }
+        this.endpointCount += newItems.length;
+    }
+
+    /**
+     * 批量整体替换多个文件的端点：一批变更只重建一次全量数组与索引，
+     * 避免逐文件 removeByFile 造成的 O(变更文件数 × 总端点数) 累计成本。
+     * 单文件批量走 updateFile 的增量修补，避免不必要的重建。
+     *
+     * 顺序契约与逐文件更新一致：未涉及文件的端点保持原顺序，新端点按更新
+     * 顺序追加到末尾。
+     */
+    updateFiles(updates: Array<{ file: string; endpoints: RestEndpoint[] }>): void {
+        if (updates.length === 0) {
+            return;
+        }
+        if (updates.length === 1) {
+            this.updateFile(updates[0].file, updates[0].endpoints);
+            return;
+        }
+        const updatedFiles = new Set(updates.map(update => update.file));
+
+        const survivingItems = this.allEndpoints.filter(item => !updatedFiles.has(item.endpoint.file));
+        const addedItems: SearchableEndpoint[] = [];
+        for (const update of updates) {
+            for (const endpoint of update.endpoints) {
+                addedItems.push(this.createSearchableEndpoint(endpoint));
+            }
+        }
+
+        this.allEndpoints = survivingItems.concat(addedItems);
+
+        this.fileIndex = new Map();
+        this.endpoints = new Map();
+        for (const item of this.allEndpoints) {
+            this.indexEndpoint(this.fileIndex, item.endpoint.file, item);
+            this.indexEndpoint(this.endpoints, item.endpoint.path, item);
+        }
+
+        this.endpointCount = this.allEndpoints.length;
+    }
+
+    private indexEndpoint(index: Map<string, SearchableEndpoint[]>, key: string, item: SearchableEndpoint): void {
+        const bucket = index.get(key);
+        if (bucket) {
+            bucket.push(item);
+        } else {
+            index.set(key, [item]);
         }
     }
 

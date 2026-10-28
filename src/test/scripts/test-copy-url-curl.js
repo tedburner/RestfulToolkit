@@ -16,6 +16,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 require('./mock-vscode');
+require('./lib/dist-check').ensureFreshDist();
+
+const { makeCopyInfo } = require('./lib/copy-info-fixture');
 
 const scriptDir = __dirname;
 const projectRoot = path.resolve(scriptDir, '../../..');
@@ -72,35 +75,31 @@ console.log('--- 1. URL 生成 ---');
 
 {
     // 简单 GET，无参数
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/health',
         parameters: [],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = urlGen.generate(info, 'http://localhost:8080');
     assert(result === 'http://localhost:8080/api/test/health', '简单 GET 无参数', `期望 "http://localhost:8080/api/test/health"，实际 "${result}"`);
 }
 
 {
     // GET + 路径参数（保留占位符）
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/users/{id}',
         parameters: [{ name: 'id', type: 'Long', source: 'path', originalCaseName: 'id', isRequired: true }],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = urlGen.generate(info, 'http://localhost:8080');
     assert(result === 'http://localhost:8080/api/test/users/{id}', 'GET + 路径参数占位符', `期望保留 {id}，实际 "${result}"`);
 }
 
 {
     // GET + 查询参数
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/search',
@@ -108,53 +107,45 @@ console.log('--- 1. URL 生成 ---');
             { name: 'keyword', type: 'String', source: 'query', originalCaseName: 'keyword', isRequired: true },
             { name: 'page', type: 'int', source: 'query', originalCaseName: 'page', isRequired: false }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = urlGen.generate(info, 'http://localhost:8080');
     assert(result === 'http://localhost:8080/api/test/search?keyword=&page=', 'GET + 多查询参数', `期望拼接查询参数，实际 "${result}"`);
 }
 
 {
     // POST + Body（不拼查询参数）
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'json',
         path: '/api/test/users',
         parameters: [{ name: 'userDto', type: 'UserDto', source: 'body', originalCaseName: 'userDto', isRequired: true }],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = urlGen.generate(info, 'http://localhost:8080');
     assert(result === 'http://localhost:8080/api/test/users', 'POST + Body 不拼查询', `期望无查询参数，实际 "${result}"`);
 }
 
 {
     // 自定义 Base URL
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/v1/items',
         parameters: [],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = urlGen.generate(info, 'https://api.example.com:3000');
     assert(result === 'https://api.example.com:3000/api/v1/items', '自定义 Base URL', `实际 "${result}"`);
 }
 
 {
     // JAX-RS 端点
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/search',
         parameters: [
             { name: 'keyword', type: 'String', source: 'query', originalCaseName: 'keyword', isRequired: true }
         ],
-        framework: 'JAX-RS',
-        dtoFields: new Map()
-    };
+    });
     const result = urlGen.generate(info, 'http://localhost:9090');
     assert(result === 'http://localhost:9090/api/test/search?keyword=', 'JAX-RS + 查询参数', `实际 "${result}"`);
 }
@@ -164,14 +155,12 @@ console.log('\n--- 2. cURL 命令生成 ---');
 
 {
     // GET 无参数
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/health',
         parameters: [],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, 'curl -X GET', 'GET cURL 基本格式');
     assertContains(result, 'http://localhost:8080/api/test/health', 'GET cURL URL');
@@ -180,16 +169,14 @@ console.log('\n--- 2. cURL 命令生成 ---');
 
 {
     // GET + 查询参数
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/search',
         parameters: [
             { name: 'keyword', type: 'String', source: 'query', originalCaseName: 'keyword', isRequired: true }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, '?keyword=', 'GET + 查询参数拼入 URL', `实际: ${result}`);
 }
@@ -203,14 +190,13 @@ console.log('\n--- 2. cURL 命令生成 ---');
         { name: 'email_addr', type: 'String', originalName: 'email' },
         { name: 'phone', type: 'String', originalName: 'phone' }
     ]);
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'json',
         path: '/api/test/users',
         parameters: [{ name: 'userDto', type: 'UserDto', source: 'body', originalCaseName: 'userDto', isRequired: true }],
-        framework: 'Spring',
         dtoFields
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, 'curl -X POST', 'POST cURL 基本格式');
     assertContains(result, "Content-Type: application/json", 'POST cURL Content-Type');
@@ -230,14 +216,13 @@ console.log('\n--- 2. cURL 命令生成 ---');
         ]},
         { name: 'total', type: 'Double', originalName: 'total' }
     ]);
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'json',
         path: '/api/test/order',
         parameters: [{ name: 'order', type: 'OrderDto', source: 'body', originalCaseName: 'order', isRequired: true }],
-        framework: 'Spring',
         dtoFields: nestedDtoFields
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, '"buyer"', '嵌套 DTO 父字段');
     assertContains(result, '"userName"', '嵌套 DTO 子字段');
@@ -246,7 +231,7 @@ console.log('\n--- 2. cURL 命令生成 ---');
 
 {
     // @RequestHeader 参数
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/data',
@@ -254,9 +239,7 @@ console.log('\n--- 2. cURL 命令生成 ---');
             { name: 'X-Api-Key', type: 'String', source: 'header', originalCaseName: 'apiKey', isRequired: true, defaultValue: '' },
             { name: 'keyword', type: 'String', source: 'query', originalCaseName: 'keyword', isRequired: true }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, "-H 'X-Api-Key: '", 'cURL 包含 @RequestHeader', `实际: ${result}`);
     assertContains(result, '?keyword=', 'cURL 查询参数保留');
@@ -264,16 +247,14 @@ console.log('\n--- 2. cURL 命令生成 ---');
 
 {
     // DELETE + 路径参数
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'DELETE',
         contentType: 'url-params',
         path: '/api/test/users/{id}',
         parameters: [
             { name: 'id', type: 'Long', source: 'path', originalCaseName: 'id', isRequired: true }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, 'curl -X DELETE', 'DELETE cURL');
     assertContains(result, '/users/{id}', 'DELETE 路径参数占位符');
@@ -282,7 +263,7 @@ console.log('\n--- 2. cURL 命令生成 ---');
 
 {
     // POST + multipart/form-data
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'form-data',
         path: '/api/test/upload',
@@ -290,17 +271,17 @@ console.log('\n--- 2. cURL 命令生成 ---');
             { name: 'file', type: 'MultipartFile', source: 'form', originalCaseName: 'file', isRequired: true },
             { name: 'description', type: 'String', source: 'query', originalCaseName: 'desc', isRequired: true }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
-    assertContains(result, "Content-Type: multipart/form-data", 'multipart Content-Type');
-    assertContains(result, '-d', 'multipart 包含 Body');
+    // multipart 由 -F 生成（cURL 自动带 boundary），Content-Type 头不手写
+    assertContains(result, "-F 'file=@", 'multipart 文件参数使用 -F');
+    assertContains(result, 'description=', 'multipart query 参数保留在 URL');
+    assert(!result.includes('Content-Type'), 'multipart 不手写 Content-Type 头');
 }
 
 {
-    // POST + x-www-form-urlencoded
-    const info = {
+    // POST + x-www-form-urlencoded：query 参数按来源保留在 URL，正文仅含 form 参数
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'x-www-form-urlencoded',
         path: '/api/test/login',
@@ -308,27 +289,24 @@ console.log('\n--- 2. cURL 命令生成 ---');
             { name: 'username', type: 'String', source: 'query', originalCaseName: 'username', isRequired: true },
             { name: 'password', type: 'String', source: 'query', originalCaseName: 'password', isRequired: true }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, "Content-Type: application/x-www-form-urlencoded", 'form-urlencoded Content-Type');
-    assertContains(result, '-d', 'form-urlencoded 包含 Body');
+    assertContains(result, "-d 'username=&password='", 'Spring form-urlencoded 参数写入正文');
 }
 
 {
     // cURL 格式验证（Postman 兼容）— 多行格式
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'json',
         path: '/api/test/users',
         parameters: [{ name: 'userDto', type: 'UserDto', source: 'body', originalCaseName: 'userDto', isRequired: true }],
-        framework: 'Spring',
         dtoFields: new Map([['UserDto', [
             { name: 'id', type: 'Long', originalName: 'id' },
             { name: 'userName', type: 'String', originalName: 'userName' }
         ]]])
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     // 验证换行续行格式
     assert(result.includes(' \\\n'), 'cURL 多行续行格式', `应包含 \\ 续行符`);
@@ -500,7 +478,7 @@ console.log('\n--- 6. 集成场景测试 ---');
         { name: 'email_addr', type: 'String', originalName: 'email' },
         { name: 'phone', type: 'String', originalName: 'phone' }
     ]);
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'PUT',
         contentType: 'json',
         path: '/api/test/users/{userId}',
@@ -508,9 +486,8 @@ console.log('\n--- 6. 集成场景测试 ---');
             { name: 'userId', type: 'Long', source: 'path', originalCaseName: 'userId', isRequired: true },
             { name: 'userDto', type: 'UserDto', source: 'body', originalCaseName: 'userDto', isRequired: true }
         ],
-        framework: 'Spring',
         dtoFields
-    };
+    });
 
     const url = urlGen.generate(info, 'http://localhost:8080');
     assert(url === 'http://localhost:8080/api/test/users/{userId}', 'PUT URL 生成', `实际 "${url}"`);
@@ -524,16 +501,14 @@ console.log('\n--- 6. 集成场景测试 ---');
 
 {
     // 场景：GET /api/test/users/{id} → URL
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/users/{id}',
         parameters: [
             { name: 'id', type: 'Long', source: 'path', originalCaseName: 'id', isRequired: true }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const url = urlGen.generate(info, 'http://localhost:8080');
     assert(url === 'http://localhost:8080/api/test/users/{id}', 'GET with path param URL', `实际 "${url}"`);
 }
@@ -573,39 +548,35 @@ console.log('\n--- 7. Header 参数 ---');
 
 {
     // cURL 输出：Header 有空值 → 输出 `-H 'X-Api-Key: '`
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/data',
         parameters: [
             { name: 'X-Api-Key', type: 'String', source: 'header', originalCaseName: 'apiKey', isRequired: true, defaultValue: '' }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, "-H 'X-Api-Key: '", 'Header 空值输出', `实际: ${result}`);
 }
 
 {
     // cURL 输出：Header 有默认值 → 输出 `-H 'X-Request-Id: unknown'`
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/data',
         parameters: [
             { name: 'X-Request-Id', type: 'String', source: 'header', originalCaseName: 'requestId', isRequired: false, defaultValue: 'unknown' }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, "-H 'X-Request-Id: unknown'", 'Header 有默认值', `实际: ${result}`);
 }
 
 {
     // cURL 输出：多个 Header 全部输出
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'json',
         path: '/api/test/data',
@@ -614,9 +585,7 @@ console.log('\n--- 7. Header 参数 ---');
             { name: 'Authorization', type: 'String', source: 'header', originalCaseName: 'auth', isRequired: true, defaultValue: 'Bearer ' },
             { name: 'body', type: 'String', source: 'body', originalCaseName: 'body', isRequired: true }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, "-H 'X-Api-Key: '", '多 Header 之一');
     assertContains(result, "-H 'Authorization: Bearer '", '多 Header 之二');
@@ -718,7 +687,7 @@ function extractMethodSignature(content, methodName) {
     }
 
     // 用模拟 EndpointCopyInfo 验证 cURL 端到端输出
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/header',
@@ -727,9 +696,7 @@ function extractMethodSignature(content, methodName) {
             { name: 'X-Request-Id', type: 'String', source: 'header', originalCaseName: 'requestId', isRequired: false, defaultValue: 'unknown' },
             { name: 'keyword', type: 'String', source: 'query', originalCaseName: 'keyword', isRequired: true, defaultValue: undefined }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const curlResult = curlConv.generate(info, 'http://localhost:8080');
     assertContains(curlResult, 'curl -X GET', 'header cURL 基本格式');
     assertContains(curlResult, '/api/test/header?keyword=', 'header cURL URL + 查询参数');
@@ -759,7 +726,7 @@ function extractMethodSignature(content, methodName) {
     }
 
     // cURL 端到端输出验证
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'GET',
         contentType: 'url-params',
         path: '/api/test/auth',
@@ -767,9 +734,7 @@ function extractMethodSignature(content, methodName) {
             { name: 'Authorization', type: 'String', source: 'header', originalCaseName: 'token', isRequired: true, defaultValue: undefined },
             { name: 'X-Correlation-Id', type: 'String', source: 'header', originalCaseName: 'correlationId', isRequired: true, defaultValue: undefined }
         ],
-        framework: 'JAX-RS',
-        dtoFields: new Map()
-    };
+    });
     const curlResult = curlConv.generate(info, 'http://localhost:9090');
     assertContains(curlResult, 'curl -X GET', 'JAX-RS header cURL 基本格式');
     assertContains(curlResult, "/api/test/auth", 'JAX-RS header cURL URL');
@@ -783,7 +748,7 @@ console.log('\n--- 10. 表单 Body 生成 ---');
 
 {
     // multipart/form-data cURL — file + query 参数混合
-    const info = {
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'form-data',
         path: '/api/data-transfer/documents',
@@ -792,20 +757,17 @@ console.log('\n--- 10. 表单 Body 生成 ---');
             { name: 'title', type: 'String', source: 'query', originalCaseName: 'title', isRequired: true },
             { name: 'tags', type: 'String', source: 'query', originalCaseName: 'tags', isRequired: false }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
-    assertContains(result, 'Content-Type: multipart/form-data', 'form-data Content-Type');
-    assertContains(result, '-d', 'form-data 包含 Body');
-    assertContains(result, 'file=', 'form-data body 包含 file');
-    assertContains(result, 'title=', 'form-data body 包含 title');
-    assertContains(result, 'tags=', 'form-data body 包含 tags');
+    assertContains(result, "-F 'file=@", 'form-data 文件参数使用 -F');
+    assert(!result.includes('Content-Type'), 'form-data 不手写 Content-Type 头（-F 自动生成 boundary）');
+    assertContains(result, 'title=', 'form-data query 参数保留在 URL');
+    assertContains(result, 'tags=', 'form-data query 参数保留在 URL');
 }
 
 {
-    // x-www-form-urlencoded cURL — query 参数展开为 body
-    const info = {
+    // x-www-form-urlencoded cURL — query 参数按来源保留在 URL
+    const info = makeCopyInfo({
         httpMethod: 'POST',
         contentType: 'x-www-form-urlencoded',
         path: '/api/data-transfer/profile',
@@ -813,14 +775,10 @@ console.log('\n--- 10. 表单 Body 生成 ---');
             { name: 'displayName', type: 'String', source: 'query', originalCaseName: 'displayName', isRequired: true },
             { name: 'bio', type: 'String', source: 'query', originalCaseName: 'bio', isRequired: true }
         ],
-        framework: 'Spring',
-        dtoFields: new Map()
-    };
+    });
     const result = curlConv.generate(info, 'http://localhost:8080');
     assertContains(result, 'Content-Type: application/x-www-form-urlencoded', 'form-urlencoded Content-Type');
-    assertContains(result, '-d', 'form-urlencoded 包含 Body');
-    assertContains(result, 'displayName=', 'form-urlencoded body 包含 displayName');
-    assertContains(result, 'bio=', 'form-urlencoded body 包含 bio');
+    assertContains(result, "-d 'displayName=&bio='", 'Spring form-urlencoded 参数写入正文');
 }
 
 runBaseUrlTests().then(() => {

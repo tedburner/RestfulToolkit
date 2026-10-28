@@ -1,0 +1,3 @@
+# 统一仓库行尾：文本文件入库一律 LF，检出也为 LF，避免整树 CRLF 混入 diff。
+# 二进制文件由 text=auto 自动识别，无需逐一列出。
+* text=auto eol=lf

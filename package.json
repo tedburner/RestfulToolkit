@@ -159,6 +159,8 @@
     "lint": "eslint src --ext ts",
     "test": "node ./dist/test/runTest.js",
     "test:marketplace-stats": "node scripts/update-marketplace-stats.test.js",
+    "test:curl-semantic": "node src/test/scripts/test-curl-semantic.js",
+    "test:dto-compile": "node src/test/scripts/test-dto-compile.js",
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch"
   },

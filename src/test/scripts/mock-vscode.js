@@ -32,6 +32,9 @@ function globToRegExp(pattern) {
 }
 
 const vscodeMock = {
+    RelativePattern: class {
+        constructor(base, pattern) { this.base = base; this.pattern = pattern; }
+    },
     EventEmitter: class {
         constructor() {
             this.listeners = new Set();

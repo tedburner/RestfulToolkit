@@ -12,15 +12,16 @@ RestfulToolkit 提供三种测试方式：
 - Spring MVC/JAX-RS 解析器及跨解析器集成测试（类级路径、嵌套类型、长声明、重复注解块绝对行号）
 - 端点缓存管理测试
 - 后台激活/停用、配置重载收束、扫描预筛选/原子整体替换、watcher 状态同步与删除清理、扫描前后 `mtime + size` 竞态、异常后排队刷新测试
-- watcher 工作区相对排除与 Base URL watcher 范围、索引完成刷新、异步 Base URL 缓存/并发失效测试
-- Copy Full URL/Copy as cURL 命令编排与多路径 mapping 首路径选择规则测试
+- 批量提交的版本令牌拒绝回写、`waitForIdle` 排空防抖定时器与在途 watcher 队列、发现结果对账自愈测试
+- 并发配置快照丢弃旧读取、每根工作区独立合成扫描范围测试
+- Copy Full URL/Copy as cURL/Copy Endpoint Parameters 命令编排、格式选择取消短路与 DTO 延迟展开时机测试
 
 **运行方式**:
 ```bash
 npm test
 ```
 
-当前基线：272 个 Mocha 用例通过（含 TypeScript 编译与 ESLint 前置检查）。
+当前基线：319 个 Mocha 用例通过（含 TypeScript 编译与 ESLint 前置检查）。
 
 **测试文件**:
 - `src/test/runTest.ts` - Mocha测试入口
@@ -35,14 +36,19 @@ npm test
 - `src/test/utils/FileWatcher.test.ts`
 - `src/test/utils/BaseUrlResolver.test.ts`
 - `src/test/extension.test.ts`
+- `src/test/config/ConfigManager.test.ts`
 - `src/test/commands/CopyUrlCurlCommand.test.ts`
+- `src/test/commands/CopyEndpointParametersCommand.test.ts`
+- `src/test/generator/JsonClassGenerator.test.ts`
+
+说明：`FileScanner.test.ts` 提供 `stubScanEnvironment` 共享夹具（一次性布置候选文件、文件内容/元数据与扫描配置，`teardown` 统一回滚），新增扫描用例时应复用而不是手工重复 stub。
 
 ### 2. 自动化验证脚本 ✅
 
 **位置**: `src/test/scripts/test-all-files.js`
 
 **验证内容**:
-- 50个端点识别准确性
+- 53个端点识别准确性
 - 行号定位100%准确
 - 多路径拆分正确性
 - Kotlin文件支持
@@ -53,9 +59,19 @@ npm test
 node src/test/scripts/test-all-files.js
 node src/test/scripts/test-parameter-copy.js
 node src/test/scripts/test-copy-url-curl.js
+npm run test:curl-semantic
+npm run test:dto-compile
 ```
 
-当前自动化基线：50 个端点与 100% 行号准确率、78/78 参数复制、115/115 URL/cURL（含异步 Base URL）全部通过。
+当前自动化基线：53 个端点与 100% 行号准确率、78/78 参数复制、113/113 URL/cURL（含异步 Base URL）、17/17 cURL 语义验证、22/22 JSON 生成冒烟全部通过。
+
+**cURL 语义验证**（`src/test/scripts/test-curl-semantic.js`）：用真实 curl 进程把生成的命令发送到本地 HTTP 接收端，核对服务端实际收到的方法、查询参数、Content-Type、JSON/urlencoded 正文、multipart 分段与 Shell 转义往返——字符串包含断言无法覆盖的协议语义由这一层兜底。Windows 或 curl 缺失时报告 SKIP 并以 0 退出。
+
+**JSON 生成编译冒烟**（`src/test/scripts/test-dto-compile.js`）：保留字/重名字段、嵌套类命名、空数组与可空类型的结构断言始终执行；javac 可用时对生成的 Java 源码配合离线 JsonProperty 注解 stub 做真实编译，kotlinc 可用时编译 Kotlin。
+
+**共享 lib**（`src/test/scripts/lib/`）：
+- `dist-check.js` — 所有批量脚本运行前检查 dist 编译产物是否新于 src 生产源码，过期时拒绝运行并提示先 `npm run compile`（`SKIP_DIST_CHECK=1` 可跳过），避免脚本验证过期代码得出误导性结论
+- `copy-info-fixture.js` — `makeCopyInfo` EndpointCopyInfo 夹具，与 Mocha 侧保持同一字段契约
 
 **输出统计**:
 - 总端点数、行号准确率
