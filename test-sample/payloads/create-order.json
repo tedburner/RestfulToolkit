@@ -1,0 +1,19 @@
+{
+  "orderId": 1001,
+  "customer": {
+    "name": "Alice",
+    "email": "alice@example.com"
+  },
+  "items": [
+    {
+      "sku": "A-1",
+      "quantity": 2,
+      "price": 9.99
+    }
+  ],
+  "class": "vip",
+  "default": true,
+  "package": null,
+  "emptyList": [],
+  "nullable": null
+}

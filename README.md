@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.9-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.10-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![Installs](https://img.shields.io/badge/installs-456-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -192,6 +192,7 @@ Project config example:
 - Does not detect routes registered through `@Configuration` classes.
 - Kotlin string template support is limited.
 - Endpoints declared as Kotlin expression bodies (`fun e() = service()`) are not detected.
+- JAX-RS methods with nested generic return types (e.g. `Map<String, List<String>>`) are not detected; single-level generics are unaffected.
 - Conditional annotations such as `@ConditionalOnProperty` are not evaluated.
 
 Expected endpoint detection accuracy is about 80-85% for typical Spring Boot projects.
@@ -208,6 +209,8 @@ Expected endpoint detection accuracy is about 80-85% for typical Spring Boot pro
 
 ## Development
 
+For the release process, see [docs/RELEASING.md](docs/RELEASING.md).
+
 ```bash
 npm install
 npm run compile
@@ -218,6 +221,7 @@ npm run build
 Additional validation scripts:
 
 ```bash
+node src/test/scripts/test-sample.js
 node src/test/scripts/test-parameter-copy.js
 node src/test/scripts/test-copy-url-curl.js
 node src/test/scripts/test-all-files.js

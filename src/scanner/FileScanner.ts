@@ -385,20 +385,35 @@ export class FileScanner implements vscode.Disposable {
             removedFiles.push(recordedFile);
         }
 
-        if (removedFiles.length === 0) {
-            return;
+        if (removedFiles.length > 0) {
+            this.cache.updateFiles(removedFiles.map(file => ({ file, endpoints: [] })));
+            for (const recordedFile of removedFiles) {
+                this.scanStateManager.removeRecord(recordedFile);
+                this.bumpFileVersion(recordedFile);
+            }
+            this.logger.info(`Reconciled ${removedFiles.length} indexed file(s) no longer present in the scan scope`);
         }
 
-        this.cache.updateFiles(removedFiles.map(file => ({ file, endpoints: [] })));
-        for (const recordedFile of removedFiles) {
-            this.scanStateManager.removeRecord(recordedFile);
-            this.bumpFileVersion(recordedFile);
-        }
-        this.logger.info(`Reconciled ${removedFiles.length} indexed file(s) no longer present in the scan scope`);
+        this.pruneFileVersionEntries();
     }
 
     private bumpFileVersion(filePath: string): void {
         this.fileVersions.set(filePath, (this.fileVersions.get(filePath) ?? 0) + 1);
+    }
+
+    /**
+     * 清理不再被缓存或扫描状态支撑的版本令牌条目。对账发生在工作区扫描收尾：
+     * watcher 在途任务已在扫描前排空（pump 也会等待 scanPromise），本轮收集的
+     * 结果也已提交，因此这些条目不再有需要防护的在途写入，保留只会让 map
+     * 随文件增删无限增长。
+     */
+    private pruneFileVersionEntries(): void {
+        const liveFiles = new Set([...this.cache.getIndexedFiles(), ...this.scanStateManager.getAllScannedFiles()]);
+        for (const filePath of this.fileVersions.keys()) {
+            if (!liveFiles.has(filePath)) {
+                this.fileVersions.delete(filePath);
+            }
+        }
     }
 
     private async runWithConcurrency<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<T[]> {

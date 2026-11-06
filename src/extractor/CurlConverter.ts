@@ -129,8 +129,18 @@ export class CurlConverter {
         return parts;
     }
 
+    /**
+     * 判断参数类型是否为文件上传：按完整标识符匹配（覆盖包名前缀与
+     * List&lt;MultipartFile&gt; 等泛型写法），Resource 系列按后缀识别，
+     * 避免 ResourceWrapper 之类子串误判。
+     */
     private isFileUploadType(type: string): boolean {
-        return type === 'File' || /MultipartFile|InputStreamResource|Resource/.test(type);
+        const identifiers = type.match(/[A-Za-z_$][\w$]*/g) ?? [];
+        return identifiers.some(name =>
+            name === 'File'
+            || name === 'MultipartFile'
+            || /Resource$/.test(name)
+        );
     }
 
     /**

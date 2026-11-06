@@ -5,12 +5,14 @@ All notable changes to RestfulToolkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.10] - 2026-11-06
 
+- **Added**: A reusable local sample workspace and verification script for Spring, JAX-RS, Kotlin and endpoint copy scenarios
+- **Added**: GitHub Actions release workflow packages and publishes stable tags through Marketplace trusted publishing, then attaches the VSIX to a GitHub Release
 - **Fixed**: Copy commands now locate methods through structured parameter ranges, so annotated parameters (`@RequestParam("q")`) no longer break extraction and Kotlin `name: Type` parameters report their real type
 - **Fixed**: JAX-RS scanning resolves method declarations at the direct-member level and skips method bodies, eliminating phantom endpoints from body calls while adding support for interface/abstract methods, multi-line `@Path` annotations, Kotlin explicit/nullable return types, and generic type parameters; skipped members (including annotated fields and Kotlin properties) no longer leak their annotations to the next method
-- **Fixed**: File deletions can no longer be overridden by in-flight scans via per-file version tokens, and incremental scans reconcile indexed files against discovery results to self-heal missed delete events
-- **Fixed**: cURL emits multipart bodies via `-F` and treats Spring `@RequestParam` as form fields for form content types; other query parameters remain in the URL
+- **Fixed**: File deletions can no longer be overridden by in-flight scans via per-file version tokens, and incremental scans reconcile indexed files against discovery results to self-heal missed delete events; reconciliation also prunes version tokens that no longer have cache or scan-state backing
+- **Fixed**: cURL emits multipart bodies via `-F` and treats Spring `@RequestParam` as form fields for form content types; other query parameters remain in the URL, and upload detection matches complete type identifiers so lookalikes such as `ResourceWrapper` no longer get file placeholders
 - **Fixed**: Spring class-level multi-path mappings now expand to all path combinations, and parentheses inside path strings no longer break annotation extraction
 - **Fixed**: Single-file cache updates patch indexes incrementally again instead of rebuilding the whole endpoint array, keeping the watcher save path responsive on large workspaces
 - **Fixed**: Empty per-folder scan scopes preserve indexed endpoints, while reconciliation also removes cached files whose scan records were lost; queued configuration reloads survive a failed active reload
@@ -25,10 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+- **新增**: 可重复使用的本地样例工作区和验证脚本，覆盖 Spring、JAX-RS、Kotlin 与端点复制场景
+- **新增**: GitHub Actions 发布工作流对稳定版标签打包并通过 Marketplace 可信发布上传，再将 VSIX 附加到 GitHub Release
 - **修复**: 复制命令改为结构化定位参数区，带注解的参数（`@RequestParam("q")`）不再导致提取失败，Kotlin `name: Type` 参数返回真实类型
 - **修复**: JAX-RS 扫描限定在类型直接成员层级并跳过方法体，方法体调用不再产生幻影端点；同时支持接口/抽象方法、跨行 `@Path` 注解、Kotlin 显式/可空返回类型与泛型类型参数，被跳过成员（含携带注解的字段与 Kotlin 属性）的注解不再泄漏给下一个方法
-- **修复**: 删除事件通过文件版本令牌阻止在途扫描写回旧端点；增量扫描将已索引文件与发现结果对账，漏掉的删除事件可自愈
-- **修复**: cURL 的 multipart 正文使用 `-F`；Spring 表单内容类型下的 `@RequestParam` 默认作为表单字段，其他查询参数保留在 URL
+- **修复**: 删除事件通过文件版本令牌阻止在途扫描写回旧端点；增量扫描将已索引文件与发现结果对账，漏掉的删除事件可自愈，对账同时清理失去缓存/扫描状态支撑的版本令牌
+- **修复**: cURL 的 multipart 正文使用 `-F`；Spring 表单内容类型下的 `@RequestParam` 默认作为表单字段，其他查询参数保留在 URL；文件上传类型按完整标识符识别，`ResourceWrapper` 等相似名称不再生成文件占位
 - **修复**: Spring 类级多路径映射展开为全部路径组合；路径字符串内的括号不再破坏注解提取
 - **修复**: 单文件缓存更新恢复增量修补，不再整体重建端点数组，大仓库下 watcher 保存保持响应
 - **修复**: 空的单根扫描范围保留已索引端点；对账也能清理扫描记录已丢失的缓存文件，当前配置重载失败后仍执行排队请求

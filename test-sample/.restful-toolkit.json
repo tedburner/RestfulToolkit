@@ -1,0 +1,13 @@
+{
+  "scanPaths": [
+    "**/src/main/java/**/*.java",
+    "**/src/main/kotlin/**/*.kt"
+  ],
+  "excludePaths": [
+    "**/src/test/**",
+    "**/target/**",
+    "**/build/**",
+    "**/ignored/**"
+  ],
+  "maxResults": 100
+}

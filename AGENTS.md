@@ -19,6 +19,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 **单元测试（Mocha）**:
 - **运行所有测试**: `npm test` - Mocha 测试（解析器、缓存、扫描器、配置、工具、参数提取、复制命令、JSON 生成）
 - **单元测试位置**: `src/test/` - Parser 测试（SpringMvcParser, JaxRsParser）、缓存与扫描状态测试、FileScanner 扫描与并发时序测试、ConfigManager 配置测试、复制命令测试、工具与生成器测试
+- **样例项目验证**: `npm run compile && node src/test/scripts/test-sample.js`；真实扩展宿主使用 `test-sample/`，预期 44 个端点
 
 **参数复制批量测试**:
 - **运行**: `node src/test/scripts/test-parameter-copy.js`
@@ -53,6 +54,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 
 ### 发布与部署
 
+- GitHub Actions 稳定版自动发布及 OIDC 配置见 `docs/RELEASING.md`；手动运行只验证打包，推送版本 tag 才发布
 - 登录 publisher：`vsce login kiturone`，或设置 `VSCE_PAT`
 - 发布当前版本：`vsce publish`；按语义版本升级：`vsce publish patch|minor|major`
 - 仅打包：`vsce package`；发布已有包：`vsce publish --packagePath <file.vsix>`
@@ -79,7 +81,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - `needsScan` 文件状态检查与文件解析都使用扫描并发上限，避免大仓库瞬时打满文件系统
 - 读取文件后先执行受支持 REST 注解预筛选，普通 Java/Kotlin 类不进入完整解析器
 - 文件解析前后校验 `mtime + size`，仅在元数据稳定时提交端点缓存与扫描状态；扫描期间再次变化的文件保留旧缓存和重试资格
-- 每文件维护版本令牌：`removeFile` 与增量对账推进版本，在途扫描提交前校验版本，删除事件不会被旧结果覆盖
+- 每文件维护版本令牌：`removeFile` 与增量对账推进版本，在途扫描提交前校验版本，删除事件不会被旧结果覆盖；对账收尾时清理不再被缓存或扫描状态支撑的条目，版本表不随文件增删无限增长
 - 每次成功解析都整体替换该文件缓存，空结果会清除已删除的旧端点
 - 解析器显式区分失败与成功空结果；失败保留最近一次成功缓存并保留重试资格
 - 发现结果对账：扫描结束后比对扫描记录和缓存文件索引，清理确定已移除的文件；每根 scanPaths 为空的范围视为未知并保留，全量刷新也保留旧快照直到结果提交
@@ -223,7 +225,8 @@ src/test/                 # Mocha 与自动化验证
 3. **配置类路由**: 无法检测通过 `@Configuration` 配置的路由
 4. **Kotlin 字符串模板**: 对 Kotlin 字符串模板支持有限
 5. **Kotlin 表达式函数体**: `fun e() = service()` 形式的端点暂不识别，其注解也不会影响相邻方法
-6. **条件注解**: 无法评估影响端点可用性的条件注解
+6. **嵌套泛型返回类型**: JAX-RS 方法返回类型含嵌套泛型（如 `Map<String, List<String>>`）时暂不识别，单层泛型不受影响
+7. **条件注解**: 无法评估影响端点可用性的条件注解
 
 **预期准确率**: 对典型 Spring Boot 项目约 80-85% 端点检测率。
 
@@ -233,6 +236,7 @@ src/test/                 # Mocha 与自动化验证
 
 每次完成代码变更后，必须自动执行 `/neat-freak`，更新以下文件以保持知识体系一致：
 - **AGENTS.md** — Agent 开发指导（路由、架构、已知限制）
+- **CLAUDE.md** — 与 AGENTS.md 内容相同源的镜像（仅标题、导语和同步清单自指三处按平台不同），改动 AGENTS.md 时必须同步
 - **CHANGELOG.md** — 版本变更日志
 - **README.md / README_CN.md** — 功能描述、已知限制、路线图
 - **docs/DOCUMENTATION_MANIFEST.md** — 目录与文档清单

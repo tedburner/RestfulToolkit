@@ -523,6 +523,40 @@ suite('FileScanner Test Suite', () => {
         } finally { scanner.dispose(); }
     });
 
+    test('prunes stale file version entries during reconciliation and keeps live ones', async () => {
+        stubStatusBar();
+        const liveUri = vscode.Uri.file('/workspace/Live.java');
+        const gonePath = '/workspace/Gone.java';
+        const cache = new EndpointCache();
+        stubScanEnvironment({
+            files: [liveUri],
+            contents: '@GetMapping("/live")\nclass LiveController {}',
+            scanPaths: ['**/*.java']
+        });
+
+        const scanner = new FileScanner(cache) as unknown as ScannerInternals & { fileVersions: Map<string, number> };
+        try {
+            // removeFile 为已删除文件留下版本令牌；liveUri 保持在发现结果中
+            scanner.removeFile(vscode.Uri.file(gonePath));
+            scanner.fileVersions.set(liveUri.fsPath, 3);
+
+            await scanner.performScan(false);
+
+            assert.strictEqual(
+                scanner.fileVersions.has(gonePath),
+                false,
+                'entries without cache/state backing must be pruned after reconciliation'
+            );
+            assert.strictEqual(
+                scanner.fileVersions.get(liveUri.fsPath),
+                3,
+                'entries backing indexed files must survive the prune'
+            );
+        } finally {
+            scanner.dispose();
+        }
+    });
+
     test('failed forced parse preserves cached endpoints and makes unchanged files eligible for retry', async () => {
         stubStatusBar();
         const file = vscode.Uri.file('/workspace/Retry.java');

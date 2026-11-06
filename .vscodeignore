@@ -29,5 +29,6 @@ restful-tool/**
 test-manual.js
 test-standalone.js
 test-project/**
+test-sample/**
 .git/**
 *.vsix

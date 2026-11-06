@@ -1,5 +1,8 @@
 # RestfulToolkit 文档与目录清单
 
+- `test-sample/README.md` — 本地样例工作区、44 个预期端点及验证步骤
+- `docs/RELEASING.md` — GitHub Actions、Marketplace 可信发布配置与稳定版发布步骤
+
 ## 整理完成 ✅
 
 **整理日期**: 2026-04-20 | **更新日期**: 2026-10-25（审查全部 14 项已实施修复并登记）
@@ -44,7 +47,7 @@
 - `src/commands/CopyCurlCommand.ts` — 复制 cURL 命令
 - `src/utils/BaseUrlResolver.ts` — Base URL 自动检测（支持 bootstrap.yml、多环境 profile、占位符解析）
 - `src/test/extractor/UrlGenerator.test.ts` — URL 生成测试（5 用例）
-- `src/test/extractor/CurlConverter.test.ts` — cURL 生成测试（5 用例）
+- `src/test/extractor/CurlConverter.test.ts` — cURL 生成测试（10 用例）
 - `src/test/utils/BaseUrlResolver.test.ts` — Base URL 检测测试（24 用例）
 - `package.nls.json` / `package.nls.zh-cn.json` — 新增 copyUrl/copyCurl 命令标题
 - `src/extractor/ParameterExtractor.ts` — 增强 `findMethodAtPosition` 双策略扫描、括号深度签名匹配
@@ -151,7 +154,7 @@ restful-toolkit/
 | ui/SearchUI.test.ts | 索引中搜索、索引完成刷新/空结果提示与 QuickPick 结果上限测试 |
 | utils/FileWatcher.test.ts | watcher 默认及工作区相对排除规则测试 |
 | extractor/UrlGenerator.test.ts | URL 生成测试（5 用例） |
-| extractor/CurlConverter.test.ts | cURL 生成测试（5 用例） |
+| extractor/CurlConverter.test.ts | cURL 生成测试（10 用例） |
 | extractor/NameTransformer.test.ts | 命名转换测试 |
 | extractor/FormatConverter.test.ts | 格式转换测试 |
 | extractor/DtoFieldExtractor.test.ts | DTO 查找缓存与字段解析测试 |
@@ -262,7 +265,7 @@ restful-toolkit/
 
 ## 五、统计
 
-### v0.0.9 当前状态
+### v0.0.10 当前状态
 
 | 类别 | 数量 |
 |------|------|
@@ -270,7 +273,7 @@ restful-toolkit/
 | 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
 | docs 顶层文档 | 8 个（7 个 Markdown、1 个 screenshot） |
 | 源代码模块 | 30个（含 extractor/ 9、commands/ 4、generator/ 2、utils/ 4） |
-| 单元测试 | 277 个 Mocha 用例（含解析器集成、复制 URL/cURL 命令、FileScanner、ConfigManager、DTO 递归、ScanStateManager、EndpointCache、BaseUrlResolver、激活与 UI） |
+| 单元测试 | 330 个 Mocha 用例（含解析器集成、复制 URL/cURL 命令、FileScanner、ConfigManager、DTO 递归、ScanStateManager、EndpointCache、BaseUrlResolver、激活与 UI） |
 | 自动化脚本 | 4个（53端点验证 + 78参数复制 + 113 URL/cURL + 86 JSON-to-DTO） |
 | 测试 Controller | 3个（Spring 25 + JAX-RS 11 + Form） |
 | 测试 DTO | 7个 |

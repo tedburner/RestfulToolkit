@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.9-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.10-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![Installs](https://img.shields.io/badge/installs-456-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -193,6 +193,7 @@ RestfulToolkit 按以下优先级读取配置：
 - 无法检测通过 `@Configuration` 类注册的路由。
 - Kotlin 字符串模板支持有限。
 - Kotlin 表达式函数体（`fun e() = service()`）声明的端点暂不识别。
+- JAX-RS 方法返回类型含嵌套泛型（如 `Map<String, List<String>>`）时暂不识别，单层泛型不受影响。
 - 不会评估 `@ConditionalOnProperty` 等条件注解。
 
 对典型 Spring Boot 项目的预期端点检测准确率约为 80-85%。
@@ -209,6 +210,8 @@ RestfulToolkit 按以下优先级读取配置：
 
 ## 开发
 
+发布流程详见 [docs/RELEASING.md](docs/RELEASING.md)。
+
 ```bash
 npm install
 npm run compile
@@ -219,6 +222,7 @@ npm run build
 额外验证脚本：
 
 ```bash
+node src/test/scripts/test-sample.js
 node src/test/scripts/test-parameter-copy.js
 node src/test/scripts/test-copy-url-curl.js
 node src/test/scripts/test-all-files.js
