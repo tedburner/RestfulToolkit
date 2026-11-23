@@ -5,13 +5,18 @@
 
 ## 整理完成 ✅
 
-**整理日期**: 2026-04-20 | **更新日期**: 2026-10-25（审查全部 14 项已实施修复并登记）
+**整理日期**: 2026-04-20 | **更新日期**: 2026-11-23（解析加固、跨平台路径一致性、命令体验与跨平台 CI 升级已同步）
+
+**2026-11-23 OpenSpec 升级变更**:
+- `openspec/changes/harden-parsing-cross-platform-and-perf/` — 三引号词法净化与框架预筛选、直接成员方法/参数/DTO 提取增强、Base URL 多模块与 `spring.profiles.active` 解析、JSON 转 DTO 合法标识符回退、命令 UX 与跨平台路径一致性规范、设计与任务
+- `src/utils/PathUtils.ts` — 跨平台文件路径比较键与 glob 路径规范化（Windows 下大小写不敏感）
+- `.github/workflows/ci.yml` — `ubuntu-latest` 与 `windows-latest` 双平台持续集成工作流
 
 **2026-10-25 审查文档**:
 
-- `docs/LOGIC_PERFORMANCE_REVIEW_2026-10-25.md` — 全局逻辑与性能审查（14 个候选工作项）；其中 L1-L8 与 F1-F6 已全部实施修复，验证入口见 CHANGELOG `[Unreleased]` 与 `src/test/` 对应回归
+- `docs/LOGIC_PERFORMANCE_REVIEW_2026-10-25.md` — 全局逻辑与性能审查（14 个候选工作项）；其中 L1-L8 与 F1-F6 已全部实施修复，验证入口见 CHANGELOG `0.0.10` 与 `src/test/` 对应回归
 
-**当前新增与更新（截至 2026-09-23）**:
+**历史新增与更新归档（2026-09-23 及之前）**:
 - `openspec/changes/endpoint-copy-and-workspace-consistency/` — v0.0.9 端点复制一致性、扫描失败安全、多根工作区配置和 DTO 递归展开规范、设计与任务
 - `src/parsers/AnnotationParser.ts` / `src/extractor/ParameterExtractor.ts` — 搜索与复制共用端点路由解析，覆盖无路径 Spring mapping、package-private Java 和 Kotlin 方法
 - `src/scanner/FileScanner.ts` — 显式区分解析失败与成功空结果，失败时保留最近一次成功缓存
@@ -78,27 +83,29 @@ restful-toolkit/
 │   ├── tsconfig.json        # TypeScript配置
 │   └── webpack.config.js    # Webpack配置
 │
-├── src/ (源代码16个模块)
+├── src/ (源代码31个模块)
 │   ├── extension.ts         # 扩展入口
-│   ├── cache/               # 缓存管理（2模块）
+│   ├── cache/               # 缓存管理（2模块：EndpointCache, ScanStateManager）
 │   ├── commands/            # 命令（4模块：CopyEndpointParameters, CopyUrl, CopyCurl, JsonToClass）
-│   ├── config/              # 配置管理（2模块）
-│   ├── extractor/           # 参数提取（8模块：FormatConverter, ParameterExtractor, SpringParameterParser, JaxRsParameterParser, DtoFieldExtractor, i18n, UrlGenerator, CurlConverter）
+│   ├── config/              # 配置管理（2模块：ScanConfig, ConfigManager）
+│   ├── extractor/           # 参数提取（9模块：FormatConverter, NameTransformer, ParameterExtractor, SpringParameterParser, JaxRsParameterParser, DtoFieldExtractor, i18n, UrlGenerator, CurlConverter）
 │   ├── generator/           # JSON 转 DTO 代码生成（2模块：JsonClassGenerator, JsonTypeMapper）
-│   ├── models/              # 数据模型（1模块）
-│   ├── parsers/             # 注解解析（3模块）
-│   ├── scanner/             # 文件扫描（1模块）
-│   ├── ui/                  # 用户界面（1模块）
-│   ├── utils/               # 工具类（3模块：FileWatcher, Logger, BaseUrlResolver）
-│   └── test/                # 单元测试（含 UrlGenerator, CurlConverter, BaseUrlResolver, JSON-to-DTO 测试）
+│   ├── models/              # 数据模型（1模块：Endpoint）
+│   ├── parsers/             # 注解解析（3模块：AnnotationParser, SpringMvcParser, JaxRsParser）
+│   ├── scanner/             # 文件扫描（1模块：FileScanner）
+│   ├── ui/                  # 用户界面（1模块：SearchUI）
+│   ├── utils/               # 工具类（5模块：FileWatcher, Logger, BaseUrlResolver, TextProcessor, PathUtils）
+│   └── test/                # 单元测试与验证脚本（25 个 Mocha 测试套件 + 7 个验证脚本）
 │
-├── docs/ (文档8个)
+├── docs/ (顶层文档10个)
 │   ├── CONFIG_SYSTEM.md     # 配置系统文档
 │   ├── DOCUMENTATION_MANIFEST.md # 本清单
 │   ├── INCREMENTAL_SCAN.md  # 增量扫描文档
-│   ├── OPTIMIZATION_PLAN.md # 核心代码优化任务清单（已完成，当前待办见 LOGIC_PERFORMANCE_REVIEW_2026-10-25.md）
+│   ├── OPTIMIZATION_PLAN.md # 核心代码优化任务清单（已完成）
 │   ├── CODE_AUDIT_2026-06-01.md # 代码审查报告（2026-06-02 处置完毕）
-│   ├── CODE_REVIEW_2026-07-29.md # 本轮优化审查与处置结果
+│   ├── CODE_REVIEW_2026-07-29.md # 解析器与扫描审查处置结果
+│   ├── LOGIC_PERFORMANCE_REVIEW_2026-10-25.md # 全局逻辑与性能审查记录（已处置完毕）
+│   ├── RELEASING.md         # 自动发布与 Marketplace 可信发布说明
 │   ├── TESTING_GUIDE.md     # 测试指南
 │   └── screenshot.png       # 扩展截图演示
 │
@@ -117,11 +124,15 @@ restful-toolkit/
 │           └── dto/         # UserDto, OrderDto, AddressDto, SnakeCaseDto, AliasDto, LoginForm
 │
 ├── src/test/scripts/ (自动化测试脚本)
+│   ├── lib/                      # dist-check.js 与 copy-info-fixture.js 共享前置检查与夹具
 │   ├── mock-vscode.js            # Node 脚本最小 VS Code API mock
+│   ├── test-sample.js            # 样例项目验证脚本（44端点 + 复制验证）
 │   ├── test-all-files.js         # 端点验证脚本（53端点）
 │   ├── test-parameter-copy.js    # 参数复制批量测试（78测试）
 │   ├── test-copy-url-curl.js     # URL/cURL 自动化测试（113测试）
-│   └── test-json-to-class.js     # JSON 转 DTO 自动化测试（86测试）
+│   ├── test-json-to-class.js     # JSON 转 DTO 自动化测试（86测试）
+│   ├── test-curl-semantic.js     # cURL 真实语义往返验证（17项）
+│   └── test-dto-compile.js       # JSON 转 DTO 合法性与 javac 编译冒烟（28项）
 │
 ├── openspec/ (OpenSpec规范 - 保持不变)
 │   └── changes/restful-toolkit/
@@ -135,7 +146,7 @@ restful-toolkit/
 
 ## 二、测试脚本结构
 
-### 单元测试（Mocha框架）- 22个文件 ✅
+### 单元测试（Mocha框架）- 25个测试套件 + 1个入口 ✅
 
 **位置**: `src/test/` 目录
 
@@ -144,41 +155,45 @@ restful-toolkit/
 | runTest.ts | Mocha测试入口 |
 | parsers/SpringMvcParser.test.ts | Spring解析器测试（含 @RequestHeader） |
 | parsers/JaxRsParser.test.ts | JAX-RS解析器测试（含 @HeaderParam 与重复注解块精确行号） |
-| parsers/AnnotationParser.test.ts | 类型级路径、嵌套 Controller 归属与绝对行号集成测试 |
-| extractor/ParameterExtractor.test.ts | 多路径 mapping 的复制命令首路径选择规则测试 |
-| cache/EndpointCache.test.ts | 缓存、搜索排序与预计算复用测试 |
+| parsers/AnnotationParser.test.ts | 类型级路径、嵌套 Controller 归属、绝对行号与类块级框架预筛选测试 |
+| extractor/ParameterExtractor.test.ts | 直接成员方法定位、跨行注解、数组返回类型与多路径首路径选择测试 |
+| cache/EndpointCache.test.ts | 缓存、规范化路径键、搜索排序与预计算复用测试 |
 | cache/ScanStateManager.test.ts | `mtime + size` 会话内增量判断测试 |
 | scanner/FileScanner.test.ts | 文件扫描单次发现、并发限流、工作区与 watcher 扫描协调、注解预筛选、原子提交及强制刷新测试 |
-| extension.test.ts | 命令注册、配置重载失败后的排队重试，以及停用等待扫描收束的生命周期测试 |
+| config/ConfigManager.test.ts | 多根工作区配置合成、并发配置快照丢弃与标量配置读取测试 |
+| extension.test.ts | 命令注册、动态版本号日志、多根配置文件创建、配置重载与停用收束测试 |
+| commands/CopyEndpointParametersCommand.test.ts | 复制参数命令格式选择、显式 `copyNameFormat`、取消短路与延迟 DTO 展开测试 |
 | commands/CopyUrlCurlCommand.test.ts | Copy Full URL/Copy as cURL 的端点提取、Base URL 与剪贴板命令编排测试 |
-| ui/SearchUI.test.ts | 索引中搜索、索引完成刷新/空结果提示与 QuickPick 结果上限测试 |
-| utils/FileWatcher.test.ts | watcher 默认及工作区相对排除规则测试 |
-| extractor/UrlGenerator.test.ts | URL 生成测试（5 用例） |
-| extractor/CurlConverter.test.ts | cURL 生成测试（10 用例） |
+| commands/JsonToClassCommand.test.ts | JSON 转 DTO 的 Lombok 取消流与默认类名兜底测试 |
+| ui/SearchUI.test.ts | 索引中搜索、索引完成刷新/空结果提示、静默 `maxResults` 与结果上限测试 |
+| utils/FileWatcher.test.ts | watcher 默认、工作区相对及 Windows 大小写不敏感排除规则测试 |
+| extractor/UrlGenerator.test.ts | URL 生成与边界斜杠规整测试 |
+| extractor/CurlConverter.test.ts | cURL 生成、上传参数与边界斜杠规整测试 |
 | extractor/NameTransformer.test.ts | 命名转换测试 |
 | extractor/FormatConverter.test.ts | 格式转换测试 |
-| extractor/DtoFieldExtractor.test.ts | DTO 查找缓存与字段解析测试 |
-| extractor/SpringParameterParser.test.ts | Spring 参数解析测试 |
-| extractor/JaxRsParameterParser.test.ts | JAX-RS 参数解析测试 |
-| utils/BaseUrlResolver.test.ts | Base URL 自动检测、发现复用、工作区级失效与异步失效竞态测试 |
-| generator/JsonClassGenerator.test.ts | JSON 转 Java/Kotlin DTO 生成测试 |
+| extractor/DtoFieldExtractor.test.ts | DTO 查找缓存、`record` 组件、`static`/`transient`/`@JsonIgnore` 过滤与嵌套字段解析测试 |
+| extractor/SpringParameterParser.test.ts | Spring 参数解析测试（校验注解、`name`/`value`、数组与多参泛型） |
+| extractor/JaxRsParameterParser.test.ts | JAX-RS 参数解析测试（校验注解、`@DefaultValue`、数组与多参泛型） |
+| utils/BaseUrlResolver.test.ts | Base URL 顶层缩进、`spring.profiles.active`、多模块就近匹配与缓存失效测试 |
+| generator/JsonClassGenerator.test.ts | JSON 转 Java/Kotlin DTO 生成、纯符号/非 ASCII key 回退与按需 `List` 导入测试 |
 | generator/JsonTypeMapper.test.ts | JSON 值到 Java/Kotlin 类型映射测试 |
-| utils/TextProcessor.test.ts | 文本净化与行号索引测试 |
+| utils/TextProcessor.test.ts | 文本净化（含 Java 文本块与 Kotlin 原生三引号字符串）与行号索引测试 |
 
 **运行**: `npm test`
 
-### 自动化验证 - 6个脚本 + 1个 mock + 共享 lib ✅
+### 自动化验证 - 7个脚本 + 1个 mock + 共享 lib ✅
 
 **位置**: `src/test/scripts/`
 
 | 脚本 | 说明 | 运行 |
 |------|------|------|
+| test-sample.js | 样例项目 44 个端点与复制场景全链路验证 | `node src/test/scripts/test-sample.js` |
 | test-all-files.js | 53个端点验证、行号准确性100%、多路径拆分、Kotlin支持 | `node src/test/scripts/test-all-files.js` |
 | test-parameter-copy.js | 78个参数复制测试（Spring/JAX-RS解析、DTO提取、格式转换、文件完整性） | `node src/test/scripts/test-parameter-copy.js` |
 | test-copy-url-curl.js | 113个测试（URL生成、cURL转换、Base URL解析、Header端到端） | `node src/test/scripts/test-copy-url-curl.js` |
 | test-json-to-class.js | 86个测试（命名转换、类型推断、Java/Kotlin 生成、边界情况） | `node src/test/scripts/test-json-to-class.js` |
 | test-curl-semantic.js | 17项cURL语义验证（真实curl进程 + 本地HTTP接收端核对方法、查询参数、Content-Type、multipart分段、Shell转义往返） | `npm run test:curl-semantic` |
-| test-dto-compile.js | 22项JSON生成冒烟（保留字/重名字段、嵌套类命名、可空类型结构断言；javac/kotlinc 可用时真实编译） | `npm run test:dto-compile` |
+| test-dto-compile.js | 28项JSON生成冒烟（保留字/重名字段、纯符号与非 ASCII key 回退、嵌套类命名、按需导入；javac/kotlinc 可用时真实编译） | `npm run test:dto-compile` |
 | mock-vscode.js | 为 Node 自动化脚本提供最小 VS Code API mock | 由脚本自动加载 |
 | lib/dist-check.js | 批量脚本前置检查：dist 落后于 src 生产源码时拒绝运行（`SKIP_DIST_CHECK=1` 跳过） | 由脚本自动加载 |
 | lib/copy-info-fixture.js | 与 Mocha 侧一致的 `makeCopyInfo` EndpointCopyInfo 夹具 | 由脚本自动加载 |
@@ -197,16 +212,18 @@ restful-toolkit/
 | AGENTS.md | Codex 与通用 Agent 开发指导 |
 | CLAUDE.md | Claude开发指导 |
 
-### docs目录 (8个) ✅
+### docs目录 (顶层10个 + superpowers) ✅
 
 | 文档 | 说明 |
 |------|------|
 | TESTING_GUIDE.md | VS Code测试指南 |
 | CONFIG_SYSTEM.md | 配置系统文档 |
 | INCREMENTAL_SCAN.md | 增量扫描文档 |
-| OPTIMIZATION_PLAN.md | 当前核心代码优化任务清单（2026-06-15，已完成） |
+| OPTIMIZATION_PLAN.md | 核心代码优化任务清单（2026-06-15，已完成） |
 | CODE_AUDIT_2026-06-01.md | 代码审查报告（2026-06-01，P0/P1 已在 2026-06-02 优先修复） |
 | CODE_REVIEW_2026-07-29.md | 解析器、扫描状态和 Base URL 优化审查及逐项处置结果 |
+| LOGIC_PERFORMANCE_REVIEW_2026-10-25.md | 全局逻辑与性能审查及 14 项修复记录 |
+| RELEASING.md | GitHub Actions 自动发布与 Marketplace 可信发布指南 |
 | DOCUMENTATION_MANIFEST.md | 本清单文档 |
 | screenshot.png | 扩展截图演示 |
 | superpowers/plans/2026-04-27-endpoint-parameter-copy.md | 参数复制功能实现计划 |
@@ -265,16 +282,16 @@ restful-toolkit/
 
 ## 五、统计
 
-### v0.0.10 当前状态
+### v0.0.11 当前状态
 
 | 类别 | 数量 |
 |------|------|
 | 根目录文档 | 6个（README, README_CN, CHANGELOG, AGENTS, CLAUDE, LICENSE） |
 | 国际化文件 | 2个（package.nls.json, package.nls.zh-cn.json） |
-| docs 顶层文档 | 8 个（7 个 Markdown、1 个 screenshot） |
-| 源代码模块 | 30个（含 extractor/ 9、commands/ 4、generator/ 2、utils/ 4） |
-| 单元测试 | 330 个 Mocha 用例（含解析器集成、复制 URL/cURL 命令、FileScanner、ConfigManager、DTO 递归、ScanStateManager、EndpointCache、BaseUrlResolver、激活与 UI） |
-| 自动化脚本 | 4个（53端点验证 + 78参数复制 + 113 URL/cURL + 86 JSON-to-DTO） |
+| docs 顶层文档 | 10 个（9 个 Markdown、1 个 screenshot） |
+| 源代码模块 | 31个（含 extractor/ 9、commands/ 4、generator/ 2、utils/ 5） |
+| 单元测试 | 356 个 Mocha 用例（25 个测试套件，覆盖解析器、扫描器、缓存、参数提取、DTO 生成、Base URL、命令与激活生命周期） |
+| 自动化脚本 | 7个（44样例验证 + 53端点验证 + 78参数复制 + 113 URL/cURL + 86 JSON-to-DTO + 17 cURL语义 + 28 DTO编译冒烟） |
 | 测试 Controller | 3个（Spring 25 + JAX-RS 11 + Form） |
 | 测试 DTO | 7个 |
 
@@ -288,6 +305,8 @@ restful-toolkit/
 - **v0.0.7 更新**（2026-06-15）：FileScanner 去重重叠 glob 匹配，限制增量 stat 检查并发；SpringMvcParser 改为单次源码顺序扫描；EndpointCache 预计算搜索字段、维护 top-K 候选并隔离返回值变异；DtoFieldExtractor 缓存一次命令内 DTO 查找和直接字段解析；BaseUrlResolver 缓存 workspace 自动检测结果并按配置文件 mtime/ctime/size 变化失效；完成优化任务清单
 - **v0.0.8 发布**（2026-08-12）：修复类型级路径、嵌套 Controller 所有权和重复 JAX-RS 注解行号；扫描结果与 `mtime + size` 状态仅在解析前后元数据稳定时原子提交；后台索引完成后刷新当前搜索；watcher 支持工作区相对排除模式；Base URL 删除同步文件系统入口并收窄配置 watcher；优化稳定 top-K 搜索与内存缓存
 - **v0.0.9 更新**（2026-09-23）：搜索与复制共用路由解析；Spring 无路径 mapping 使用类级或根路径；失败解析保留旧端点缓存；多根工作区按资源解析项目配置和 `maxResults`，并监听 `.restful-toolkit.json`；DTO 同类型兄弟字段分别展开且循环限制在当前路径
+- **v0.0.10 发布**（2026-11-06）：结构化参数区间与 JAX-RS 直接成员扫描、删除事件版本令牌与发现对账、multipart cURL 与上传类型边界识别、单文件增量缓存修补、GitHub Actions Marketplace 可信发布
+- **v0.0.11 更新**（2026-11-23）：三引号词法净化与框架预筛选、直接成员方法定位与 `record`/`@JsonIgnore` DTO 并发提取、Base URL 顶层缩进与多模块及 `spring.profiles.active` 解析、JSON 转 DTO 合法标识符回退、Windows 路径键规范化及跨平台 CI 工作流
 
 ---
 

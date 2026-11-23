@@ -109,7 +109,8 @@ export async function activate(context: vscode.ExtensionContext) {
     deactivating = false;
     lifecycleTasks.clear();
     logger = Logger.getInstance();
-    logger.info('=== RestfulToolkit v0.0.9 loaded ===');
+    const extVersion = (context.extension?.packageJSON as { version?: string } | undefined)?.version ?? '0.0.11';
+    logger.info(`=== RestfulToolkit v${extVersion} loaded ===`);
 
     // 初始化配置管理器
     configManager = ConfigManager.getInstance();
@@ -254,16 +255,30 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     );
 
-    // 新增：创建项目配置文件命令
+    // 创建项目配置文件命令（多根工作区支持选择目标文件夹）
     const createConfigCommand = vscode.commands.registerCommand(
         'restfulToolkit.createProjectConfig',
         async () => {
-            if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-                const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath;
-                await configManager.createProjectConfigTemplate(workspaceFolder);
-            } else {
+            const folders = vscode.workspace.workspaceFolders;
+            if (!folders || folders.length === 0) {
                 vscode.window.showWarningMessage('No workspace folder opened');
+                return;
             }
+
+            let targetFolder: string | undefined;
+            if (folders.length === 1) {
+                targetFolder = folders[0].uri.fsPath;
+            } else {
+                const picked = await vscode.window.showWorkspaceFolderPick({
+                    placeHolder: getLabels().selectWorkspaceFolder
+                });
+                if (!picked) {
+                    return;
+                }
+                targetFolder = picked.uri.fsPath;
+            }
+
+            await configManager.createProjectConfigTemplate(targetFolder);
         }
     );
 

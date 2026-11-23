@@ -71,4 +71,16 @@ suite('JaxRsParameterParser Test Suite', () => {
         assert.strictEqual(params[0].source, 'header');
         assert.strictEqual(params[0].type, 'String');
     });
+
+    test('Should tolerate validation annotations and array/generic types on JAX-RS parameters', () => {
+        const params = parser.parseMethodParameters(
+            'public void filter(@QueryParam("tag") @NotNull String[] tags, @Valid @RequestBody Map<String, String> body)'
+        );
+        assert.strictEqual(params.length, 2);
+        assert.strictEqual(params[0].name, 'tag');
+        assert.strictEqual(params[0].originalCaseName, 'tags');
+        assert.strictEqual(params[0].type, 'String[]');
+        assert.strictEqual(params[1].name, 'body');
+        assert.strictEqual(params[1].type, 'Map<String, String>');
+    });
 });

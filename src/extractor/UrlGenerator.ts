@@ -1,6 +1,18 @@
 import { EndpointCopyInfo } from '../models/types';
 
 /**
+ * 规范化拼接 Base URL 与端点路径，消除连接处的双斜杠或缺失斜杠。
+ */
+export function joinBaseAndPath(baseUrl: string, endpointPath: string): string {
+    const cleanBase = baseUrl.replace(/\/+$/, '');
+    if (!endpointPath) {
+        return cleanBase;
+    }
+    const cleanPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+    return `${cleanBase}${cleanPath}`;
+}
+
+/**
  * 完整 URL 生成器
  */
 export class UrlGenerator {
@@ -9,9 +21,9 @@ export class UrlGenerator {
      * 路径参数保留 {placeholder} 形式，查询参数拼接在 URL 末尾
      */
     generate(copyInfo: EndpointCopyInfo, baseUrl: string): string {
-        const path = copyInfo.path || '';
+        const fullUrl = joinBaseAndPath(baseUrl, copyInfo.path || '');
         const query = this.buildQueryString(copyInfo);
-        return `${baseUrl}${path}${query}`;
+        return `${fullUrl}${query}`;
     }
 
     /**

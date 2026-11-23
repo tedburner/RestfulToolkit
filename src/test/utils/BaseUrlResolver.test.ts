@@ -327,4 +327,54 @@ suite('BaseUrlResolver Test Suite', () => {
         assert.ok(result !== null);
         assert.strictEqual(result!.port, '9090');
     });
+
+    test('ignores nested management.server.port above top-level server.port and strips inline comments', async () => {
+        writeResourceFile('application.yml', [
+            'management:',
+            '  server:',
+            '    port: 9090',
+            'server: # main web server',
+            '  port: 8081 # HTTP port',
+            '  servlet:',
+            '    context-path: /api/ # base context path'
+        ].join('\n'));
+
+        const result = await resolver.resolveAsync(tempDir);
+        assert.ok(result !== null);
+        assert.strictEqual(result!.port, '8081');
+        assert.strictEqual(result!.contextPath, '/api');
+    });
+
+    test('honors spring.profiles.active when multiple profile files exist', async () => {
+        writeResourceFile('application.yml', [
+            'spring:',
+            '  profiles:',
+            '    active: dev',
+            'server:',
+            '  port: 8080'
+        ].join('\n'));
+        writeResourceFile('application-dev.yml', 'server:\n  port: 8081\n');
+        writeResourceFile('application-prod.yml', 'server:\n  port: 80\n');
+
+        const result = await resolver.resolveAsync(tempDir);
+        assert.ok(result !== null);
+        assert.strictEqual(result!.port, '8081');
+    });
+
+    test('prefers the module closest to resourcePath in multi-module workspaces', async () => {
+        const orderRes = path.join(tempDir, 'order-service', 'src', 'main', 'resources');
+        const userRes = path.join(tempDir, 'user-service', 'src', 'main', 'resources');
+        fs.mkdirSync(orderRes, { recursive: true });
+        fs.mkdirSync(userRes, { recursive: true });
+        fs.writeFileSync(path.join(orderRes, 'application.yml'), 'server:\n  port: 8081\n');
+        fs.writeFileSync(path.join(userRes, 'application.yml'), 'server:\n  port: 8082\n');
+
+        const orderController = path.join(tempDir, 'order-service', 'src', 'main', 'java', 'OrderController.java');
+        const userController = path.join(tempDir, 'user-service', 'src', 'main', 'java', 'UserController.java');
+
+        const orderResult = await resolver.resolveAsync(tempDir, orderController);
+        const userResult = await resolver.resolveAsync(tempDir, userController);
+        assert.strictEqual(orderResult?.port, '8081');
+        assert.strictEqual(userResult?.port, '8082');
+    });
 });

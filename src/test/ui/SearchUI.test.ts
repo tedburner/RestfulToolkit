@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { EndpointCache } from '../../cache/EndpointCache';
 import { SearchUI } from '../../ui/SearchUI';
+import { Logger } from '../../utils/Logger';
 
 suite('SearchUI Test Suite', () => {
     test('refreshes picker items when background indexing completes', async () => {
@@ -206,6 +207,55 @@ suite('SearchUI Test Suite', () => {
             await ui.show();
             assert.strictEqual(quickPick.items.length, 2);
         } finally {
+            ui.dispose();
+            vscode.window.createQuickPick = originalCreateQuickPick;
+            vscode.workspace.getConfiguration = originalGetConfiguration;
+        }
+    });
+
+    test('filtering search queries does not emit Effective scan config INFO logs on each input', async () => {
+        const originalCreateQuickPick = vscode.window.createQuickPick;
+        const originalGetConfiguration = vscode.workspace.getConfiguration;
+        let changeValueListener: ((value: string) => void) | undefined;
+        let hiddenListener: (() => void) | undefined;
+        const quickPick = {
+            items: [] as vscode.QuickPickItem[], selectedItems: [], value: '', busy: false,
+            matchOnDescription: false, matchOnDetail: false, placeholder: '',
+            onDidChangeValue: (listener: (value: string) => void) => {
+                changeValueListener = listener;
+                return { dispose: () => undefined };
+            },
+            onDidAccept: () => ({ dispose: () => undefined }),
+            onDidHide: (listener: () => void) => { hiddenListener = listener; return { dispose: () => undefined }; },
+            show: () => undefined,
+            hide: () => undefined,
+            dispose: () => undefined
+        };
+        vscode.window.createQuickPick = ((() => quickPick) as unknown) as typeof vscode.window.createQuickPick;
+        vscode.workspace.getConfiguration = ((() => ({ inspect: () => ({ workspaceValue: 50 }) })) as unknown) as typeof vscode.workspace.getConfiguration;
+
+        const logger = Logger.getInstance();
+        const originalInfo = logger.info.bind(logger);
+        const infoLogs: string[] = [];
+        logger.info = (msg: string) => { infoLogs.push(msg); };
+
+        const cache = new EndpointCache();
+        cache.add({ method: 'GET', path: '/api/users', className: 'UserController', methodName: 'list', file: 'UserController.java', line: 1, framework: 'Spring' });
+        const ui = new SearchUI(cache);
+        try {
+            const showPromise = ui.show();
+            changeValueListener?.('user');
+            await new Promise(resolve => setTimeout(resolve, 180));
+            hiddenListener?.();
+            await showPromise;
+
+            assert.strictEqual(
+                infoLogs.filter(line => line.includes('Effective scan config')).length,
+                0,
+                'search UI maxResults lookup must not spam Effective scan config logs'
+            );
+        } finally {
+            logger.info = originalInfo;
             ui.dispose();
             vscode.window.createQuickPick = originalCreateQuickPick;
             vscode.workspace.getConfiguration = originalGetConfiguration;

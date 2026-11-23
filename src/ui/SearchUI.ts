@@ -132,8 +132,7 @@ export class SearchUI implements vscode.Disposable {
     }
 
     private getMaxResults(): number {
-        const configured = ConfigManager.getInstance().getScanConfig(this.resourceUri).maxResults;
-        return Math.min(1000, Math.max(1, Math.floor(configured)));
+        return ConfigManager.getInstance().getMaxResults(this.resourceUri);
     }
 
     dispose(): void {

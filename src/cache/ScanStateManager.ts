@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { Logger } from '../utils/Logger';
+import { normalizePathKey } from '../utils/PathUtils';
 
 /**
  * 文件扫描状态记录
@@ -41,10 +42,11 @@ export class ScanStateManager {
      */
     async needsScan(filePath: string): Promise<{ needsScan: boolean; mtime?: number; size?: number }> {
         const uri = vscode.Uri.file(filePath);
+        const key = normalizePathKey(filePath);
 
         try {
             const stat = await vscode.workspace.fs.stat(uri);
-            const record = this.scanRecords.get(filePath);
+            const record = this.scanRecords.get(key);
 
             if (!record) {
                 return { needsScan: true, mtime: stat.mtime, size: stat.size };
@@ -74,15 +76,16 @@ export class ScanStateManager {
             endpointCount
         };
 
-        this.scanRecords.set(filePath, record);
+        this.scanRecords.set(normalizePathKey(filePath), record);
     }
 
     /**
      * 移除文件扫描记录
      */
     removeRecord(filePath: string): void {
-        if (this.scanRecords.has(filePath)) {
-            this.scanRecords.delete(filePath);
+        const key = normalizePathKey(filePath);
+        if (this.scanRecords.has(key)) {
+            this.scanRecords.delete(key);
         }
     }
 
@@ -116,7 +119,7 @@ export class ScanStateManager {
     }
 
     /**
-     * 获取所有已扫描文件路径
+     * 获取所有已扫描文件标准化键
      */
     getAllScannedFiles(): string[] {
         return Array.from(this.scanRecords.keys());

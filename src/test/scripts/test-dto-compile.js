@@ -169,9 +169,26 @@ const SAMPLES = [
         expect: {
             java(source) {
                 assertContains(source, 'private Object l4;', 'Java 深层嵌套退化为 Object');
+                assertNotContains(source, 'import java.util.List;', '无集合字段时不输出多余 List 导入');
             },
             kotlin(source) {
                 assertContains(source, 'val l4: Any', 'Kotlin 深层嵌套退化为 Any');
+            }
+        }
+    },
+    {
+        name: '纯符号与非 ASCII JSON key 合法标识符兜底',
+        json: '{"$":1,"___":"x","中文":{"子项":[1]}}',
+        className: 'Symbols',
+        expect: {
+            java(source) {
+                assertContains(source, 'private Long field;', '纯符号 key 生成合法字段名 field');
+                assertContains(source, 'private String field2;', '重名回退字段追加计数后缀 field2');
+                assertContains(source, 'public static class NestedItem', '非 ASCII 嵌套类生成合法类名 NestedItem');
+            },
+            kotlin(source) {
+                assertContains(source, 'val field: Long', 'Kotlin 纯符号 key 生成合法字段名');
+                assertContains(source, 'data class NestedItem(', 'Kotlin 非 ASCII 嵌套类生成合法类名');
             }
         }
     }

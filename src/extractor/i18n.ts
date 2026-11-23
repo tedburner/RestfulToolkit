@@ -7,6 +7,7 @@ export interface I18nLabels {
     formData: string;
     formUrlencoded: string;
     nameFormat: string;
+    recommended: string;
     copied: string;
     noParams: string;
     copy: string;
@@ -52,6 +53,8 @@ export interface I18nLabels {
     lombokUseDesc: string;
     lombokSkip: string;
     lombokSkipDesc: string;
+    configAlreadyExists: string;
+    selectWorkspaceFolder: string;
 }
 
 const zhLabels: I18nLabels = {
@@ -61,6 +64,7 @@ const zhLabels: I18nLabels = {
     formData: 'Form Data',
     formUrlencoded: 'x-www-form-urlencoded',
     nameFormat: '命名格式',
+    recommended: '推荐',
     copied: '✓ 已复制到剪贴板',
     noParams: '该方法没有可复制的参数',
     copy: '复制',
@@ -105,7 +109,9 @@ const zhLabels: I18nLabels = {
     lombokUse: '✓ 使用',
     lombokUseDesc: '使用 Lombok @Data 注解',
     lombokSkip: '✗ 不使用',
-    lombokSkipDesc: '自动生成 getter/setter 方法'
+    lombokSkipDesc: '自动生成 getter/setter 方法',
+    configAlreadyExists: '{0} 已存在',
+    selectWorkspaceFolder: '选择要创建 .restful-toolkit.json 的工作区文件夹'
 };
 
 const enLabels: I18nLabels = {
@@ -115,6 +121,7 @@ const enLabels: I18nLabels = {
     formData: 'Form Data',
     formUrlencoded: 'x-www-form-urlencoded',
     nameFormat: 'Name Format',
+    recommended: 'Recommended',
     copied: '✓ Copied to clipboard',
     noParams: 'No copyable parameters found',
     copy: 'Copy',
@@ -159,7 +166,9 @@ const enLabels: I18nLabels = {
     lombokUse: '✓ Use',
     lombokUseDesc: 'Use Lombok @Data annotation',
     lombokSkip: '✗ Skip',
-    lombokSkipDesc: 'Auto-generate getter/setter methods'
+    lombokSkipDesc: 'Auto-generate getter/setter methods',
+    configAlreadyExists: '{0} already exists in this workspace folder',
+    selectWorkspaceFolder: 'Select workspace folder for .restful-toolkit.json'
 };
 
 export function getLabels(): I18nLabels {

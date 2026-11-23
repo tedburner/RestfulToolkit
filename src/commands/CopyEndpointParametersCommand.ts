@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import { ParameterExtractor } from '../extractor/ParameterExtractor';
 import { FormatConverter } from '../extractor/FormatConverter';
-import { toSnakeCase } from '../extractor/NameTransformer';
+import { toCamelCase, toSnakeCase } from '../extractor/NameTransformer';
 import { getLabels, I18nLabels } from '../extractor/i18n';
 import { EndpointCopyInfo } from '../models/types';
+import { ConfigManager } from '../config/ConfigManager';
 
 interface FormatOption {
     label: string;
@@ -48,7 +49,7 @@ export class CopyEndpointParametersCommand {
                 await this.extractor.expandDtoFields(copyInfo, document);
             }
 
-            const nameTransform = this.autoDetectNameTransform(copyInfo);
+            const nameTransform = this.resolveNameTransform(copyInfo, document.uri);
 
             let output: string;
             switch (format) {
@@ -80,15 +81,15 @@ export class CopyEndpointParametersCommand {
         const defaultFormat = this.autoDetectFormat(copyInfo);
 
         const formats: FormatOption[] = [
-            { label: `${labels.urlParams}`, value: 'url-params', icon: '$(link)' },
-            { label: `${labels.jsonBody}`, value: 'json-body', icon: '$(json)' },
-            { label: `${labels.formData}`, value: 'form-data', icon: '$(file-media)' },
-            { label: `${labels.formUrlencoded}`, value: 'x-www-form-urlencoded', icon: '$(file-text)' },
+            { label: labels.urlParams, value: 'url-params', icon: '$(link)' },
+            { label: labels.jsonBody, value: 'json-body', icon: '$(json)' },
+            { label: labels.formData, value: 'form-data', icon: '$(file-media)' },
+            { label: labels.formUrlencoded, value: 'x-www-form-urlencoded', icon: '$(file-text)' },
         ];
 
         const items = formats.map((f, i) => ({
-            label: f.label,
-            description: i === defaultFormat ? `✓ ${labels.nameFormat}` : undefined,
+            label: `${f.icon} ${f.label}`,
+            description: i === defaultFormat ? `✓ ${labels.recommended}` : undefined,
             value: f.value
         }));
 
@@ -100,6 +101,17 @@ export class CopyEndpointParametersCommand {
         return pick?.value || null;
     }
 
+    private resolveNameTransform(copyInfo: EndpointCopyInfo, resourceUri: vscode.Uri): ((n: string) => string) | undefined {
+        const explicit = ConfigManager.getInstance().getExplicitCopyNameFormat(resourceUri);
+        if (explicit === 'snake_case') {
+            return toSnakeCase;
+        }
+        if (explicit === 'camelCase') {
+            return toCamelCase;
+        }
+        return this.autoDetectNameTransform(copyInfo);
+    }
+
     /**
      * 根据参数名和 DTO 字段名自动判断是否需要转 snake_case。
      * 如果大部分字段名中包含下划线，返回 snake_case 转换函数。
@@ -107,17 +119,13 @@ export class CopyEndpointParametersCommand {
     private autoDetectNameTransform(copyInfo: EndpointCopyInfo): ((n: string) => string) | undefined {
         const allNames: string[] = [];
 
-        // 收集参数名
         allNames.push(...copyInfo.parameters.map(p => p.name));
-
-        // 收集 DTO 字段名
         for (const fields of copyInfo.dtoFields.values()) {
             allNames.push(...fields.map(f => f.name));
         }
 
         if (allNames.length === 0) { return undefined; }
 
-        // 如果包含下划线的名称超过 50%，判定为 snake_case
         const snakeCount = allNames.filter(n => n.includes('_')).length;
         return snakeCount / allNames.length > 0.5 ? toSnakeCase : undefined;
     }

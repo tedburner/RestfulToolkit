@@ -186,6 +186,25 @@ suite('JsonClassGenerator Test Suite', () => {
             const result = generator.generate(json, 'Dto', 'com.example', 'java');
             assert.ok(result.includes('import java.util.List;'));
         });
+
+        test('Should omit java.util.List import when Java DTO has no list fields', () => {
+            const json = JSON.stringify({ name: 'alice', nested: { age: 30 } });
+            const result = generator.generate(json, 'Dto', 'com.example', 'java');
+            assert.ok(!result.includes('import java.util.List;'), result);
+        });
+    });
+
+    test('generates valid identifiers for symbol-only, underscore-only, and non-ASCII JSON keys', () => {
+        const json = '{"$":1,"___":"x","中文":{"子项":[1]}}';
+        const java = generator.generate(json, 'SymbolDto', 'com.example', 'java');
+        const kotlin = generator.generate(json, 'SymbolDto', 'com.example', 'kotlin');
+
+        assert.ok(java.includes('private Long field;'), java);
+        assert.ok(java.includes('private String field2;'), java);
+        assert.ok(java.includes('public static class NestedItem'), java);
+        assert.ok(kotlin.includes('val field: Long'), kotlin);
+        assert.ok(kotlin.includes('val field2: String'), kotlin);
+        assert.ok(kotlin.includes('data class NestedItem('), kotlin);
     });
 
     test('allocates unique nested class names when suffixes collide with other keys', () => {

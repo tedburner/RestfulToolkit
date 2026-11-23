@@ -1,4 +1,5 @@
 import { EndpointCopyInfo, DtoField } from '../models/types';
+import { joinBaseAndPath } from './UrlGenerator';
 
 /**
  * cURL 命令生成器
@@ -40,7 +41,7 @@ export class CurlConverter {
      * 构建 URL：查询参数对所有 HTTP 方法拼接到 URL，路径参数保留 {placeholder}
      */
     private buildUrl(copyInfo: EndpointCopyInfo, baseUrl: string): string {
-        let url = `${baseUrl}${copyInfo.path}`;
+        let url = joinBaseAndPath(baseUrl, copyInfo.path || '');
 
         const queryParams = copyInfo.parameters.filter(p => p.source === 'query' && !this.isSpringFormRequest(copyInfo));
         if (queryParams.length > 0) {

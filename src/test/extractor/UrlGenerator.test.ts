@@ -64,4 +64,13 @@ suite('UrlGenerator Test Suite', () => {
         const url = generator.generate(info, 'https://api.example.com:443');
         assert.strictEqual(url, 'https://api.example.com:443/api/health');
     });
+
+    test('Should normalize trailing slash on baseUrl and missing leading slash on path', () => {
+        const info = makeCopyInfo({ path: '/api/users' });
+        assert.strictEqual(generator.generate(info, 'http://localhost:8080/'), 'http://localhost:8080/api/users');
+        assert.strictEqual(
+            generator.generate(makeCopyInfo({ path: 'api/users' }), 'http://localhost:8080/'),
+            'http://localhost:8080/api/users'
+        );
+    });
 });

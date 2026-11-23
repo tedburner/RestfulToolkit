@@ -536,19 +536,24 @@ suite('FileScanner Test Suite', () => {
 
         const scanner = new FileScanner(cache) as unknown as ScannerInternals & { fileVersions: Map<string, number> };
         try {
-            // removeFile 为已删除文件留下版本令牌；liveUri 保持在发现结果中
-            scanner.removeFile(vscode.Uri.file(gonePath));
-            scanner.fileVersions.set(liveUri.fsPath, 3);
+            const { normalizePathKey } = await import('../../utils/PathUtils');
+            const goneUri = vscode.Uri.file(gonePath);
+            // removeFile 为已删除文件留下版本令牌；liveUri 推进 3 次后保持在发现结果中
+            scanner.removeFile(goneUri);
+            scanner.removeFile(liveUri);
+            scanner.removeFile(liveUri);
+            scanner.removeFile(liveUri);
+            assert.strictEqual(scanner.fileVersions.has(normalizePathKey(goneUri.fsPath)), true);
 
             await scanner.performScan(false);
 
             assert.strictEqual(
-                scanner.fileVersions.has(gonePath),
+                scanner.fileVersions.has(normalizePathKey(goneUri.fsPath)),
                 false,
                 'entries without cache/state backing must be pruned after reconciliation'
             );
             assert.strictEqual(
-                scanner.fileVersions.get(liveUri.fsPath),
+                scanner.fileVersions.get(normalizePathKey(liveUri.fsPath)),
                 3,
                 'entries backing indexed files must survive the prune'
             );
@@ -778,6 +783,39 @@ suite('FileScanner Test Suite', () => {
             state.recordScan = originalRecordScan;
             global.setTimeout = originalSetTimeout;
             global.clearTimeout = originalClearTimeout;
+        }
+    });
+
+    test('drops a batch-committed scan result when removeFile uses different Windows drive casing', async () => {
+        const { setPlatformForTest } = await import('../../utils/PathUtils');
+        setPlatformForTest('win32');
+        stubStatusBar();
+        const scannedFile = { fsPath: 'C:\\workspace\\CaseController.java' } as vscode.Uri;
+        const deletedFile = { fsPath: 'c:\\workspace\\CaseController.java' } as vscode.Uri;
+        let releaseRead!: () => void;
+        const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
+        stubScanEnvironment({
+            files: [scannedFile],
+            contents: async () => {
+                await readGate;
+                return Buffer.from('class CaseController {\n@GetMapping("/case")\npublic String c() { return "ok"; }\n}');
+            },
+            scanPaths: ['**/*.java']
+        });
+
+        const cache = new EndpointCache();
+        const scanner = new FileScanner(cache) as unknown as ScannerInternals;
+        try {
+            const scanPromise = scanner.performScan(true);
+            await new Promise(resolve => setTimeout(resolve, 5));
+            scanner.removeFile(deletedFile);
+            releaseRead();
+            await scanPromise;
+
+            assert.strictEqual(cache.size(), 0, 'removeFile with lowercase drive must bump the same file version token');
+        } finally {
+            setPlatformForTest();
+            scanner.dispose();
         }
     });
 });

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { Logger } from '../utils/Logger';
+import { isCaseInsensitivePlatform, normalizePathKey, relativeFromFolder, toPosixPath } from './PathUtils';
 
 /** 单个工作区根的监听作用域；folderUri 缺省时表示全局监听。 */
 export interface WatcherScope {
@@ -11,6 +11,7 @@ export interface WatcherScope {
 
 interface CompiledScope {
     folderFsPath?: string;
+    folderKey?: string;
     watchers: vscode.FileSystemWatcher[];
     excludeMatchers: RegExp[];
 }
@@ -58,6 +59,7 @@ export class FileWatcher {
         for (const scope of scopes) {
             const compiled: CompiledScope = {
                 folderFsPath: scope.folderUri?.fsPath,
+                folderKey: scope.folderUri ? normalizePathKey(scope.folderUri.fsPath) : undefined,
                 watchers: [],
                 excludeMatchers: scope.excludePatterns.flatMap(pattern => this.compileGlob(pattern))
             };
@@ -118,28 +120,27 @@ export class FileWatcher {
 
     private shouldIgnore(uri: vscode.Uri): boolean {
         const filePath = uri.fsPath;
-        const normalized = filePath.replace(/\\/g, '/');
-        if (/(?:^|\/)\.git(?:\/|$)/.test(normalized)) {
+        const normalized = toPosixPath(filePath);
+        if (/(?:^|\/)\.git(?:\/|$)/i.test(normalized)) {
             return true;
         }
 
         const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-        const owningScope = workspaceFolder
-            ? this.scopes.find(scope => scope.folderFsPath === workspaceFolder.uri.fsPath)
+        const workspaceKey = workspaceFolder ? normalizePathKey(workspaceFolder.uri.fsPath) : undefined;
+        const owningScope = workspaceKey
+            ? this.scopes.find(scope => scope.folderKey === workspaceKey)
                 ?? this.scopes.find(scope => scope.folderFsPath === undefined)
             : this.scopes.find(scope => scope.folderFsPath === undefined);
 
         if (!owningScope) {
-            // 事件不属于任何已注册作用域（根目录外或作用域未注册）：保守放行但记录日志，
-            // 避免多根工作区下静默绕过 exclude 规则却无从排查
             this.logger.debug(`No watcher scope owns ${filePath}; exclude rules skipped`);
             return false;
         }
 
         const candidates = [normalized];
         if (workspaceFolder) {
-            const relativePath = path.relative(workspaceFolder.uri.fsPath, filePath).replace(/\\/g, '/');
-            if (relativePath && relativePath !== '..' && !relativePath.startsWith('../')) {
+            const relativePath = relativeFromFolder(workspaceFolder.uri.fsPath, filePath);
+            if (relativePath) {
                 candidates.push(relativePath);
             }
         }
@@ -151,8 +152,9 @@ export class FileWatcher {
 
     private compileGlob(pattern: string): RegExp[] {
         try {
+            const flags = isCaseInsensitivePlatform() ? 'i' : '';
             return this.expandBraces(pattern).map(expanded => {
-                const normalized = expanded.replace(/\\/g, '/');
+                const normalized = toPosixPath(expanded);
                 let source = '';
                 for (let i = 0; i < normalized.length; i++) {
                     const char = normalized[i];
@@ -172,7 +174,7 @@ export class FileWatcher {
                         source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
                     }
                 }
-                return new RegExp(`^${source}$`);
+                return new RegExp(`^${source}$`, flags);
             });
         } catch {
             return [];

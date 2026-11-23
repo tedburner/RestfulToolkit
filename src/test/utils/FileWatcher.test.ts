@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { FileWatcher } from '../../utils/FileWatcher';
+import { setPlatformForTest } from '../../utils/PathUtils';
 
 // 使用当前平台路径构造测试输入，避免 Windows 分隔符在 macOS/Linux 上破坏 path.relative 计算
 const workspaceRoot = path.resolve('/repo');
@@ -74,6 +75,46 @@ suite('FileWatcher Test Suite', () => {
             changeListener?.(uri('module/src/main/java/Api.java'));
             assert.strictEqual(dispatchCount, 1);
         } finally {
+            watcher.dispose();
+            vscode.workspace.createFileSystemWatcher = originalCreateWatcher;
+            vscode.workspace.getWorkspaceFolder = originalGetWorkspaceFolder;
+        }
+    });
+
+    test('honors scope exclusions on Windows when drive-letter or segment casing differs', () => {
+        setPlatformForTest('win32');
+        const originalCreateWatcher = vscode.workspace.createFileSystemWatcher;
+        const originalGetWorkspaceFolder = vscode.workspace.getWorkspaceFolder;
+        let changeListener: ((uri: vscode.Uri) => void) | undefined;
+        vscode.workspace.createFileSystemWatcher = ((() => ({
+            onDidCreate: () => ({ dispose: () => undefined }),
+            onDidChange: (listener: (uri: vscode.Uri) => void) => {
+                changeListener = listener;
+                return { dispose: () => undefined };
+            },
+            onDidDelete: () => ({ dispose: () => undefined }),
+            dispose: () => undefined
+        })) as unknown) as typeof vscode.workspace.createFileSystemWatcher;
+        vscode.workspace.getWorkspaceFolder = (() => ({
+            uri: { fsPath: 'f:\\Repo' } as vscode.Uri,
+            name: 'repo',
+            index: 0
+        })) as typeof vscode.workspace.getWorkspaceFolder;
+
+        const watcher = new FileWatcher();
+        let dispatchCount = 0;
+        watcher.setOnChange(() => dispatchCount++);
+        try {
+            watcher.start([{
+                folderUri: { fsPath: 'F:\\Repo' } as vscode.Uri,
+                patterns: ['**/*.java'],
+                excludePatterns: ['module/build/**']
+            }]);
+            changeListener?.({ fsPath: 'f:\\Repo\\Module\\Build\\Generated.java' } as vscode.Uri);
+            changeListener?.({ fsPath: 'f:\\Repo\\Module\\src\\main\\java\\Api.java' } as vscode.Uri);
+            assert.strictEqual(dispatchCount, 1);
+        } finally {
+            setPlatformForTest();
             watcher.dispose();
             vscode.workspace.createFileSystemWatcher = originalCreateWatcher;
             vscode.workspace.getWorkspaceFolder = originalGetWorkspaceFolder;

@@ -14,7 +14,6 @@ export class JsonToClassCommand {
         this.logger = Logger.getInstance();
     }
 
-    // Explorer folder context menu entry
     async executeInFolder(targetFolderUri: vscode.Uri): Promise<void> {
         const json = await this.getJsonInput();
 
@@ -33,15 +32,17 @@ export class JsonToClassCommand {
         const language = await this.selectLanguage();
         if (!language) { return; }
 
-        // Only ask for Lombok when Java is selected
-        const useLombok = language === 'java' ? await this.selectLombok() : false;
+        let useLombok = false;
+        if (language === 'java') {
+            const lombokChoice = await this.selectLombok();
+            if (lombokChoice === undefined) { return; }
+            useLombok = lombokChoice;
+        }
 
         const className = await this.inputClassName(json);
         if (!className) { return; }
 
-        // Derive package name from folder path
         const derivedName = this.derivePackageName(targetFolderUri.fsPath);
-        // Allow user to edit the derived package name
         const packageName = await this.editPackageName(derivedName);
         if (!packageName) { return; }
 
@@ -57,13 +58,9 @@ export class JsonToClassCommand {
         }
     }
 
-    // Derive Java package name from folder path
-    // Looks for /java/ or /kotlin/ in the path and extracts the package portion
     private derivePackageName(folderPath: string): string {
-        // Normalize to forward slashes for matching
         const normalized = folderPath.replace(/\\/g, '/');
 
-        // Match: .../java/com/example/dto  or  .../kotlin/com/example/dto
         const javaMatch = normalized.match(/\/java\/(.+)$/);
         if (javaMatch) {
             return javaMatch[1].replace(/\//g, '.');
@@ -74,7 +71,6 @@ export class JsonToClassCommand {
             return kotlinMatch[1].replace(/\//g, '.');
         }
 
-        // Fallback: use the last path segment
         const segments = normalized.split('/').filter(s => s.length > 0);
         if (segments.length > 0) {
             return segments[segments.length - 1];
@@ -96,7 +92,6 @@ export class JsonToClassCommand {
         });
     }
 
-    // Write file directly to target folder (no save dialog)
     private async writeToFile(code: string, className: string, _packageName: string, language: TargetLanguage, folderUri: vscode.Uri): Promise<boolean> {
         const extension = language === 'java' ? 'java' : 'kt';
         const fileName = `${className}.${extension}`;
@@ -151,7 +146,7 @@ export class JsonToClassCommand {
         return choice?.value;
     }
 
-    private async selectLombok(): Promise<boolean> {
+    private async selectLombok(): Promise<boolean | undefined> {
         const labels = getLabels();
         const choice = await vscode.window.showQuickPick(
             [
@@ -160,7 +155,7 @@ export class JsonToClassCommand {
             ],
             { placeHolder: labels.jsonToClassLombok }
         );
-        return choice?.value ?? false;
+        return choice?.value;
     }
 
     private async inputClassName(json: string): Promise<string | undefined> {
@@ -168,12 +163,16 @@ export class JsonToClassCommand {
         const parsed = JSON.parse(json);
         let defaultName = 'Dto';
 
-        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
-            const firstKey = Object.keys(parsed[0])[0];
-            defaultName = firstKey ? toPascalCase(firstKey) : 'Dto';
+        const sanitizeKey = (rawKey: string | undefined): string => {
+            if (!rawKey) { return 'Dto'; }
+            const clean = toPascalCase(rawKey.replace(/[^a-zA-Z0-9_]/g, '_')).replace(/^[0-9]+/, '');
+            return clean || 'Dto';
+        };
+
+        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
+            defaultName = sanitizeKey(Object.keys(parsed[0])[0]);
         } else if (typeof parsed === 'object' && parsed !== null) {
-            const firstKey = Object.keys(parsed)[0];
-            defaultName = firstKey ? toPascalCase(firstKey) : 'Dto';
+            defaultName = sanitizeKey(Object.keys(parsed)[0]);
         }
 
         if (!defaultName.endsWith('Dto')) {
@@ -190,5 +189,4 @@ export class JsonToClassCommand {
             }
         });
     }
-
 }

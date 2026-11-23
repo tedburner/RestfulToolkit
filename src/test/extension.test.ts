@@ -253,4 +253,105 @@ suite('Extension Activation Test Suite', () => {
             FileScanner.prototype.scanWorkspace = originalScan;
         }
     });
+
+    test('logs dynamic extension version and prompts for folder in multi-root createProjectConfig with existing-file feedback', async () => {
+        const originalRegisterCommand = vscode.commands.registerCommand;
+        const originalStatusBar = vscode.window.createStatusBarItem;
+        const originalCreateWatcher = vscode.workspace.createFileSystemWatcher;
+        const originalCreateOutputChannel = vscode.window.createOutputChannel;
+        const originalShowWorkspaceFolderPick = vscode.window.showWorkspaceFolderPick;
+        const originalShowInformationMessage = vscode.window.showInformationMessage;
+        const originalWorkspaceFolders = vscode.workspace.workspaceFolders;
+        const originalStat = vscode.workspace.fs.stat;
+        const originalWriteFile = vscode.workspace.fs.writeFile;
+        const originalSetFolders = ConfigManager.prototype.setWorkspaceFolders;
+        const originalGetConfig = ConfigManager.prototype.getScanConfig;
+        const originalWatcherStart = FileWatcher.prototype.start;
+        const originalScan = FileScanner.prototype.scanWorkspace;
+
+        const outputLines: string[] = [];
+        const infoMessages: string[] = [];
+        let createConfigHandler: (() => Promise<void>) | undefined;
+        let wroteConfig = false;
+
+        vscode.window.createOutputChannel = (() => ({
+            appendLine: (line: string) => outputLines.push(line),
+            show: () => undefined,
+            dispose: () => undefined
+        })) as unknown as typeof vscode.window.createOutputChannel;
+        vscode.commands.registerCommand = ((command: string, callback: (...args: unknown[]) => unknown) => {
+            if (command === 'restfulToolkit.createProjectConfig') {
+                createConfigHandler = callback as () => Promise<void>;
+            }
+            return { dispose: () => undefined };
+        }) as typeof vscode.commands.registerCommand;
+        vscode.window.createStatusBarItem = (() => ({
+            text: '', show: () => undefined, hide: () => undefined, dispose: () => undefined
+        })) as typeof vscode.window.createStatusBarItem;
+        vscode.workspace.createFileSystemWatcher = ((() => ({
+            onDidCreate: () => ({ dispose: () => undefined }),
+            onDidChange: () => ({ dispose: () => undefined }),
+            onDidDelete: () => ({ dispose: () => undefined }),
+            dispose: () => undefined
+        })) as unknown) as typeof vscode.workspace.createFileSystemWatcher;
+
+        const folderOne = { name: 'one', index: 0, uri: vscode.Uri.file('/workspace/one') } as vscode.WorkspaceFolder;
+        const folderTwo = { name: 'two', index: 1, uri: vscode.Uri.file('/workspace/two') } as vscode.WorkspaceFolder;
+        (vscode.workspace as unknown as { workspaceFolders: vscode.WorkspaceFolder[] }).workspaceFolders = [folderOne, folderTwo];
+
+        let pickCalls = 0;
+        vscode.window.showWorkspaceFolderPick = (async () => {
+            pickCalls++;
+            return folderTwo;
+        }) as typeof vscode.window.showWorkspaceFolderPick;
+        vscode.window.showInformationMessage = (async (message: string) => {
+            infoMessages.push(message);
+            return undefined;
+        }) as unknown as typeof vscode.window.showInformationMessage;
+        // Simulate existing .restful-toolkit.json in folderTwo
+        vscode.workspace.fs.stat = (async () => ({ type: vscode.FileType.File, ctime: 0, mtime: 0, size: 10 })) as typeof vscode.workspace.fs.stat;
+        vscode.workspace.fs.writeFile = async () => { wroteConfig = true; };
+
+        ConfigManager.prototype.setWorkspaceFolders = async () => undefined;
+        ConfigManager.prototype.getScanConfig = () => ({
+            scanPaths: ['**/*.java'], excludePaths: [], maxResults: 100
+        });
+        FileWatcher.prototype.start = () => undefined;
+        FileScanner.prototype.scanWorkspace = async () => undefined;
+
+        const context = {
+            subscriptions: [],
+            extension: { packageJSON: { version: '9.8.7' } }
+        } as unknown as vscode.ExtensionContext;
+        const extension = await import('../extension');
+        try {
+            await extension.activate(context);
+            assert.ok(
+                outputLines.some(line => line.includes('RestfulToolkit v9.8.7 loaded')),
+                'activation log should reflect context.extension.packageJSON.version'
+            );
+            assert.ok(createConfigHandler, 'createProjectConfig command must be registered');
+
+            await createConfigHandler!();
+            assert.strictEqual(pickCalls, 1, 'multi-root workspace must prompt showWorkspaceFolderPick');
+            assert.strictEqual(wroteConfig, false, 'existing config file must not be overwritten');
+            assert.strictEqual(infoMessages.length, 1, 'existing config file must show user feedback');
+            assert.ok(infoMessages[0].includes('.restful-toolkit.json'));
+        } finally {
+            await extension.deactivate();
+            vscode.commands.registerCommand = originalRegisterCommand;
+            vscode.window.createStatusBarItem = originalStatusBar;
+            vscode.workspace.createFileSystemWatcher = originalCreateWatcher;
+            vscode.window.createOutputChannel = originalCreateOutputChannel;
+            vscode.window.showWorkspaceFolderPick = originalShowWorkspaceFolderPick;
+            vscode.window.showInformationMessage = originalShowInformationMessage;
+            (vscode.workspace as unknown as { workspaceFolders: typeof originalWorkspaceFolders }).workspaceFolders = originalWorkspaceFolders;
+            vscode.workspace.fs.stat = originalStat;
+            vscode.workspace.fs.writeFile = originalWriteFile;
+            ConfigManager.prototype.setWorkspaceFolders = originalSetFolders;
+            ConfigManager.prototype.getScanConfig = originalGetConfig;
+            FileWatcher.prototype.start = originalWatcherStart;
+            FileScanner.prototype.scanWorkspace = originalScan;
+        }
+    });
 });

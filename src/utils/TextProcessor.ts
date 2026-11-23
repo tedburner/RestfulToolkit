@@ -1,5 +1,11 @@
 import * as vscode from 'vscode';
 
+export interface SanitizeOptions {
+    preserveStrings?: boolean;
+    /** Kotlin 原生三引号字符串（反斜杠不作转义符，尾随多余引号可闭合）。 */
+    rawTripleQuotes?: boolean;
+}
+
 export class TextProcessor {
     private static textDecoder = new TextDecoder('utf-8');
 
@@ -8,12 +14,17 @@ export class TextProcessor {
         return this.textDecoder.decode(fileData);
     }
 
-    static sanitize(code: string, options?: { preserveStrings?: boolean }): string {
+    static sanitize(code: string, options?: SanitizeOptions): string {
         const preserveStrings = options?.preserveStrings ?? false;
+        const rawTripleQuotes = options?.rawTripleQuotes ?? false;
         const chars = code.split('');
         let i = 0;
 
         while (i < chars.length) {
+            if (chars[i] === '"' && i + 2 < chars.length && chars[i + 1] === '"' && chars[i + 2] === '"') {
+                i = this.processTripleQuoted(chars, i, preserveStrings, rawTripleQuotes);
+                continue;
+            }
             if (chars[i] === '"') {
                 i = preserveStrings ? this.skipQuoted(chars, '"', i) : this.processQuoted(chars, '"', i);
                 continue;
@@ -54,6 +65,58 @@ export class TextProcessor {
         }
 
         return chars.join('');
+    }
+
+    private static processTripleQuoted(
+        chars: string[],
+        start: number,
+        preserveStrings: boolean,
+        rawTripleQuotes: boolean
+    ): number {
+        if (!preserveStrings) {
+            chars[start] = ' ';
+            chars[start + 1] = ' ';
+            chars[start + 2] = ' ';
+        }
+        let i = start + 3;
+
+        while (i < chars.length) {
+            if (!rawTripleQuotes && chars[i] === '\\') {
+                if (!preserveStrings) {
+                    chars[i] = ' ';
+                }
+                i++;
+                if (i < chars.length) {
+                    if (!preserveStrings && chars[i] !== '\n') {
+                        chars[i] = ' ';
+                    }
+                    i++;
+                }
+                continue;
+            }
+
+            if (
+                chars[i] === '"'
+                && i + 2 < chars.length
+                && chars[i + 1] === '"'
+                && chars[i + 2] === '"'
+                && !(rawTripleQuotes && i + 3 < chars.length && chars[i + 3] === '"')
+            ) {
+                if (!preserveStrings) {
+                    chars[i] = ' ';
+                    chars[i + 1] = ' ';
+                    chars[i + 2] = ' ';
+                }
+                return i + 3;
+            }
+
+            if (!preserveStrings && chars[i] !== '\n') {
+                chars[i] = ' ';
+            }
+            i++;
+        }
+
+        return i;
     }
 
     private static skipQuoted(chars: string[], quoteChar: string, start: number): number {

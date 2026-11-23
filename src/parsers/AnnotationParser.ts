@@ -18,6 +18,8 @@ export interface AnnotationParseResult {
 }
 
 export class AnnotationParser {
+    private static readonly springAnnotationPattern = /@(?:[\w$]+\.)*(?:RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\b/;
+    private static readonly jaxRsAnnotationPattern = /@(?:[\w$]+\.)*(?:Path|GET|POST|PUT|DELETE|PATCH)\b/;
     private springMvcParser: SpringMvcParser;
     private jaxRsParser: JaxRsParser;
     private logger: Logger;
@@ -44,11 +46,12 @@ export class AnnotationParser {
         const endpoints: RestEndpoint[] = [];
 
         try {
-            if (filePath.endsWith('.kt')) {
+            const isKotlin = filePath.endsWith('.kt');
+            if (isKotlin) {
                 content = this.preprocessKotlin(content);
             }
 
-            const sanitized = TextProcessor.sanitize(content);
+            const sanitized = TextProcessor.sanitize(content, { rawTripleQuotes: isKotlin });
             const lineIndex = TextProcessor.buildLineIndex(content);
 
             const classBlocks = this.collectClassBlocks(sanitized);
@@ -56,13 +59,20 @@ export class AnnotationParser {
             for (const blockRange of classBlocks) {
                 const children = directChildren.get(blockRange) ?? [];
                 // 一次性遮罩直接子类型区间；孙辈已包含在子类型范围内，无需重复处理
-                const classBlock = this.extractMaskedBlock(content, blockRange, children);
                 const classBlockSanitized = this.extractMaskedBlock(sanitized, blockRange, children);
+                const hasSpring = AnnotationParser.springAnnotationPattern.test(classBlockSanitized);
+                const hasJaxRs = AnnotationParser.jaxRsAnnotationPattern.test(classBlockSanitized);
+                if (!hasSpring && !hasJaxRs) {
+                    continue;
+                }
 
-                const springEndpoints = this.parseSpringMvc(classBlock, classBlockSanitized, blockRange.className, filePath, lineIndex, blockRange.startIndex);
-                const jaxRsEndpoints = this.parseJaxRs(classBlock, classBlockSanitized, blockRange.className, filePath, lineIndex, blockRange.startIndex);
-
-                endpoints.push(...springEndpoints, ...jaxRsEndpoints);
+                const classBlock = this.extractMaskedBlock(content, blockRange, children);
+                if (hasSpring) {
+                    endpoints.push(...this.parseSpringMvc(classBlock, classBlockSanitized, blockRange.className, filePath, lineIndex, blockRange.startIndex));
+                }
+                if (hasJaxRs) {
+                    endpoints.push(...this.parseJaxRs(classBlock, classBlockSanitized, blockRange.className, filePath, lineIndex, blockRange.startIndex));
+                }
             }
 
         } catch (error) {

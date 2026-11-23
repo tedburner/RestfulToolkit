@@ -34,13 +34,17 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - **运行**: `node src/test/scripts/test-copy-url-curl.js`
 - **覆盖**: 113 个测试（URL 生成、cURL 转换、Base URL 解析、Header 端到端）
 
+**JSON 转 DTO 批量测试**:
+- **运行**: `node src/test/scripts/test-json-to-class.js`
+- **覆盖**: 86 个测试（命名转换、类型推断、Java/Kotlin 嵌套类生成、边界情况）
+
 **cURL 语义验证**:
 - **运行**: `npm run test:curl-semantic`（或 `node src/test/scripts/test-curl-semantic.js`）
 - **覆盖**: 17 项验证——用真实 curl 进程把生成的命令发送到本地 HTTP 接收端，核对实际请求的 HTTP 方法、查询参数、Content-Type、JSON/urlencoded 正文、multipart 分段与 Shell 单引号转义往返；Windows 或 curl 缺失时报告 SKIP 并以 0 退出
 
 **JSON 生成编译冒烟**:
 - **运行**: `npm run test:dto-compile`（或 `node src/test/scripts/test-dto-compile.js`）
-- **覆盖**: 22 项验证——保留字与重名字段、嵌套类不与根类同名、空数组与可空类型按目标语言渲染；javac 可用时对生成的 Java 源码配合离线 JsonProperty 注解 stub 做真实编译，kotlinc 可用时编译 Kotlin，工具链缺失时保留结构断言
+- **覆盖**: 28 项验证——保留字与重名字段、纯符号/非 ASCII JSON key 合法标识符回退、嵌套类不与根类同名、无集合字段省略 `List` 导入、空数组与可空类型按目标语言渲染；javac 可用时对生成的 Java 源码配合离线 JsonProperty 注解 stub 做真实编译，kotlinc 可用时编译 Kotlin，工具链缺失时保留结构断言
 
 **脚本共享 lib**（`src/test/scripts/lib/`）:
 - `dist-check.js` — 批量脚本前置检查：dist 编译产物落后于 src 生产源码时拒绝运行并提示先 `npm run compile`（`SKIP_DIST_CHECK=1` 可跳过）
@@ -54,6 +58,7 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 
 ### 发布与部署
 
+- 持续集成工作流 `.github/workflows/ci.yml` 在 `ubuntu-latest` 与 `windows-latest` 矩阵上执行 `npm test`、全部批量/冒烟验证脚本与生产构建
 - GitHub Actions 稳定版自动发布及 OIDC 配置见 `docs/RELEASING.md`；手动运行只验证打包，推送版本 tag 才发布
 - 登录 publisher：`vsce login kiturone`，或设置 `VSCE_PAT`
 - 发布当前版本：`vsce publish`；按语义版本升级：`vsce publish patch|minor|major`
@@ -92,8 +97,8 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - `.restful-toolkit.json` 创建、修改或删除会重载项目配置、重建 watcher 并触发全量刷新
 
 **解析层** (`src/parsers/AnnotationParser.ts`):
-- 协调 SpringMvcParser 和 JaxRsParser
-- 文件级净化文本复用传入各解析入口，每文件只 sanitize 一次
+- 协调 SpringMvcParser 和 JaxRsParser；每个类块先按框架注解特征预筛选，单框架类跳过无关解析器，混合框架文件仍完整解析
+- 文件级净化文本复用传入各解析入口，每文件只 sanitize 一次，并支持 Java 15+ 文本块与 Kotlin 原生三引号字符串（`"""..."""`）
 - 用栈建立类型包含关系，仅遮罩每个块的直接子类型区间（孙辈已包含在内），单次字符遍历完成遮罩，确保嵌套类端点只归属声明它的类
 - 复用文件级行索引与绝对字符偏移，保持嵌套类行号准确
 - Kotlin 预处理以处理字符串模板
@@ -116,32 +121,34 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 - 类级别 + 方法级别路径组合逻辑
 
 **缓存层** (`src/cache/EndpointCache.ts`):
-- 双索引：按端点路径和按文件路径
+- 按规范化文件路径键（`normalizePathKey`，Windows 下大小写不敏感）索引文件端点，配合全量扁平数组，保留原始 `endpoint.file` 展示路径
 - 模糊搜索加权评分（路径 40%，类名 30%，方法名 20%，HTTP 方法 10%）
 - 端点加入缓存时预计算小写文本、camelCase/分隔符词段和首字母缩写；搜索时使用稳定有界堆维护 top-K，并流式聚合多词评分、去重重复文本 token，在不改变匹配和排序契约的前提下减少临时分配
-- 单文件更新 `updateFile` 就地压缩全量数组并增量修补两个索引，watcher 保存热路径不重建缓存；多文件批量走 `updateFiles`，一批只重建一次全量数组与索引，保持"未涉及文件原顺序、新端点按更新顺序追加"的顺序契约
+- 单文件更新 `updateFile` 就地压缩全量数组并增量修补文件索引，watcher 保存热路径不重建缓存；多文件批量走 `updateFiles`，一批只重建一次全量数组与索引，保持"未涉及文件原顺序、新端点按更新顺序追加"的顺序契约
 
 **UI 层** (`src/ui/SearchUI.ts`):
-- QuickPick 界面，彩色 HTTP 方法图标
+- QuickPick 界面，展示大写 HTTP 方法徽标、端点路径、框架与方法定位信息
 - 搜索结果按匹配评分过滤和排序；空查询与有查询共用有界搜索入口，首屏只克隆前 K 条
-- 首次条目与查询结果都遵守 `maxResults`；后台索引期间以 busy 状态展示当前结果，完成后刷新当前查询，无端点时关闭并提示
+- 通过 `ConfigManager.getMaxResults` 静默读取结果上限，按键输入不输出配置日志；首次条目与查询结果都遵守 `maxResults`
+- 后台索引期间以 busy 状态展示当前结果，完成后刷新当前查询，无端点时关闭并提示
 - 打开文件并跳转到精确行号
 
 **参数提取层** (`src/extractor/`):
-- `ParameterExtractor` 协调 Spring/JAX-RS 参数解析、方法定位和 DTO 字段提取；方法定位返回结构化参数字符范围（净化文本括号配对 + 原文截取），mapping 注解不再拼入"签名"
-- Java/Kotlin 参数解析各自识别 `Type name` 与 `name: Type` 声明；`extract` 支持 `expandDto: false` 跳过 DTO 递归展开，`expandDtoFields` 供命令在选定格式后延迟展开
+- `ParameterExtractor` 协调 Spring/JAX-RS 参数解析、类直接成员级方法定位（保留完整多行路由注解，跳过方法体内部语句，支持数组与泛型返回类型）和 DTO 字段提取
+- Java/Kotlin 参数解析支持前置/交错校验注解（如 `@RequestBody @Valid`、`@NotBlank`）、Spring `name`/`value` 属性、数组与多参数泛型类型；`extract` 支持 `expandDto: false` 跳过 DTO 递归展开，`expandDtoFields` 供命令在选定格式后延迟展开
 - 复制命令从当前编辑器文本调用共享注解解析器获取路由与 HTTP 方法，支持 package-private Java 和 Kotlin 方法
-- `DtoFieldExtractor` 异步展开最多 3 层 DTO，支持常见 JSON 命名注解、泛型集合、按递归分支循环保护和单命令生命周期缓存
+- `DtoFieldExtractor` 异步并发展开最多 3 层 DTO（含 Java `record` 组件），剔除 `static`、`transient` 与 `@JsonIgnore` 字段，支持常见 JSON 命名注解（含多属性 `@JsonProperty`）、泛型集合、花括号分组排除 glob、按递归分支循环保护和单命令生命周期 Promise 缓存
 - `FormatConverter`、`UrlGenerator` 负责复制格式与完整 URL；`CurlConverter` 将 Spring 表单请求中的 `@RequestParam` 默认作为表单字段（源码无法区分 URL 与表单来源），正文输出 JSON、urlencoded 或 multipart（由 curl 生成 boundary）
 
 **JSON 转 DTO** (`src/generator/`):
-- `JsonClassGenerator` 按目标语言分配合法字段名：规避对应语言硬关键字与同作用域重名（冲突追加计数后缀），原始 JSON key 保留在 `@JsonProperty` 注解
+- `JsonClassGenerator` 按目标语言分配合法字段名：规避对应语言硬关键字与同作用域重名（冲突追加计数后缀），纯符号、纯下划线或非 ASCII JSON key（如 `"$"`、`"___"`、`"中文"`）在转换后回退到合法标识符（`field` / `NestedItem`），原始 JSON key 保留在 `@JsonProperty` 注解；无集合字段时省略多余 `import java.util.List;`
 - `JsonTypeMapper` 类型推断贯穿目标语言，Kotlin 对 null/空数组输出 `Any?`/`List<Any?>` 等可空类型；嵌套类名与根类及其他生成类名均不重复
 
 **命令层** (`src/commands/`):
-- **CopyEndpointParametersCommand.ts** — 右键菜单命令：自动检测输出格式和命名风格，QuickPick 选择后写入剪贴板；取消或选择不需要 DTO 的格式不做 DTO 文件 I/O
+- **CopyEndpointParametersCommand.ts** — 右键菜单命令：支持 `restfulToolkit.copyNameFormat` 显式命名偏好（未显式设置时按参数下划线比例自动推断），QuickPick 展示格式图标与推荐标记；取消或选择不需要 DTO 的格式不做 DTO 文件 I/O
 - **CopyUrlCommand.ts** — 复制完整端点 URL（跳过 DTO 展开）
 - **CopyCurlCommand.ts** — 复制 cURL 命令（可直接导入 Postman/Bruno/Insomnia）
+- **JsonToClassCommand.ts** — 资源管理器文件夹右键从剪贴板或选区 JSON 生成 Java/Kotlin DTO（支持 Lombok 选择与任意步骤 Esc 取消）
 
 ### 配置系统 (`src/config/`)
 
@@ -161,22 +168,24 @@ RestfulToolkit 是一个 VS Code 扩展，用于搜索和导航 Java/Kotlin Spri
 
 ### 扩展生命周期 (`src/extension.ts`)
 
-- 配置重载请求合并执行（一次进行 + 一次排队，当前轮失败后仍执行排队请求）；仅 `scanPaths`/`excludePaths` 或项目配置、工作区目录变化触发重载与全量刷新，`maxResults`/`baseUrl` 等实时读取的设置变化不触发重扫
+- 激活时从 `context.extension.packageJSON.version` 动态读取扩展版本号输出日志；`createProjectConfig` 在多根工作区弹出文件夹选择，配置文件已存在时向用户提示而非静默返回
+- 配置重载请求合并执行（一次进行 + 一次排队，当前轮失败后仍执行排队请求）；仅 `scanPaths`/`excludePaths` 或项目配置、工作区目录变化触发重载与全量刷新，`maxResults`/`baseUrl`/`copyNameFormat` 等实时读取的设置变化不触发重扫
 - watcher 按根目录作用域创建（`FileWatcher.start(scopes)`），排除规则只作用于所属根
 
-### 文件监视 (`src/utils/FileWatcher.ts`)
+### 文件监视与路径规范化 (`src/utils/FileWatcher.ts`, `src/utils/PathUtils.ts`)
+- `PathUtils.ts` 统一跨平台文件路径比较键（Windows 下统一斜杠与小写盘符/路径键），供缓存、扫描状态、配置和 watcher 复用
 - VS Code FileSystemWatcher 用于实时更新，带 folderUri 的作用域使用 RelativePattern 限定根目录
 - onCreate, onChange, onDelete 回调
-- 文件变更时自动整体替换缓存，并在调度前对绝对路径和所属工作区相对路径应用该作用域的 `excludePaths`
+- 文件变更时自动整体替换缓存，并在调度前对绝对路径和所属工作区相对路径应用该作用域的 `excludePaths`（Windows 下大小写不敏感匹配）
 - Spring Base URL 配置 watcher 限定为 `**/main/resources/{application,application-*,bootstrap}.{yml,yaml,properties}`
 - 项目配置 watcher 监听 `**/.restful-toolkit.json` 并触发配置重载与端点刷新
 
 ### Base URL 解析 (`src/utils/BaseUrlResolver.ts`)
-- 自动检测 `application.yml` / `application.properties` 中的 `server.port` 和 `server.servlet.context-path`
+- 自动检测 `application.yml` / `application.properties` 中的顶层 `server.port` 和 `server.servlet.context-path`（排除 `management.server` 等嵌套块干扰，支持剥离行尾 `#` 注释）
 - 支持 `bootstrap.yml` / `bootstrap.properties`（Spring Cloud，优先级高于 application）
-- 支持 `application-{profile}.yml` 多环境配置覆盖
-- 支持占位符解析：`${SERVER_PORT:8080}` → `8080`
-- 仅通过 VS Code 异步文件系统发现和读取配置，不提供同步解析入口
+- 支持 `application-{profile}.yml` 多环境配置覆盖（声明 `spring.profiles.active` 时按激活列表应用，未声明时按字母序回退覆盖）
+- 支持占位符解析：`${SERVER_PORT:8080}` → `8080`；多模块项目按当前资源路径就近优先匹配所属子模块配置，URL/cURL 拼接自动消除边界双斜杠
+- 仅通过 VS Code 异步文件系统并行发现和读取配置，不提供同步解析入口
 - 按工作区缓存配置发现与解析结果；配置文件事件主动使所属工作区缓存失效，版本令牌阻止旧异步结果回填；冷缓存期间同版本的并发请求复用同一个在途 Promise，失效后的新请求不复用旧 Promise
 - 缓存仅存在于 Extension Host 内存中，不写入本地存储
 - 配置文件优先级：application（基础）→ bootstrap（高）→ application-{profile}（最高）

@@ -239,4 +239,62 @@ suite('ParameterExtractor Test Suite', () => {
             vscode.workspace.findFiles = originalFindFiles;
         }
     });
+
+    test('preserves consumes media type on multi-line mapping annotations', async () => {
+        const text = [
+            '@RestController',
+            'public class UploadController {',
+            '    @PostMapping(',
+            '        value = "/upload",',
+            '        consumes = MediaType.MULTIPART_FORM_DATA_VALUE',
+            '    )',
+            '    public void upload(@RequestPart("file") MultipartFile file) {}',
+            '}'
+        ].join('\n');
+        const info = await new ParameterExtractor().extract(
+            createDocument(text, 'UploadController.java'),
+            { line: 6, character: 16 } as vscode.Position,
+            { expandDto: false }
+        );
+        assert.ok(info);
+        assert.strictEqual(info?.httpMethod, 'POST');
+        assert.strictEqual(info?.contentType, 'form-data');
+        assert.strictEqual(info?.path, '/upload');
+    });
+
+    test('resolves array-returning methods and statements inside method bodies to the enclosing endpoint', async () => {
+        const text = [
+            '@RestController',
+            'public class FileController {',
+            '    @PostMapping("/upload")',
+            '    public void upload(@RequestPart("file") MultipartFile file) {}',
+            '',
+            '    @GetMapping("/download")',
+            '    public byte[] download(@RequestParam("id") String id) {',
+            '        if (id.isEmpty()) {',
+            '            throw badRequest("missing");',
+            '        }',
+            '        return fetchBytes(id);',
+            '    }',
+            '}'
+        ].join('\n');
+        const doc = createDocument(text, 'FileController.java');
+        const extractor = new ParameterExtractor();
+
+        // Cursor on array-returning declaration line
+        const atDecl = await extractor.extract(doc, { line: 6, character: 12 } as vscode.Position, { expandDto: false });
+        assert.strictEqual(atDecl?.path, '/download');
+        assert.strictEqual(atDecl?.httpMethod, 'GET');
+        assert.deepStrictEqual(atDecl?.parameters.map(p => p.name), ['id']);
+
+        // Cursor on throw call inside method body
+        const atThrow = await extractor.extract(doc, { line: 8, character: 16 } as vscode.Position, { expandDto: false });
+        assert.strictEqual(atThrow?.path, '/download');
+        assert.deepStrictEqual(atThrow?.parameters.map(p => p.name), ['id']);
+
+        // Cursor on return helper call inside method body
+        const atReturn = await extractor.extract(doc, { line: 10, character: 15 } as vscode.Position, { expandDto: false });
+        assert.strictEqual(atReturn?.path, '/download');
+        assert.deepStrictEqual(atReturn?.parameters.map(p => p.name), ['id']);
+    });
 });

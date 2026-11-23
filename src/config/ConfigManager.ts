@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { DEFAULT_CONFIG, CONFIG_KEYS, PROJECT_CONFIG_FILE, ScanConfig } from './ScanConfig';
+import { DEFAULT_CONFIG, CONFIG_KEYS, PROJECT_CONFIG_FILE, ScanConfig, CopyNameFormat } from './ScanConfig';
 import { Logger } from '../utils/Logger';
 import { BaseUrlResolver } from '../utils/BaseUrlResolver';
+import { normalizePathKey } from '../utils/PathUtils';
+import { getLabels } from '../extractor/i18n';
 
 export class ConfigManager {
     private static instance: ConfigManager;
@@ -50,7 +52,7 @@ export class ConfigManager {
                 const text = Buffer.from(content).toString('utf-8');
                 const config = this.validateProjectConfig(this.safeJsonParse(text));
                 if (config) {
-                    loaded.set(folder, config);
+                    loaded.set(normalizePathKey(folder), config);
                 }
                 this.logger.info(`Loaded project config from ${configPath}`);
             } catch (error) {
@@ -115,6 +117,13 @@ export class ConfigManager {
             validated.baseUrl = input.baseUrl;
         }
 
+        if (input.copyNameFormat !== undefined) {
+            if (input.copyNameFormat !== 'camelCase' && input.copyNameFormat !== 'snake_case') {
+                throw new Error('copyNameFormat must be "camelCase" or "snake_case"');
+            }
+            validated.copyNameFormat = input.copyNameFormat;
+        }
+
         return validated as ScanConfig;
     }
 
@@ -136,7 +145,7 @@ export class ConfigManager {
     getScanConfig(resourceUri?: vscode.Uri): ScanConfig {
         const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit', resourceUri);
         const workspaceFolder = this.getWorkspaceFolderForResource(resourceUri) ?? (!resourceUri ? this.workspaceFolders[0] : undefined);
-        const projectConfig = workspaceFolder ? this.projectConfigs.get(workspaceFolder) : undefined;
+        const projectConfig = workspaceFolder ? this.projectConfigs.get(normalizePathKey(workspaceFolder)) : undefined;
         const vsCodeScanPaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.scanPaths);
         const vsCodeExcludePaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.excludePaths);
         const vsCodeMaxResults = this.getExplicitVsCodeSetting<number>(vsCodeConfig, CONFIG_KEYS.maxResults);
@@ -152,6 +161,36 @@ export class ConfigManager {
         this.logger.info(`Effective scan config: scanPaths=${JSON.stringify(config.scanPaths)}`);
 
         return config;
+    }
+
+    /**
+     * 轻量读取最大搜索结果数（不打印扫描配置日志，供搜索输入防抖热路径使用）。
+     */
+    getMaxResults(resourceUri?: vscode.Uri): number {
+        const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit', resourceUri);
+        const workspaceFolder = this.getWorkspaceFolderForResource(resourceUri) ?? (!resourceUri ? this.workspaceFolders[0] : undefined);
+        const projectConfig = workspaceFolder ? this.projectConfigs.get(normalizePathKey(workspaceFolder)) : undefined;
+        const vsCodeMaxResults = this.getExplicitVsCodeSetting<number>(vsCodeConfig, CONFIG_KEYS.maxResults);
+        return this.clampMaxResults(
+            vsCodeMaxResults
+            ?? projectConfig?.maxResults
+            ?? (!resourceUri ? this.firstProjectValue('maxResults') : undefined)
+            ?? DEFAULT_CONFIG.maxResults
+        );
+    }
+
+    /**
+     * 读取用户显式配置的复制参数命名格式（未显式配置时返回 undefined，交由自动检测兜底）。
+     */
+    getExplicitCopyNameFormat(resourceUri?: vscode.Uri): CopyNameFormat | undefined {
+        const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit', resourceUri);
+        const explicitVsCode = this.getExplicitVsCodeSetting<CopyNameFormat>(vsCodeConfig, CONFIG_KEYS.copyNameFormat);
+        if (explicitVsCode === 'camelCase' || explicitVsCode === 'snake_case') {
+            return explicitVsCode;
+        }
+        const workspaceFolder = this.getWorkspaceFolderForResource(resourceUri) ?? (!resourceUri ? this.workspaceFolders[0] : undefined);
+        const projectConfig = workspaceFolder ? this.projectConfigs.get(normalizePathKey(workspaceFolder)) : undefined;
+        return projectConfig?.copyNameFormat ?? (!resourceUri ? this.firstProjectValue('copyNameFormat') : undefined);
     }
 
     private getExplicitVsCodeSetting<T>(config: vscode.WorkspaceConfiguration, key: string): T | undefined {
@@ -174,7 +213,7 @@ export class ConfigManager {
             const vsCodeConfig = vscode.workspace.getConfiguration('restfulToolkit', folderUri);
             const vsCodeScanPaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.scanPaths);
             const vsCodeExcludePaths = this.getExplicitVsCodeSetting<string[]>(vsCodeConfig, CONFIG_KEYS.excludePaths);
-            const projectConfig = this.projectConfigs.get(folderPath);
+            const projectConfig = this.projectConfigs.get(normalizePathKey(folderPath));
 
             return {
                 folder: folderUri,
@@ -231,12 +270,14 @@ export class ConfigManager {
      */
     async getBaseUrlAsync(resourceUri?: vscode.Uri): Promise<string> {
         const scanConfig = this.getScanConfig(resourceUri);
-        if (scanConfig.baseUrl) { return scanConfig.baseUrl; }
+        if (scanConfig.baseUrl) {
+            return scanConfig.baseUrl.replace(/\/+$/, '');
+        }
 
         const workspaceFolder = this.getWorkspaceFolderForResource(resourceUri) ?? this.workspaceFolders[0];
         if (workspaceFolder) {
             const resolver = new BaseUrlResolver();
-            const autoDetected = await resolver.resolveAsync(workspaceFolder);
+            const autoDetected = await resolver.resolveAsync(workspaceFolder, resourceUri?.fsPath);
             if (autoDetected) {
                 const url = `http://${autoDetected.host}:${autoDetected.port}${autoDetected.contextPath}`;
                 this.logger.info(`Auto-detected base URL: ${url}`);
@@ -261,6 +302,9 @@ export class ConfigManager {
 
         if (await this.fileExists(configUri)) {
             this.logger.warning(`${PROJECT_CONFIG_FILE} already exists`);
+            vscode.window.showInformationMessage(
+                getLabels().configAlreadyExists.replace('{0}', PROJECT_CONFIG_FILE)
+            );
             return;
         }
 

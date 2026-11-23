@@ -119,4 +119,27 @@ suite('SpringParameterParser Test Suite', () => {
         assert.strictEqual(params[0].isRequired, false);
         assert.strictEqual(params[0].defaultValue, 'application/json');
     });
+
+    test('Should parse name attribute, validation annotations before/after binding, arrays, and multi-arg generics', () => {
+        const params = parser.parseMethodParameters(
+            'public void save('
+            + '@RequestParam(name = "user_id", required = false) Long userId, '
+            + '@RequestBody @Valid UserDto dto, '
+            + '@RequestParam(required = false) @NotBlank String keyword, '
+            + '@RequestParam String[] ids, '
+            + '@RequestBody Map<String, Object> payload'
+            + ')'
+        );
+        assert.strictEqual(params.length, 5);
+        assert.deepStrictEqual(
+            params.map(p => ({ name: p.name, type: p.type, source: p.source, required: p.isRequired })),
+            [
+                { name: 'user_id', type: 'Long', source: 'query', required: false },
+                { name: 'dto', type: 'UserDto', source: 'body', required: true },
+                { name: 'keyword', type: 'String', source: 'query', required: false },
+                { name: 'ids', type: 'String[]', source: 'query', required: true },
+                { name: 'payload', type: 'Map<String, Object>', source: 'body', required: true }
+            ]
+        );
+    });
 });

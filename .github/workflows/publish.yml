@@ -33,6 +33,7 @@ jobs:
       - run: node src/test/scripts/test-all-files.js
       - run: node src/test/scripts/test-copy-url-curl.js
       - run: node src/test/scripts/test-parameter-copy.js
+      - run: node src/test/scripts/test-json-to-class.js
       - name: Package VSIX
         run: npx --yes @vscode/vsce@4.1.0 package --out extension.vsix
       - uses: actions/upload-artifact@v4

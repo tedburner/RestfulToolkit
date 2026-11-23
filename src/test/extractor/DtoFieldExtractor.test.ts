@@ -87,4 +87,67 @@ suite('DtoFieldExtractor Test Suite', () => {
         ]);
         assert.strictEqual(fields[0].nested?.[0].nested, undefined, 'the cycle back to RootDto must stop');
     });
+
+    test('skips static, transient, and @JsonIgnore fields while keeping @JsonIgnoreProperties classes', () => {
+        const extractor = new DtoFieldExtractor();
+        const fields = extractor.parseDtoFields([
+            '@JsonIgnoreProperties(ignoreUnknown = true)',
+            'public class AccountDto implements Serializable {',
+            '    private static final long serialVersionUID = 1L;',
+            '    private transient String secretCache;',
+            '    @JsonIgnore',
+            '    private String passwordHash;',
+            '    @JsonProperty(value = "account_name", required = true)',
+            '    private String accountName;',
+            '    private String[] roles;',
+            '}'
+        ].join('\n'));
+
+        assert.deepStrictEqual(
+            fields.map(f => ({ name: f.name, type: f.type, originalName: f.originalName })),
+            [
+                { name: 'account_name', type: 'String', originalName: 'accountName' },
+                { name: 'roles', type: 'String[]', originalName: 'roles' }
+            ]
+        );
+    });
+
+    test('parses Java record components including @JsonProperty and nested DTOs, and wraps findFiles excludes in braces', async () => {
+        const recordUri = { fsPath: 'C:\\workspace\\src\\main\\java\\com\\example\\dto\\CreateUserRecord.java' } as vscode.Uri;
+        const addrUri = { fsPath: 'C:\\workspace\\src\\main\\java\\com\\example\\dto\\AddressRecord.java' } as vscode.Uri;
+        const contents = new Map<string, string>([
+            [recordUri.fsPath, [
+                'package com.example.dto;',
+                'public record CreateUserRecord(',
+                '    @JsonProperty(value = "user_name", required = true) String userName,',
+                '    @JsonIgnore String internalToken,',
+                '    AddressRecord address',
+                ') {',
+                '    public static final String VERSION = "v1";',
+                '}'
+            ].join('\n')],
+            [addrUri.fsPath, 'package com.example.dto;\npublic record AddressRecord(String city) {}']
+        ]);
+
+        let capturedExclude = '';
+        vscode.workspace.findFiles = async (include: vscode.GlobPattern, exclude?: vscode.GlobPattern | null) => {
+            capturedExclude = String(exclude ?? '');
+            return String(include).includes('CreateUserRecord')
+                ? [recordUri]
+                : String(include).includes('AddressRecord')
+                    ? [addrUri]
+                    : [];
+        };
+        vscode.workspace.fs.readFile = async (uri: vscode.Uri) => Buffer.from(contents.get(uri.fsPath) ?? '', 'utf8');
+
+        const fields = await new DtoFieldExtractor().findDtoFields('CreateUserRecord');
+        assert.ok(capturedExclude.startsWith('{') && capturedExclude.endsWith('}'), `expected brace-wrapped exclude glob, got: ${capturedExclude}`);
+        assert.deepStrictEqual(
+            fields.map(f => ({ name: f.name, nested: f.nested?.map(n => n.name) })),
+            [
+                { name: 'user_name', nested: undefined },
+                { name: 'address', nested: ['city'] }
+            ]
+        );
+    });
 });

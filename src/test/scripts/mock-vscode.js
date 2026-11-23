@@ -66,6 +66,7 @@ const vscodeMock = {
         showWarningMessage: async () => undefined,
         showErrorMessage: async () => undefined,
         showQuickPick: async () => undefined,
+        showWorkspaceFolderPick: async () => undefined,
         showInputBox: async () => undefined,
         showTextDocument: async () => undefined,
         createStatusBarItem: () => ({

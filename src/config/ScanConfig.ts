@@ -5,11 +5,14 @@
  * 用户可以通过 VS Code settings.json 或项目配置文件自定义
  */
 
+export type CopyNameFormat = 'camelCase' | 'snake_case';
+
 export interface ScanConfig {
     scanPaths: string[];
     excludePaths: string[];
     maxResults: number;
     baseUrl?: string;
+    copyNameFormat?: CopyNameFormat;
 }
 
 /**
@@ -45,7 +48,8 @@ export const CONFIG_KEYS = {
     scanPaths: 'scanPaths',
     excludePaths: 'excludePaths',
     maxResults: 'maxResults',
-    baseUrl: 'baseUrl'
+    baseUrl: 'baseUrl',
+    copyNameFormat: 'copyNameFormat'
 } as const;
 
 /**

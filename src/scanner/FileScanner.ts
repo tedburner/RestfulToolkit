@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { AnnotationParser } from '../parsers/AnnotationParser';
 import { EndpointCache } from '../cache/EndpointCache';
 import { Logger } from '../utils/Logger';
@@ -8,6 +7,7 @@ import { getLabels } from '../extractor/i18n';
 import { ScanStateManager } from '../cache/ScanStateManager';
 import { TextProcessor } from '../utils/TextProcessor';
 import { RestEndpoint } from '../models/types';
+import { normalizePathKey, relativeFromFolder } from '../utils/PathUtils';
 
 export interface FileScanResult {
     success: boolean;
@@ -354,7 +354,7 @@ export class FileScanner implements vscode.Disposable {
     }
 
     private normalizeFsPath(filePath: string): string {
-        return process.platform === 'win32' ? filePath.toLowerCase() : filePath;
+        return normalizePathKey(filePath);
     }
 
     /**
@@ -373,13 +373,10 @@ export class FileScanner implements vscode.Disposable {
         const indexedFiles = new Set([...this.scanStateManager.getAllScannedFiles(), ...this.cache.getIndexedFiles()]);
         for (const recordedFile of indexedFiles) {
             const normalizedFile = this.normalizeFsPath(recordedFile);
-            if (unknownFolders.some(folder => {
-                const relative = path.relative(this.normalizeFsPath(folder), normalizedFile);
-                return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
-            })) {
+            if (unknownFolders.some(folder => relativeFromFolder(this.normalizeFsPath(folder), normalizedFile) !== null)) {
                 continue;
             }
-            if (discoveredFiles.has(this.normalizeFsPath(recordedFile))) {
+            if (discoveredFiles.has(normalizedFile)) {
                 continue;
             }
             removedFiles.push(recordedFile);
@@ -398,7 +395,8 @@ export class FileScanner implements vscode.Disposable {
     }
 
     private bumpFileVersion(filePath: string): void {
-        this.fileVersions.set(filePath, (this.fileVersions.get(filePath) ?? 0) + 1);
+        const key = this.normalizeFsPath(filePath);
+        this.fileVersions.set(key, (this.fileVersions.get(key) ?? 0) + 1);
     }
 
     /**
@@ -409,9 +407,9 @@ export class FileScanner implements vscode.Disposable {
      */
     private pruneFileVersionEntries(): void {
         const liveFiles = new Set([...this.cache.getIndexedFiles(), ...this.scanStateManager.getAllScannedFiles()]);
-        for (const filePath of this.fileVersions.keys()) {
-            if (!liveFiles.has(filePath)) {
-                this.fileVersions.delete(filePath);
+        for (const fileKey of this.fileVersions.keys()) {
+            if (!liveFiles.has(fileKey)) {
+                this.fileVersions.delete(fileKey);
             }
         }
     }
@@ -476,7 +474,8 @@ export class FileScanner implements vscode.Disposable {
      */
     private async collectFileScan(uri: vscode.Uri): Promise<CollectedFileScan | null> {
         try {
-            const fileVersion = this.fileVersions.get(uri.fsPath) ?? 0;
+            const fileKey = this.normalizeFsPath(uri.fsPath);
+            const fileVersion = this.fileVersions.get(fileKey) ?? 0;
             const before = await vscode.workspace.fs.stat(uri);
             const result = await this.parseFile(uri);
             if (!result.success || this.disposed) {
@@ -511,7 +510,8 @@ export class FileScanner implements vscode.Disposable {
      * 提交前校验版本令牌：扫描期间收到删除事件的文件不允许把旧端点写回。
      */
     private isCollectedScanCurrent(collected: CollectedFileScan): boolean {
-        return !this.disposed && (this.fileVersions.get(collected.file) ?? 0) === collected.fileVersion;
+        const fileKey = this.normalizeFsPath(collected.file);
+        return !this.disposed && (this.fileVersions.get(fileKey) ?? 0) === collected.fileVersion;
     }
 
     private async commitFileScans(collectedScans: CollectedFileScan[]): Promise<void> {
@@ -572,15 +572,15 @@ export class FileScanner implements vscode.Disposable {
     }
 
     scanFileDebounced(uri: vscode.Uri, delay: number = 500): void {
-        const filePath = uri.fsPath;
-        this.clearDebounceTimer(filePath);
+        const fileKey = this.normalizeFsPath(uri.fsPath);
+        this.clearDebounceTimer(fileKey);
 
         const timer = setTimeout(() => {
-            this.debounceTimers.delete(filePath);
+            this.debounceTimers.delete(fileKey);
             this.enqueueWatcherScan(uri);
         }, delay);
 
-        this.debounceTimers.set(filePath, timer);
+        this.debounceTimers.set(fileKey, timer);
     }
 
     /**
@@ -591,7 +591,7 @@ export class FileScanner implements vscode.Disposable {
         if (this.disposed) {
             return;
         }
-        this.pendingWatcherFiles.set(uri.fsPath, uri);
+        this.pendingWatcherFiles.set(this.normalizeFsPath(uri.fsPath), uri);
         if (!this.watcherPumpActive) {
             this.watcherPumpActive = true;
             this.watcherTail = this.pumpWatcherQueue();
@@ -616,18 +616,18 @@ export class FileScanner implements vscode.Disposable {
                 }
 
                 let launched = false;
-                for (const [filePath, uri] of Array.from(this.pendingWatcherFiles)) {
+                for (const [fileKey, uri] of Array.from(this.pendingWatcherFiles)) {
                     if (this.activeWatcherTasks >= this.scanConcurrency) {
                         break;
                     }
-                    if (this.inFlightWatcherFiles.has(filePath)) {
+                    if (this.inFlightWatcherFiles.has(fileKey)) {
                         continue;
                     }
-                    this.pendingWatcherFiles.delete(filePath);
-                    this.inFlightWatcherFiles.add(filePath);
+                    this.pendingWatcherFiles.delete(fileKey);
+                    this.inFlightWatcherFiles.add(fileKey);
                     this.activeWatcherTasks++;
                     launched = true;
-                    void this.runWatcherFileScan(uri);
+                    void this.runWatcherFileScan(fileKey, uri);
                 }
 
                 if (!launched && this.activeWatcherTasks === 0) {
@@ -644,7 +644,7 @@ export class FileScanner implements vscode.Disposable {
         }
     }
 
-    private async runWatcherFileScan(uri: vscode.Uri): Promise<void> {
+    private async runWatcherFileScan(fileKey: string, uri: vscode.Uri): Promise<void> {
         const filePath = uri.fsPath;
         try {
             await this.scanFileAndRecord(uri);
@@ -652,7 +652,7 @@ export class FileScanner implements vscode.Disposable {
             const err = error instanceof Error ? error : new Error(String(error));
             this.logger.error(`Watcher scan failed: ${filePath}`, err);
         } finally {
-            this.inFlightWatcherFiles.delete(filePath);
+            this.inFlightWatcherFiles.delete(fileKey);
             this.activeWatcherTasks--;
             this.notifyWatcherSlots();
         }
@@ -672,6 +672,7 @@ export class FileScanner implements vscode.Disposable {
 
     removeFile(uri: vscode.Uri): void {
         const filePath = uri.fsPath;
+        const fileKey = this.normalizeFsPath(filePath);
         this.logger.info(`Removing file from cache: ${filePath}`);
         this.cache.removeByFile(filePath);
         this.scanStateManager.removeRecord(filePath);
@@ -679,8 +680,8 @@ export class FileScanner implements vscode.Disposable {
         // 推进版本令牌，使该文件在途的扫描结果无法再写回缓存
         this.bumpFileVersion(filePath);
 
-        this.clearDebounceTimer(filePath);
-        this.pendingWatcherFiles.delete(filePath);
+        this.clearDebounceTimer(fileKey);
+        this.pendingWatcherFiles.delete(fileKey);
     }
 
     private showProgress(message: string, current: number, total: number, hide: boolean = false): void {

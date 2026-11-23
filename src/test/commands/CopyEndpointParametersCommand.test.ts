@@ -145,4 +145,43 @@ suite('CopyEndpointParametersCommand Test Suite', () => {
         assert.strictEqual(expandCalls, 1, 'the DTO expansion runs once, after the format has been chosen');
         assert.ok(clipboardText.includes('userName'), 'the expanded DTO fields must reach the clipboard');
     });
+
+    test('applies explicit copyNameFormat setting and shows recommended badge instead of Name Format', async () => {
+        stubEditor();
+        const originalGetConfiguration = vscode.workspace.getConfiguration;
+        let clipboardText = '';
+        let capturedItems: Array<{ label: string; description?: string; value: string }> = [];
+        vscode.workspace.getConfiguration = ((() => ({
+            inspect: (key: string) => key === 'copyNameFormat' ? { workspaceValue: 'snake_case' } : undefined
+        })) as unknown) as typeof vscode.workspace.getConfiguration;
+        vscode.window.showQuickPick = (async (items: unknown) => {
+            capturedItems = items as typeof capturedItems;
+            return { value: 'url-params' };
+        }) as unknown as typeof vscode.window.showQuickPick;
+        vscode.env.clipboard.writeText = async value => { clipboardText = value; };
+
+        const command = new CopyEndpointParametersCommand();
+        (command as unknown as { extractor: ExtractorStub }).extractor = {
+            extract: async () => makeCopyInfo({
+                httpMethod: 'GET',
+                contentType: 'url-params',
+                parameters: [
+                    { name: 'userId', type: 'Long', source: 'query', originalCaseName: 'userId', isRequired: true }
+                ]
+            }),
+            expandDtoFields: async info => info
+        };
+
+        try {
+            await command.execute();
+            assert.strictEqual(clipboardText, '?user_id=');
+            assert.ok(capturedItems[0].label.includes('$('), 'format item should include codicon');
+            assert.ok(
+                capturedItems[0].description && !capturedItems[0].description.includes('Name Format') && !capturedItems[0].description.includes('命名格式'),
+                `unexpected default badge: ${capturedItems[0].description}`
+            );
+        } finally {
+            vscode.workspace.getConfiguration = originalGetConfiguration;
+        }
+    });
 });

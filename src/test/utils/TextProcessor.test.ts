@@ -71,7 +71,6 @@ suite('TextProcessor Test Suite', () => {
     test('Should handle annotation with string argument (parenthesis depth)', () => {
         const input = '@Path("/users/{id}")';
         const result = TextProcessor.sanitize(input);
-        // @Path("...") should become @Path(        ) — parens remain, string content cleared
         assert.strictEqual(result.includes('/users'), false, 'Path content should be sanitized');
         assert.ok(result.startsWith('@Path('), '@Path( prefix preserved');
     });
@@ -80,6 +79,26 @@ suite('TextProcessor Test Suite', () => {
         const input = `@Path("/api")\npublic class Foo {\n    @GET\n    void bar() {}\n}`;
         const sanitized = TextProcessor.sanitize(input);
         assert.strictEqual(sanitized.length, input.length, 'Sanitized output must match original length');
+    });
+
+    test('Should sanitize Java text blocks containing URLs, apostrophes, braces, and escaped quotes', () => {
+        const input = `String json = """
+            {"url": "http://example.com", "note": "it's \\"ok\\""}
+            """;
+@GetMapping("/after")`;
+        const sanitized = TextProcessor.sanitize(input);
+        assert.strictEqual(sanitized.length, input.length);
+        assert.ok(sanitized.endsWith('@GetMapping(        )'), 'Code after text block must remain intact');
+        assert.strictEqual(sanitized.includes('{'), false, 'Braces inside text block must be blanked');
+    });
+
+    test('Should sanitize Kotlin raw strings with trailing backslashes and embedded quotes', () => {
+        const input = `val path = """C:\\temp\\"""
+val quoted = """say "hi""""
+@GetMapping("/kt")`;
+        const sanitized = TextProcessor.sanitize(input, { rawTripleQuotes: true });
+        assert.strictEqual(sanitized.length, input.length);
+        assert.ok(sanitized.endsWith('@GetMapping(     )'), 'Kotlin raw string with trailing backslash must not swallow closing delimiter');
     });
 
     // ===== buildLineIndex() + getLineNumber() =====
@@ -122,14 +141,10 @@ suite('TextProcessor Test Suite', () => {
 
     test('getLineNumberFallback should match naive line counting', () => {
         const input = 'line1\nline2\nline3\nline4';
-        // Line 1
         assert.strictEqual(TextProcessor.getLineNumberFallback(input, 0), 1);
         assert.strictEqual(TextProcessor.getLineNumberFallback(input, 4), 1);
-        // Line 2
         assert.strictEqual(TextProcessor.getLineNumberFallback(input, 6), 2);
-        // Line 3
         assert.strictEqual(TextProcessor.getLineNumberFallback(input, 12), 3);
-        // Line 4
         assert.strictEqual(TextProcessor.getLineNumberFallback(input, 18), 4);
     });
 
@@ -155,11 +170,9 @@ public class UserController {
         const sanitized = TextProcessor.sanitize(original);
         const lineIndex = TextProcessor.buildLineIndex(sanitized);
 
-        // @GET is on line 3 in both original and sanitized
         const getIdx = sanitized.indexOf('@GET');
         assert.strictEqual(TextProcessor.getLineNumber(lineIndex, getIdx), 3);
 
-        // @Path on line 4
         const pathIdx = sanitized.lastIndexOf('@Path');
         assert.strictEqual(TextProcessor.getLineNumber(lineIndex, pathIdx), 4);
     });

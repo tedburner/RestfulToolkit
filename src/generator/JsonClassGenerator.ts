@@ -26,7 +26,7 @@ const RESERVED_JAVA = new Set([
     'volatile', 'while', 'true', 'false', 'null', '_'
 ]);
 
-/** Kotlin 硬关键字；软关键字（data/get/set 等）作为标识符合法，不规避。Kotlin 同时规避 Java 集合。 */
+/** Kotlin 硬关键字；软关键字（data/get/set 等）作为标识符合法，不规避。 */
 const RESERVED_KOTLIN = new Set([
     'as', 'break', 'class', 'continue', 'do', 'else', 'false', 'for', 'fun', 'if', 'in',
     'interface', 'is', 'null', 'object', 'package', 'return', 'super', 'this', 'throw', 'true',
@@ -34,18 +34,15 @@ const RESERVED_KOTLIN = new Set([
 ]);
 
 export class JsonClassGenerator {
-    private nestedClasses: ClassDef[] = [];
     private nameCounter: Map<string, number> = new Map();
     private usedClassNames: Set<string> = new Set();
     private language: TargetLanguage = 'java';
 
     generate(json: string, className: string, packageName: string, language: TargetLanguage, useLombok = false): string {
         const parsed = JSON.parse(json);
-        this.nestedClasses = [];
         this.nameCounter = new Map();
         this.usedClassNames = new Set([this.baseClassName(className)]);
         this.language = language;
-        // 嵌套类名不得与根类同名
         this.nameCounter.set(this.baseClassName(className), 1);
 
         const rootDef = this.analyzeObject(parsed, className, 0, new Set());
@@ -80,7 +77,7 @@ export class JsonClassGenerator {
     }
 
     private analyzeField(jsonKey: string, value: unknown, depth: number, usedNames: Set<string>): FieldDef {
-        const fieldName = this.allocateFieldName(toCamelCase(this.sanitizeIdentifier(jsonKey)), usedNames);
+        const fieldName = this.allocateFieldName(this.toValidFieldBase(jsonKey), usedNames);
 
         if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null && depth < MAX_DEPTH) {
             const nestedName = this.getNestedClassName(jsonKey);
@@ -106,7 +103,6 @@ export class JsonClassGenerator {
             };
         }
 
-        // 类型推断遵循目标语言（Kotlin 使用可空类型分支）
         const type = inferTypeFromValue(value, this.language);
 
         return {
@@ -117,27 +113,45 @@ export class JsonClassGenerator {
         };
     }
 
+    private toValidFieldBase(jsonKey: string): string {
+        const camel = toCamelCase(this.sanitizeIdentifier(jsonKey));
+        if (!camel) {
+            return 'field';
+        }
+        return /^[0-9]/.test(camel) ? `_${camel}` : camel;
+    }
+
+    private toValidClassBase(jsonKey: string): string {
+        const pascal = toPascalCase(this.sanitizeIdentifier(jsonKey));
+        if (!pascal) {
+            return 'NestedItem';
+        }
+        return /^[0-9]/.test(pascal) ? `_${pascal}` : pascal;
+    }
+
     /**
      * 在同一作用域内分配合法且唯一的字段名：按目标语言规避硬关键字与既有名称，
      * 冲突时追加计数后缀。
      */
     private allocateFieldName(base: string, usedNames: Set<string>): string {
         const reserved = this.language === 'kotlin' ? RESERVED_KOTLIN : RESERVED_JAVA;
-        let candidate = base;
+        const safeBase = base || 'field';
+        let candidate = safeBase;
         let counter = 1;
         while (reserved.has(candidate) || usedNames.has(candidate)) {
             counter++;
-            candidate = `${base}${counter}`;
+            candidate = `${safeBase}${counter}`;
         }
         usedNames.add(candidate);
         return candidate;
     }
 
     private getNestedClassName(jsonKey: string): string {
-        const baseName = toPascalCase(this.sanitizeIdentifier(jsonKey));
+        const baseName = this.toValidClassBase(jsonKey);
+        const reserved = this.language === 'kotlin' ? RESERVED_KOTLIN : RESERVED_JAVA;
         let count = (this.nameCounter.get(baseName) || 0) + 1;
         let candidate = count > 1 ? `${baseName}${count}` : baseName;
-        while (this.usedClassNames.has(candidate)) {
+        while (this.usedClassNames.has(candidate) || reserved.has(candidate)) {
             count++;
             candidate = `${baseName}${count}`;
         }
@@ -154,11 +168,18 @@ export class JsonClassGenerator {
         return result || 'field';
     }
 
+    private classUsesList(classDef: ClassDef): boolean {
+        return classDef.fields.some(field =>
+            field.type.startsWith('List<') || (field.nestedClass ? this.classUsesList(field.nestedClass) : false)
+        );
+    }
+
     private renderJava(root: ClassDef, packageName: string, useLombok: boolean): string {
+        const hasList = this.classUsesList(root);
         const lines: string[] = [];
         lines.push(`package ${packageName};`);
         lines.push('');
-        lines.push(getImportStatements('java', useLombok));
+        lines.push(getImportStatements('java', useLombok, hasList));
         lines.push('');
         if (useLombok) {
             lines.push('@Data');

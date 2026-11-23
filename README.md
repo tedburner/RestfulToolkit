@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.10-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.11-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![Installs](https://img.shields.io/badge/installs-497-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -18,10 +18,10 @@ It scans controller annotations, builds a searchable endpoint index, and lets yo
 | Endpoint search | Search by URL path, class name, method name, HTTP method, camelCase acronym, or multiple words; available while background indexing runs |
 | Source navigation | Jump from a QuickPick result to the exact controller annotation line |
 | Parameter copy | Copy endpoint parameters as URL Params, JSON Body, Form Data, or x-www-form-urlencoded |
-| DTO expansion | Expand nested request DTO fields up to 3 levels, including common JSON naming annotations |
-| URL and cURL copy | Generate full URLs and cURL commands with headers, query params, and request bodies |
+| DTO expansion | Expand nested request DTO fields (including Java `record`s) up to 3 levels while skipping `static`, `transient`, and `@JsonIgnore` fields |
+| URL and cURL copy | Generate slash-safe full URLs and cURL commands with headers, query params, and request bodies |
 | Consistent route metadata | Search and copy share route parsing; pathless Spring mappings use the class path or root path |
-| Base URL detection | Read Spring configuration asynchronously through a workspace-scoped, event-invalidated in-memory cache |
+| Base URL detection | Read Spring configuration (`spring.profiles.active`, nearest sub-module) asynchronously through an event-invalidated in-memory cache |
 | JSON to DTO | Generate Java/Kotlin DTO classes from selected JSON or clipboard JSON |
 | Realtime updates | Watch Java/Kotlin files, honor workspace-relative exclusions, and atomically replace endpoints only after scan metadata remains stable |
 
@@ -104,7 +104,7 @@ Output formats:
 - Form Data
 - x-www-form-urlencoded
 
-`@RequestBody` and `@ModelAttribute` DTOs are expanded when their fields can be resolved in the workspace. Repeated sibling DTO types expand independently, while cycles stay bounded.
+`@RequestBody` and `@ModelAttribute` DTOs (including Java `record` components) are expanded when their fields can be resolved in the workspace, skipping `static`, `transient`, and `@JsonIgnore` members. Validation annotations (`@Valid`, `@NotBlank`, etc.), `name = "..."`, arrays, and multi-argument generics are supported. Repeated sibling DTO types expand independently, while cycles stay bounded.
 
 ### Copy Full URL
 
@@ -122,7 +122,7 @@ Base URL resolution order:
 
 1. `restfulToolkit.baseUrl` VS Code setting
 2. `.restful-toolkit.json` in the resource's workspace folder
-3. Spring config files such as `application.yml`, `application.properties`, `bootstrap.yml`, and profile files
+3. Spring config files such as `application.yml`, `application.properties`, `bootstrap.yml`, and profile files (honoring `spring.profiles.active` and preferring the nearest module in multi-module projects)
 4. Default `http://localhost:8080`
 
 Detected values remain in Extension Host memory only. Creating, changing, or deleting a supported Spring configuration file invalidates the owning workspace cache. Changes to `.restful-toolkit.json` reload settings and refresh endpoints; multi-root projects resolve Base URL and `maxResults` for the active resource's folder.
@@ -165,7 +165,7 @@ RestfulToolkit reads configuration from three levels, in priority order:
 | `restfulToolkit.scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | Glob patterns to scan |
 | `restfulToolkit.excludePaths` | `array` | `["**/src/test/**", "**/target/**", "**/build/**", ...]` | Glob patterns to exclude; watcher matching is relative to each containing workspace folder |
 | `restfulToolkit.maxResults` | `number` | `100` | Maximum search results, clamped to 1-1000 |
-| `restfulToolkit.copyNameFormat` | `string` | `"camelCase"` | Default copied parameter naming style |
+| `restfulToolkit.copyNameFormat` | `string` | `"camelCase"` | Explicit copied parameter naming style (`camelCase` or `snake_case`); auto-detected from parameter names when not explicitly set |
 | `restfulToolkit.baseUrl` | `string` | `""` | Base URL for URL/cURL generation; empty means auto-detect |
 
 Project config example:
@@ -221,6 +221,9 @@ npm run build
 Additional validation scripts:
 
 ```bash
+npm run test:marketplace-stats
+npm run test:curl-semantic
+npm run test:dto-compile
 node src/test/scripts/test-sample.js
 node src/test/scripts/test-parameter-copy.js
 node src/test/scripts/test-copy-url-curl.js

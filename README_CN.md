@@ -1,7 +1,7 @@
 # RestfulToolkit
 
 [![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue.svg)](https://code.visualstudio.com/)
-[![Version](https://img.shields.io/badge/version-0.0.10-green.svg)](https://github.com/tedburner/RestfulToolkit)
+[![Version](https://img.shields.io/badge/version-0.0.11-green.svg)](https://github.com/tedburner/RestfulToolkit)
 [![Installs](https://img.shields.io/badge/installs-497-blue.svg)](https://marketplace.visualstudio.com/items?itemName=kiturone.restful-toolkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -18,10 +18,10 @@ RestfulToolkit 是一个 VS Code 扩展，用于在 Java/Kotlin 的 Spring MVC�
 | 端点搜索 | 按 URL 路径、类名、方法名、HTTP 方法、camelCase 缩写或多关键词搜索；后台索引期间仍可使用 |
 | 源码跳转 | 从 QuickPick 结果跳转到准确的 Controller 注解行 |
 | 参数复制 | 将端点参数复制为 URL Params、JSON Body、Form Data 或 x-www-form-urlencoded |
-| DTO 展开 | 自动展开最多 3 层嵌套请求 DTO 字段，并支持常见 JSON 命名注解 |
-| URL 和 cURL 复制 | 生成包含请求头、查询参数和请求体的完整 URL/cURL |
+| DTO 展开 | 自动展开最多 3 层嵌套请求 DTO（含 Java `record`），自动剔除 `static`、`transient` 与 `@JsonIgnore` 字段 |
+| URL 和 cURL 复制 | 生成自动消除边界双斜杠的完整 URL/cURL（包含请求头、查询参数和请求体） |
 | 路由信息一致 | 搜索和复制共用路由解析；未写方法路径的 Spring mapping 使用类路径或根路径 |
-| Base URL 检测 | 通过工作区级、事件失效的内存缓存异步读取 Spring 配置 |
+| Base URL 检测 | 通过事件失效的内存缓存异步读取 Spring 配置（支持 `spring.profiles.active` 与多模块就近匹配） |
 | JSON 转 DTO | 从选中文本或剪贴板 JSON 生成 Java/Kotlin DTO 类 |
 | 实时更新 | 监听 Java/Kotlin 文件变更、遵守工作区相对排除规则，并只在扫描元数据稳定后原子替换端点 |
 
@@ -104,7 +104,7 @@ npm run compile
 - Form Data
 - x-www-form-urlencoded
 
-当工作区中能解析到 DTO 类时，`@RequestBody` 和 `@ModelAttribute` 参数会自动展开字段；多个字段引用同一 DTO 时会分别展开，并限制循环引用。
+当工作区中能解析到 DTO 类（含 Java `record`）时，`@RequestBody` 和 `@ModelAttribute` 参数会自动展开字段，并自动跳过 `static`、`transient` 与 `@JsonIgnore` 成员；同时支持前置/交错校验注解（如 `@Valid`、`@NotBlank`）、`name = "..."`、数组与多参数泛型。多个字段引用同一 DTO 时会分别展开，并限制循环引用。
 
 ### 复制完整 URL
 
@@ -122,7 +122,7 @@ Base URL 解析顺序：
 
 1. `restfulToolkit.baseUrl` VS Code 设置
 2. 当前资源所属工作区根目录下的 `.restful-toolkit.json`
-3. Spring 配置文件，例如 `application.yml`、`application.properties`、`bootstrap.yml` 和 profile 文件
+3. Spring 配置文件，例如 `application.yml`、`application.properties`、`bootstrap.yml` 和 profile 文件（支持 `spring.profiles.active` 并在多模块项目中优先匹配就近子模块）
 4. 默认值 `http://localhost:8080`
 
 自动检测结果只保存在 Extension Host 内存中。创建、修改或删除受支持的 Spring 配置文件时，会主动使所属工作区缓存失效。
@@ -166,7 +166,7 @@ RestfulToolkit 按以下优先级读取配置：
 | `restfulToolkit.scanPaths` | `array` | `["**/src/main/java/**/*.java", "**/src/main/kotlin/**/*.kt"]` | 需要扫描的 glob 模式 |
 | `restfulToolkit.excludePaths` | `array` | `["**/src/test/**", "**/target/**", "**/build/**", ...]` | 需要排除的 glob 模式；watcher 按文件所属工作区的相对路径匹配 |
 | `restfulToolkit.maxResults` | `number` | `100` | 最大搜索结果数，限制为 1-1000 |
-| `restfulToolkit.copyNameFormat` | `string` | `"camelCase"` | 复制参数时默认使用的命名风格 |
+| `restfulToolkit.copyNameFormat` | `string` | `"camelCase"` | 显式指定复制参数的命名风格（`camelCase` 或 `snake_case`）；未显式设置时按参数名自动推断 |
 | `restfulToolkit.baseUrl` | `string` | `""` | URL/cURL 生成使用的 Base URL；留空时自动检测 |
 
 项目配置示例：
@@ -222,6 +222,9 @@ npm run build
 额外验证脚本：
 
 ```bash
+npm run test:marketplace-stats
+npm run test:curl-semantic
+npm run test:dto-compile
 node src/test/scripts/test-sample.js
 node src/test/scripts/test-parameter-copy.js
 node src/test/scripts/test-copy-url-curl.js

@@ -65,4 +65,82 @@ public class OuterController {
             ]
         );
     });
+
+    test('preserves endpoints after Java text blocks and Kotlin raw strings', () => {
+        const javaContent = `@RestController
+public class DemoController {
+    @GetMapping("/a")
+    public String a() {
+        return """
+            {"url": "http://example.com", "quote": "it's ok"}
+            """;
+    }
+
+    @GetMapping("/b")
+    public String b() {
+        return "ok";
+    }
+}`;
+        const javaEndpoints = parser.parseFile(javaContent, 'DemoController.java');
+        assert.deepStrictEqual(
+            javaEndpoints.map(e => ({ path: e.path, line: e.line })),
+            [{ path: '/a', line: 3 }, { path: '/b', line: 10 }]
+        );
+
+        const ktContent = `@RestController
+class KtController {
+    @GetMapping("/first")
+    fun first(): String {
+        val winPath = """C:\\temp\\"""
+        return winPath
+    }
+
+    @PostMapping("/second")
+    fun second(): String {
+        return "ok"
+    }
+}`;
+        const ktEndpoints = parser.parseFile(ktContent, 'KtController.kt');
+        assert.deepStrictEqual(
+            ktEndpoints.map(e => ({ path: e.path, line: e.line })),
+            [{ path: '/first', line: 3 }, { path: '/second', line: 9 }]
+        );
+    });
+
+    test('skips irrelevant framework parser on single-framework classes while supporting mixed files', () => {
+        const internals = parser as unknown as {
+            jaxRsParser: { parseMethodAnnotations: (...args: unknown[]) => unknown[] };
+            springMvcParser: { parseMethodAnnotations: (...args: unknown[]) => unknown[] };
+        };
+        let jaxRsCalls = 0;
+        const origJaxRs = internals.jaxRsParser.parseMethodAnnotations.bind(internals.jaxRsParser);
+        internals.jaxRsParser.parseMethodAnnotations = (...args: unknown[]) => {
+            jaxRsCalls++;
+            return origJaxRs(...(args as Parameters<typeof origJaxRs>));
+        };
+
+        const pureSpring = `@RestController
+public class PureSpringController {
+    @GetMapping("/only-spring")
+    public String hello() { return "hi"; }
+}`;
+        const springEndpoints = parser.parseFile(pureSpring, 'PureSpringController.java');
+        assert.strictEqual(springEndpoints.length, 1);
+        assert.strictEqual(jaxRsCalls, 0, 'pure Spring class block should skip JAX-RS parser');
+
+        const mixed = `@RestController
+public class MixedFile {
+    @GetMapping("/spring")
+    public String s() { return "s"; }
+
+    @Path("/jaxrs")
+    static class JaxResource {
+        @GET
+        public String j() { return "j"; }
+    }
+}`;
+        const mixedEndpoints = parser.parseFile(mixed, 'MixedFile.java');
+        assert.strictEqual(mixedEndpoints.length, 2);
+        assert.strictEqual(jaxRsCalls, 1, 'mixed file should invoke JAX-RS parser only on the JAX-RS class block');
+    });
 });

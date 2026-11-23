@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Logger } from './Logger';
+import { normalizePathKey, relativeFromFolder, toPosixPath } from './PathUtils';
 
 interface ResolvedBaseUrl {
     host: string;
@@ -8,33 +9,42 @@ interface ResolvedBaseUrl {
     contextPath: string;
 }
 
-interface BaseUrlCacheEntry {
+interface ModuleBaseUrlEntry {
+    moduleRoot: string;
     value: ResolvedBaseUrl | null;
+}
+
+interface WorkspaceBaseUrlSnapshot {
+    modules: ModuleBaseUrlEntry[];
+    merged: ResolvedBaseUrl | null;
 }
 
 interface InflightResolution {
     epoch: number;
     generation: number;
-    promise: Promise<ResolvedBaseUrl | null>;
+    promise: Promise<WorkspaceBaseUrlSnapshot>;
 }
 
 interface ConfigValues {
     port: string | null;
     contextPath: string | null;
+    hasExplicitContextPath: boolean;
+    activeProfiles: string[];
 }
 
 /**
  * Base URL 自动检测器
  *
  * 支持：
- * - bootstrap.yml / bootstrap.properties（Spring Cloud，最高优先级）
+ * - bootstrap.yml / bootstrap.properties（Spring Cloud，高优先级）
  * - application.yml / application.properties（基础配置）
- * - application-{profile}.yml / application-{profile}.properties（多环境，覆盖基础配置）
+ * - application-{profile}.yml / application-{profile}.properties（遵循 spring.profiles.active，未声明时按字母序覆盖）
  * - 占位符解析：${ENV_VAR:default} → default
- * - server.context-path（旧版）和 server.servlet.context-path（新版）
+ * - server.context-path（旧版）和 server.servlet.context-path（新版），忽略 management.server 等非顶层块及行尾 # 注释
+ * - 多模块项目按当前资源路径就近匹配所属子模块配置
  */
 export class BaseUrlResolver {
-    private static readonly cache = new Map<string, BaseUrlCacheEntry>();
+    private static readonly cache = new Map<string, WorkspaceBaseUrlSnapshot>();
     private static readonly generations = new Map<string, number>();
     private static readonly inflightResolutions = new Map<string, InflightResolution>();
     private static cacheEpoch = 0;
@@ -47,19 +57,15 @@ export class BaseUrlResolver {
     /**
      * 异步发现并解析工作区内的 Spring Boot Base URL 配置。
      *
-     * 仅通过 VS Code 文件系统 API 访问资源目录和配置文件，解析结果缓存在 Extension Host
-     * 内存中；调用 {@link invalidate} 后，失效期间已经启动的旧解析结果不会重新写入缓存。
-     * 冷缓存期间的并发调用复用同版本在途 Promise，避免重复发现目录；失效后的新请求
-     * 不会复用旧 Promise。
-     *
      * @param workspaceFolder 工作区根目录
+     * @param resourcePath 可选的当前控制器文件路径，用于在多模块工作区中就近选择子模块配置
      * @returns 自动识别的主机、端口和上下文路径；未发现有效配置时返回 null
      */
-    async resolveAsync(workspaceFolder: string): Promise<ResolvedBaseUrl | null> {
-        const cacheKey = this.normalizePath(workspaceFolder);
+    async resolveAsync(workspaceFolder: string, resourcePath?: string): Promise<ResolvedBaseUrl | null> {
+        const cacheKey = BaseUrlResolver.normalizePath(workspaceFolder);
         const cached = BaseUrlResolver.cache.get(cacheKey);
         if (cached) {
-            return this.cloneResult(cached.value);
+            return this.selectModuleResult(cached, resourcePath);
         }
 
         const cacheEpoch = BaseUrlResolver.cacheEpoch;
@@ -67,12 +73,13 @@ export class BaseUrlResolver {
 
         const inflight = BaseUrlResolver.inflightResolutions.get(cacheKey);
         if (inflight && inflight.epoch === cacheEpoch && inflight.generation === generation) {
-            return this.cloneResult(await inflight.promise);
+            const snapshot = await inflight.promise;
+            return this.selectModuleResult(snapshot, resourcePath);
         }
 
-        const discovery = this.discoverAndResolve(workspaceFolder);
+        const discovery = this.discoverAndResolveSnapshot(workspaceFolder);
         BaseUrlResolver.inflightResolutions.set(cacheKey, { epoch: cacheEpoch, generation, promise: discovery });
-        const value = await discovery.finally(() => {
+        const snapshot = await discovery.finally(() => {
             const current = BaseUrlResolver.inflightResolutions.get(cacheKey);
             if (current && current.promise === discovery) {
                 BaseUrlResolver.inflightResolutions.delete(cacheKey);
@@ -81,9 +88,9 @@ export class BaseUrlResolver {
 
         if (cacheEpoch === BaseUrlResolver.cacheEpoch
             && generation === (BaseUrlResolver.generations.get(cacheKey) ?? 0)) {
-            BaseUrlResolver.cache.set(cacheKey, { value: this.cloneResult(value) });
+            BaseUrlResolver.cache.set(cacheKey, this.cloneSnapshot(snapshot));
         }
-        return value;
+        return this.selectModuleResult(snapshot, resourcePath);
     }
 
     static invalidate(workspaceFolder: string): void {
@@ -100,39 +107,153 @@ export class BaseUrlResolver {
         BaseUrlResolver.cacheEpoch++;
     }
 
-    private async discoverAndResolve(workspaceFolder: string): Promise<ResolvedBaseUrl | null> {
-        const resourcesDirs = await this.findResourcesDirsAsync(workspaceFolder);
-        const files: string[] = [];
-        for (const dir of resourcesDirs) {
-            files.push(...await this.collectConfigFilesAsync(dir));
+    private selectModuleResult(snapshot: WorkspaceBaseUrlSnapshot, resourcePath?: string): ResolvedBaseUrl | null {
+        if (resourcePath && snapshot.modules.length > 0) {
+            const matching = snapshot.modules
+                .filter(entry => entry.value !== null && relativeFromFolder(entry.moduleRoot, resourcePath) !== null)
+                .sort((a, b) => b.moduleRoot.length - a.moduleRoot.length);
+            if (matching.length > 0) {
+                return this.cloneResult(matching[0].value);
+            }
         }
-
-        return this.resolveFromConfigFilesAsync(files);
+        return this.cloneResult(snapshot.merged);
     }
 
-    private async resolveFromConfigFilesAsync(files: string[]): Promise<ResolvedBaseUrl | null> {
-        if (files.length === 0) { return null; }
-        const result: ConfigValues = { port: null, contextPath: null };
+    private async discoverAndResolveSnapshot(workspaceFolder: string): Promise<WorkspaceBaseUrlSnapshot> {
+        const resourcesDirs = await this.findResourcesDirsAsync(workspaceFolder);
+        if (resourcesDirs.length === 0) {
+            return { modules: [], merged: null };
+        }
 
-        for (const file of files) {
+        const modules: ModuleBaseUrlEntry[] = [];
+        const mergedValues: ConfigValues = {
+            port: null,
+            contextPath: null,
+            hasExplicitContextPath: false,
+            activeProfiles: []
+        };
+
+        for (const dir of resourcesDirs) {
+            const moduleValues = await this.resolveResourcesDirAsync(dir);
+            if (moduleValues.port) {
+                mergedValues.port = moduleValues.port;
+            }
+            if (moduleValues.hasExplicitContextPath) {
+                mergedValues.contextPath = moduleValues.contextPath;
+                mergedValues.hasExplicitContextPath = true;
+            }
+            modules.push({
+                moduleRoot: this.deriveModuleRoot(dir),
+                value: this.toResolvedBaseUrl(moduleValues)
+            });
+        }
+
+        return {
+            modules,
+            merged: this.toResolvedBaseUrl(mergedValues)
+        };
+    }
+
+    private deriveModuleRoot(resourcesDir: string): string {
+        const posix = toPosixPath(resourcesDir).replace(/\/+$/, '');
+        if (posix.endsWith('/src/main/resources')) {
+            return path.dirname(path.dirname(path.dirname(resourcesDir)));
+        }
+        if (posix.endsWith('/main/resources')) {
+            return path.dirname(path.dirname(resourcesDir));
+        }
+        return path.dirname(resourcesDir);
+    }
+
+    private async resolveResourcesDirAsync(resourcesDir: string): Promise<ConfigValues> {
+        const result: ConfigValues = {
+            port: null,
+            contextPath: null,
+            hasExplicitContextPath: false,
+            activeProfiles: []
+        };
+
+        let names: Set<string>;
+        try {
+            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(resourcesDir));
+            names = new Set(entries
+                .filter(([, fileType]) => fileType === vscode.FileType.File)
+                .map(([name]) => name));
+        } catch {
+            return result;
+        }
+
+        const baseFiles: string[] = [];
+        for (const baseName of [
+            'application.properties', 'application.yml', 'application.yaml',
+            'bootstrap.properties', 'bootstrap.yml', 'bootstrap.yaml'
+        ]) {
+            if (names.has(baseName)) {
+                baseFiles.push(path.join(resourcesDir, baseName));
+            }
+        }
+
+        for (const file of baseFiles) {
             const content = await this.readFileAsync(file);
             if (!content) { continue; }
-            this.applyConfigValues(result, file, content);
+            this.applyConfigValues(result, file, content, true);
         }
 
-        return this.toResolvedBaseUrl(result);
+        const profileFiles = this.selectProfileFiles(names, resourcesDir, result.activeProfiles);
+        for (const file of profileFiles) {
+            const content = await this.readFileAsync(file);
+            if (!content) { continue; }
+            this.applyConfigValues(result, file, content, false);
+        }
+
+        return result;
     }
 
-    private applyConfigValues(result: ConfigValues, file: string, content: string): void {
+    private selectProfileFiles(names: Set<string>, resourcesDir: string, activeProfiles: string[]): string[] {
+        if (activeProfiles.length > 0) {
+            const selected: string[] = [];
+            for (const profile of activeProfiles) {
+                for (const ext of ['properties', 'yml', 'yaml']) {
+                    const candidate = `application-${profile}.${ext}`;
+                    if (names.has(candidate)) {
+                        selected.push(path.join(resourcesDir, candidate));
+                    }
+                }
+            }
+            return selected;
+        }
+
+        const profileNames: string[] = [];
+        for (const name of names) {
+            if (/^application-(?!yml$|yaml$|properties$).+\.(yml|yaml|properties)$/.test(name)) {
+                profileNames.push(name);
+            }
+        }
+        profileNames.sort();
+        return profileNames.map(name => path.join(resourcesDir, name));
+    }
+
+    private applyConfigValues(result: ConfigValues, file: string, content: string, readActiveProfiles: boolean): void {
         const parsed = file.endsWith('.properties')
             ? this.parseProperties(content)
             : this.parseYaml(content);
         if (parsed.port) { result.port = parsed.port; }
-        if (parsed.contextPath) { result.contextPath = parsed.contextPath; }
+        if (parsed.contextPath !== null) {
+            result.contextPath = this.normalizeContextPath(parsed.contextPath);
+            result.hasExplicitContextPath = true;
+        }
+        if (readActiveProfiles && parsed.activeProfiles.length > 0) {
+            result.activeProfiles = parsed.activeProfiles;
+        }
+    }
+
+    private normalizeContextPath(raw: string): string {
+        const trimmed = raw.replace(/^\/+|\/+$/g, '');
+        return trimmed ? `/${trimmed}` : '';
     }
 
     private toResolvedBaseUrl(result: ConfigValues): ResolvedBaseUrl | null {
-        if (!result.port && !result.contextPath) { return null; }
+        if (!result.port && !result.hasExplicitContextPath) { return null; }
         return {
             host: 'localhost',
             port: result.port || '8080',
@@ -140,26 +261,26 @@ export class BaseUrlResolver {
         };
     }
 
+    private cloneSnapshot(snapshot: WorkspaceBaseUrlSnapshot): WorkspaceBaseUrlSnapshot {
+        return {
+            modules: snapshot.modules.map(m => ({ moduleRoot: m.moduleRoot, value: this.cloneResult(m.value) })),
+            merged: this.cloneResult(snapshot.merged)
+        };
+    }
+
     private cloneResult(value: ResolvedBaseUrl | null): ResolvedBaseUrl | null {
         return value ? { ...value } : null;
     }
 
-    private normalizePath(filePath: string): string {
-        return BaseUrlResolver.normalizePath(filePath);
-    }
-
     private static normalizePath(filePath: string): string {
-        const normalized = path.resolve(filePath).replace(/\\/g, '/');
-        return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+        return normalizePathKey(path.resolve(filePath));
     }
 
     /**
-     * 查找所有 src/main/resources 目录（支持多模块 Maven/Gradle 项目）
+     * 查找所有 src/main/resources 目录（支持多模块 Maven/Gradle 项目，同层并行读取并保持稳定排序）
      */
     private async findResourcesDirsAsync(root: string): Promise<string[]> {
-        const results: string[] = [];
-        await this.searchDirAsync(root, results, 0);
-        return results;
+        return this.searchDirAsync(root, 0);
     }
 
     private isExcludedDir(name: string): boolean {
@@ -167,68 +288,28 @@ export class BaseUrlResolver {
         return excluded.includes(name);
     }
 
-    private async searchDirAsync(dir: string, results: string[], depth: number): Promise<void> {
-        if (depth > 5) { return; }
+    private async searchDirAsync(dir: string, depth: number): Promise<string[]> {
+        if (depth > 5) { return []; }
         try {
             const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dir));
-            for (const [name, fileType] of entries) {
-                if (fileType !== vscode.FileType.Directory) {
-                    continue;
-                }
+            const sortedDirs = entries
+                .filter(([, fileType]) => fileType === vscode.FileType.Directory)
+                .map(([name]) => name)
+                .sort();
 
+            const childPromises = sortedDirs.map(async (name): Promise<string[]> => {
                 const fullPath = path.join(dir, name);
                 if (name === 'resources' && dir.endsWith('main')) {
-                    results.push(fullPath);
-                } else if (!this.isExcludedDir(name)) {
-                    await this.searchDirAsync(fullPath, results, depth + 1);
+                    return [fullPath];
                 }
-            }
-        } catch {
-            // Ignore inaccessible folders.
-        }
-    }
+                if (!this.isExcludedDir(name)) {
+                    return this.searchDirAsync(fullPath, depth + 1);
+                }
+                return [];
+            });
 
-    /**
-     * 按 Spring Boot 优先级收集配置文件（共享算法）：
-     * 1. application.properties / application.yml（最低优先级）
-     * 2. bootstrap.properties / bootstrap.yml（Spring Cloud，高优先级）
-     * 3. application-{profile}.*（按字母序，最高优先级，覆盖前面的）
-     */
-    private buildConfigFileList(names: Set<string>, resourcesDir: string): string[] {
-        const files: string[] = [];
-
-        // application.*（基础配置）
-        if (names.has('application.properties')) { files.push(path.join(resourcesDir, 'application.properties')); }
-        if (names.has('application.yml')) { files.push(path.join(resourcesDir, 'application.yml')); }
-        if (names.has('application.yaml')) { files.push(path.join(resourcesDir, 'application.yaml')); }
-
-        // bootstrap.*（Spring Cloud，优先级高于 application）
-        if (names.has('bootstrap.properties')) { files.push(path.join(resourcesDir, 'bootstrap.properties')); }
-        if (names.has('bootstrap.yml')) { files.push(path.join(resourcesDir, 'bootstrap.yml')); }
-        if (names.has('bootstrap.yaml')) { files.push(path.join(resourcesDir, 'bootstrap.yaml')); }
-
-        // application-{profile}.*（最高优先级）
-        const profileFiles: string[] = [];
-        for (const name of names) {
-            if (/^application-(?!yml$|yaml$|properties$).+\.(yml|yaml|properties)$/.test(name)) {
-                profileFiles.push(name);
-            }
-        }
-        profileFiles.sort();
-        for (const name of profileFiles) {
-            files.push(path.join(resourcesDir, name));
-        }
-
-        return files;
-    }
-
-    private async collectConfigFilesAsync(resourcesDir: string): Promise<string[]> {
-        try {
-            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(resourcesDir));
-            const names = new Set(entries
-                .filter(([, fileType]) => fileType === vscode.FileType.File)
-                .map(([name]) => name));
-            return this.buildConfigFileList(names, resourcesDir);
+            const nestedResults = await Promise.all(childPromises);
+            return nestedResults.flat();
         } catch {
             return [];
         }
@@ -244,30 +325,28 @@ export class BaseUrlResolver {
     }
 
     /**
-     * 解析 YAML 内容
+     * 解析 YAML 内容（仅顶层 server 块生效，支持行尾 # 注释与 spring.profiles.active）
      */
-    private parseYaml(content: string): { port: string | null; contextPath: string | null } {
+    private parseYaml(content: string): { port: string | null; contextPath: string | null; activeProfiles: string[] } {
         let port: string | null = null;
         let contextPath: string | null = null;
 
-        // 匹配 server: 块下的 port: （处理嵌套 YAML）
-        const serverBlock = this.extractYamlBlock(content, 'server');
+        // 仅匹配顶层（indent = 0）的 server: 块，防止被 management.server 等嵌套块劫持
+        const serverBlock = this.extractYamlBlock(content, 'server', 0);
         if (serverBlock) {
             const portMatch = serverBlock.match(/(?:^|\n)\s*port:\s*(.+)$/m);
             if (portMatch) {
                 port = this.cleanValue(portMatch[1]);
             }
 
-            // server.servlet.context-path 或 server.context-path
-            const servletBlock = this.extractYamlBlock(serverBlock, 'servlet');
+            const servletBlock = this.extractYamlBlock(serverBlock, 'servlet', null);
             if (servletBlock) {
                 const ctxMatch = servletBlock.match(/(?:^|\n)\s*context-path:\s*(.+)$/m);
                 if (ctxMatch) {
                     contextPath = this.cleanValue(ctxMatch[1]);
                 }
             }
-            // 旧版 server.context-path（直接在 server 下）
-            if (!contextPath) {
+            if (contextPath === null) {
                 const ctxMatch = serverBlock.match(/(?:^|\n)\s*context-path:\s*(.+)$/m);
                 if (ctxMatch) {
                     contextPath = this.cleanValue(ctxMatch[1]);
@@ -275,44 +354,82 @@ export class BaseUrlResolver {
             }
         }
 
-        // 兜底：仅允许顶层 server.port，避免误读 management.server.port 等其它层级
         if (!port) {
             const portMatch = content.match(/^server\.port\s*:\s*(.+)$/m);
             if (portMatch) { port = this.cleanValue(portMatch[1]); }
         }
 
-        return { port, contextPath };
+        if (contextPath === null) {
+            const flatServletCtx = content.match(/^server\.servlet\.context-path\s*:\s*(.+)$/m);
+            if (flatServletCtx) {
+                contextPath = this.cleanValue(flatServletCtx[1]);
+            } else {
+                const flatCtx = content.match(/^server\.context-path\s*:\s*(.+)$/m);
+                if (flatCtx) { contextPath = this.cleanValue(flatCtx[1]); }
+            }
+        }
+
+        const activeProfiles = this.extractYamlActiveProfiles(content);
+        return { port, contextPath, activeProfiles };
+    }
+
+    private extractYamlActiveProfiles(content: string): string[] {
+        let rawActive: string | null = null;
+        const springBlock = this.extractYamlBlock(content, 'spring', 0);
+        if (springBlock) {
+            const profilesBlock = this.extractYamlBlock(springBlock, 'profiles', null);
+            if (profilesBlock) {
+                const activeMatch = profilesBlock.match(/(?:^|\n)\s*active:\s*(.+)$/m);
+                if (activeMatch) {
+                    rawActive = activeMatch[1];
+                }
+            }
+        }
+        if (!rawActive) {
+            const flatMatch = content.match(/^spring\.profiles\.active\s*:\s*(.+)$/m);
+            if (flatMatch) {
+                rawActive = flatMatch[1];
+            }
+        }
+        return rawActive ? this.parseProfileList(rawActive) : [];
     }
 
     /**
-     * 从 YAML 中提取指定键下的块
+     * 从 YAML 中提取指定键下的块；expectedIndent 非 null 时严格要求该键处于对应缩进层级。
      */
-    private extractYamlBlock(content: string, key: string): string | null {
+    private extractYamlBlock(content: string, key: string, expectedIndent: number | null): string | null {
         const lines = content.split('\n');
         let keyIndent: number | null = null;
         const blockLines: string[] = [];
         let foundKey = false;
+        const keyPattern = new RegExp(`^(\\s*)${key}:\\s*(.*)$`);
 
-        for (const line of lines) {
+        for (const rawLine of lines) {
+            const line = rawLine.replace(/\r$/, '');
+            const trimmed = line.trim();
             if (!foundKey) {
-                // 找 key: 行
-                const match = line.match(new RegExp(`^(\\s*)${key}:\\s*(.*)$`));
+                if (!trimmed || trimmed.startsWith('#')) { continue; }
+                const match = line.match(keyPattern);
                 if (!match) { continue; }
-                keyIndent = match[1].length;
+                const indent = match[1].length;
+                if (expectedIndent !== null && indent !== expectedIndent) {
+                    continue;
+                }
+                keyIndent = indent;
                 foundKey = true;
-                const inlineValue = match[2].trim();
-                // 内联值（如 server: port: 8080）
+                const inlineValue = this.stripInlineComment(match[2]).trim();
                 if (inlineValue) { return inlineValue; }
                 continue;
             }
-            // 找到 key 后，收集所有更深缩进的行
-            if (line.trim() === '') { blockLines.push(line); continue; }
+            if (trimmed === '' || trimmed.startsWith('#')) {
+                blockLines.push(line);
+                continue;
+            }
             const indentMatch = line.match(/^(\s*)/);
             const lineIndent = indentMatch ? indentMatch[1].length : 0;
             if (lineIndent > keyIndent!) {
                 blockLines.push(line);
             } else {
-                // 同级或更浅缩进 → 块结束
                 break;
             }
         }
@@ -320,48 +437,84 @@ export class BaseUrlResolver {
         return blockLines.length > 0 ? blockLines.join('\n') : null;
     }
 
-    /**
-     * 解析 Properties 内容
-     */
-    private parseProperties(content: string): { port: string | null; contextPath: string | null } {
+    private parseProperties(content: string): { port: string | null; contextPath: string | null; activeProfiles: string[] } {
         let port: string | null = null;
         let contextPath: string | null = null;
 
         const portMatch = content.match(/^server\.port\s*=\s*(.+)$/m);
         if (portMatch) { port = this.cleanValue(portMatch[1]); }
 
-        // 新版 server.servlet.context-path 或旧版 server.context-path
         const servletCtxMatch = content.match(/^server\.servlet\.context-path\s*=\s*(.+)$/m);
         if (servletCtxMatch) { contextPath = this.cleanValue(servletCtxMatch[1]); }
-        if (!contextPath) {
+        if (contextPath === null) {
             const ctxMatch = content.match(/^server\.context-path\s*=\s*(.+)$/m);
             if (ctxMatch) { contextPath = this.cleanValue(ctxMatch[1]); }
         }
 
-        return { port, contextPath };
+        const activeMatch = content.match(/^spring\.profiles\.active\s*=\s*(.+)$/m);
+        const activeProfiles = activeMatch ? this.parseProfileList(activeMatch[1]) : [];
+
+        return { port, contextPath, activeProfiles };
+    }
+
+    private parseProfileList(rawValue: string): string[] {
+        const stripped = this.stripInlineComment(rawValue).trim().replace(/^["']|["']$/g, '');
+        const resolved = this.resolvePlaceholder(stripped);
+        if (!resolved) {
+            return [];
+        }
+        return resolved
+            .split(',')
+            .map(item => item.trim())
+            .filter(item => /^[\w.-]+$/.test(item));
     }
 
     /**
-     * 清理值：去除引号、解析占位符默认值
-     *
-     * 占位符格式：
-     * - ${ENV_VAR:default} → default
-     * - ${env.VAR:8080} → 8080
-     * - ${server.port} → null（无默认值，跳过）
+     * 剥离引号外的行尾 `#` 注释（YAML 规范要求 `#` 在行首或紧跟空白后才视作注释）。
      */
-    private cleanValue(value: string): string | null {
-        let cleaned = value.trim().replace(/^["']|["']$/g, '');
+    private stripInlineComment(raw: string): string {
+        let inQuote: string | null = null;
+        for (let i = 0; i < raw.length; i++) {
+            const ch = raw[i];
+            if (inQuote) {
+                if (ch === '\\' && inQuote === '"') {
+                    i++;
+                    continue;
+                }
+                if (ch === inQuote) {
+                    inQuote = null;
+                }
+                continue;
+            }
+            if (ch === '"' || ch === "'") {
+                inQuote = ch;
+                continue;
+            }
+            if (ch === '#' && (i === 0 || /\s/.test(raw[i - 1]))) {
+                return raw.slice(0, i).trim();
+            }
+        }
+        return raw.trim();
+    }
 
-        // 解析占位符：${...:default}
-        const placeholderMatch = cleaned.match(/^\$\{[^}]*:(.+?)\}$/);
+    private resolvePlaceholder(value: string): string | null {
+        const placeholderMatch = value.match(/^\$\{[^}]*:(.+?)\}$/);
         if (placeholderMatch) {
-            cleaned = placeholderMatch[1];
-        } else if (cleaned.includes('${')) {
-            // 有占位符但没有默认值，跳过
+            return placeholderMatch[1].trim();
+        }
+        if (value.includes('${')) {
             return null;
         }
+        return value;
+    }
 
-        // 只接受纯字母数字、点号、斜杠、连字符的值
+    private cleanValue(value: string): string | null {
+        const withoutComment = this.stripInlineComment(value);
+        const unquoted = withoutComment.replace(/^["']|["']$/g, '').trim();
+        const cleaned = this.resolvePlaceholder(unquoted);
+        if (!cleaned) {
+            return null;
+        }
         if (!/^[\w.\-/]+$/.test(cleaned)) { return null; }
 
         return cleaned;

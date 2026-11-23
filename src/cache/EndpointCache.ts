@@ -1,4 +1,5 @@
 import { RestEndpoint, MatchScore, SearchQuery } from '../models/types';
+import { normalizePathKey } from '../utils/PathUtils';
 
 interface SearchableField {
     lower: string;
@@ -8,6 +9,7 @@ interface SearchableField {
 
 interface SearchableEndpoint {
     endpoint: RestEndpoint;
+    fileKey: string;
     path: SearchableField;
     className: SearchableField;
     methodName: SearchableField;
@@ -29,7 +31,6 @@ interface ScoreAccumulator {
 }
 
 export class EndpointCache {
-    private endpoints: Map<string, SearchableEndpoint[]> = new Map();
     private fileIndex: Map<string, SearchableEndpoint[]> = new Map();
     private allEndpoints: SearchableEndpoint[] = [];
     private endpointCount = 0;
@@ -38,24 +39,13 @@ export class EndpointCache {
 
     add(endpoint: RestEndpoint): void {
         const searchableEndpoint = this.createSearchableEndpoint(endpoint);
-        const pathKey = searchableEndpoint.endpoint.path;
-        if (!this.endpoints.has(pathKey)) {
-            this.endpoints.set(pathKey, []);
-        }
-        this.endpoints.get(pathKey)!.push(searchableEndpoint);
-
-        const fileKey = searchableEndpoint.endpoint.file;
-        if (!this.fileIndex.has(fileKey)) {
-            this.fileIndex.set(fileKey, []);
-        }
-        this.fileIndex.get(fileKey)!.push(searchableEndpoint);
-
+        this.indexEndpoint(this.fileIndex, searchableEndpoint.fileKey, searchableEndpoint);
         this.allEndpoints.push(searchableEndpoint);
         this.endpointCount++;
     }
 
     getByFile(file: string): RestEndpoint[] {
-        return (this.fileIndex.get(file) || []).map(item => this.cloneEndpoint(item.endpoint));
+        return (this.fileIndex.get(normalizePathKey(file)) || []).map(item => this.cloneEndpoint(item.endpoint));
     }
 
     getIndexedFiles(): string[] {
@@ -63,43 +53,33 @@ export class EndpointCache {
     }
 
     removeByFile(file: string): void {
-        const endpoints = this.fileIndex.get(file);
+        const fileKey = normalizePathKey(file);
+        const endpoints = this.fileIndex.get(fileKey);
         if (!endpoints) {
             return;
         }
 
-        for (const endpoint of endpoints) {
-            const pathEndpoints = this.endpoints.get(endpoint.endpoint.path);
-            if (pathEndpoints) {
-                const filtered = pathEndpoints.filter(e => e.endpoint.file !== file);
-                if (filtered.length === 0) {
-                    this.endpoints.delete(endpoint.endpoint.path);
-                } else {
-                    this.endpoints.set(endpoint.endpoint.path, filtered);
-                }
-            }
-        }
-
         this.endpointCount -= endpoints.length;
-        this.fileIndex.delete(file);
-        this.allEndpoints = this.allEndpoints.filter(e => e.endpoint.file !== file);
+        this.fileIndex.delete(fileKey);
+        this.allEndpoints = this.allEndpoints.filter(e => e.fileKey !== fileKey);
     }
 
     /**
-     * 单文件整体替换端点：就地压缩全量数组并增量修补文件/路径索引，成本与
+     * 单文件整体替换端点：就地压缩全量数组并增量修补文件索引，成本与
      * 该文件的端点数（外加一次全量数组指针压缩）成正比，供 watcher 保存等
      * 单文件热路径使用；不重建缓存数组。
      *
      * 顺序契约与批量更新一致：未涉及文件的端点保持原顺序，新端点追加到末尾。
      */
     updateFile(file: string, endpoints: RestEndpoint[]): void {
-        const previousItems = this.fileIndex.get(file);
-        const newItems = endpoints.map(endpoint => this.createSearchableEndpoint(endpoint));
+        const fileKey = normalizePathKey(file);
+        const previousItems = this.fileIndex.get(fileKey);
+        const newItems = endpoints.map(endpoint => this.createSearchableEndpoint(endpoint, fileKey));
 
         if (newItems.length > 0) {
-            this.fileIndex.set(file, newItems);
+            this.fileIndex.set(fileKey, newItems);
         } else {
-            this.fileIndex.delete(file);
+            this.fileIndex.delete(fileKey);
         }
 
         if (previousItems) {
@@ -107,7 +87,7 @@ export class EndpointCache {
             let writeIndex = 0;
             for (let index = 0; index < this.allEndpoints.length; index++) {
                 const item = this.allEndpoints[index];
-                if (item.endpoint.file === file) {
+                if (item.fileKey === fileKey) {
                     removedCount++;
                     continue;
                 }
@@ -115,24 +95,10 @@ export class EndpointCache {
             }
             this.allEndpoints.length = writeIndex;
             this.endpointCount -= removedCount;
-
-            for (const item of previousItems) {
-                const pathEndpoints = this.endpoints.get(item.endpoint.path);
-                if (!pathEndpoints) {
-                    continue;
-                }
-                const remaining = pathEndpoints.filter(e => e.endpoint.file !== file);
-                if (remaining.length === 0) {
-                    this.endpoints.delete(item.endpoint.path);
-                } else {
-                    this.endpoints.set(item.endpoint.path, remaining);
-                }
-            }
         }
 
         for (const item of newItems) {
             this.allEndpoints.push(item);
-            this.indexEndpoint(this.endpoints, item.endpoint.path, item);
         }
         this.endpointCount += newItems.length;
     }
@@ -153,23 +119,22 @@ export class EndpointCache {
             this.updateFile(updates[0].file, updates[0].endpoints);
             return;
         }
-        const updatedFiles = new Set(updates.map(update => update.file));
+        const updatedFiles = new Set(updates.map(update => normalizePathKey(update.file)));
 
-        const survivingItems = this.allEndpoints.filter(item => !updatedFiles.has(item.endpoint.file));
+        const survivingItems = this.allEndpoints.filter(item => !updatedFiles.has(item.fileKey));
         const addedItems: SearchableEndpoint[] = [];
         for (const update of updates) {
+            const fileKey = normalizePathKey(update.file);
             for (const endpoint of update.endpoints) {
-                addedItems.push(this.createSearchableEndpoint(endpoint));
+                addedItems.push(this.createSearchableEndpoint(endpoint, fileKey));
             }
         }
 
         this.allEndpoints = survivingItems.concat(addedItems);
 
         this.fileIndex = new Map();
-        this.endpoints = new Map();
         for (const item of this.allEndpoints) {
-            this.indexEndpoint(this.fileIndex, item.endpoint.file, item);
-            this.indexEndpoint(this.endpoints, item.endpoint.path, item);
+            this.indexEndpoint(this.fileIndex, item.fileKey, item);
         }
 
         this.endpointCount = this.allEndpoints.length;
@@ -270,10 +235,11 @@ export class EndpointCache {
         return scored.map(item => this.cloneEndpoint(item.item.endpoint));
     }
 
-    private createSearchableEndpoint(endpoint: RestEndpoint): SearchableEndpoint {
+    private createSearchableEndpoint(endpoint: RestEndpoint, explicitFileKey?: string): SearchableEndpoint {
         const cachedEndpoint = this.cloneEndpoint(endpoint);
         return {
             endpoint: cachedEndpoint,
+            fileKey: explicitFileKey ?? normalizePathKey(cachedEndpoint.file),
             path: this.createSearchableField(cachedEndpoint.path),
             className: this.createSearchableField(cachedEndpoint.className),
             methodName: this.createSearchableField(cachedEndpoint.methodName),
@@ -485,7 +451,6 @@ export class EndpointCache {
     }
 
     clear(): void {
-        this.endpoints.clear();
         this.fileIndex.clear();
         this.allEndpoints = [];
         this.endpointCount = 0;

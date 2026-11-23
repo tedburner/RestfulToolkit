@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import { EndpointCache } from '../../cache/EndpointCache';
 import { RestEndpoint } from '../../models/types';
+import { setPlatformForTest } from '../../utils/PathUtils';
 
 suite('EndpointCache Test Suite', () => {
     let cache: EndpointCache;
@@ -895,5 +896,47 @@ suite('EndpointCache Test Suite', () => {
 
         cache.clear();
         assert.strictEqual(cache.size(), 0);
+    });
+
+    test('treats Windows drive-letter casing differences as the same file while preserving display path', () => {
+        setPlatformForTest('win32');
+        try {
+            cache.add({
+                method: 'GET',
+                path: '/api/v1',
+                className: 'UserController',
+                methodName: 'v1',
+                file: 'F:\\Repo\\src\\UserController.java',
+                line: 10,
+                framework: 'Spring'
+            });
+
+            cache.updateFile('f:\\repo\\src\\usercontroller.java', [{
+                method: 'POST',
+                path: '/api/v2',
+                className: 'UserController',
+                methodName: 'v2',
+                file: 'f:\\Repo\\src\\UserController.java',
+                line: 12,
+                framework: 'Spring'
+            }]);
+
+            assert.strictEqual(cache.size(), 1, 'updateFile with different Windows casing must replace rather than duplicate');
+            assert.strictEqual(cache.getByFile('F:\\REPO\\src\\UserController.java').length, 1);
+            assert.strictEqual(cache.getAll()[0].file, 'f:\\Repo\\src\\UserController.java');
+
+            cache.removeByFile('F:\\repo\\SRC\\UserController.java');
+            assert.strictEqual(cache.size(), 0, 'removeByFile with different Windows casing must delete the cached entry');
+        } finally {
+            setPlatformForTest();
+        }
+    });
+
+    test('does not maintain a redundant write-only path map', () => {
+        cache.add({
+            method: 'GET', path: '/api/users', className: 'UserController', methodName: 'list',
+            file: 'UserController.java', line: 10, framework: 'Spring'
+        });
+        assert.strictEqual('endpoints' in (cache as unknown as Record<string, unknown>), false);
     });
 });

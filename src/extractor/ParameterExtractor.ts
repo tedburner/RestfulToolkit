@@ -7,7 +7,36 @@ import { Logger } from '../utils/Logger';
 import { TextProcessor } from '../utils/TextProcessor';
 import { AnnotationParser } from '../parsers/AnnotationParser';
 
+interface ClassBlockSpan {
+    className: string;
+    declarationIndex: number;
+    startIndex: number;
+    endIndex: number;
+}
+
+interface DirectMethodSpan {
+    methodName: string;
+    className: string;
+    classPath: string;
+    annotations: string;
+    signature: string;
+    /** 0-based 起始行（含首个方法注解） */
+    startLine: number;
+    /** 0-based 方法声明行 */
+    declarationLine: number;
+    /** 0-based 结束行（方法体 `}` 或接口 `;`） */
+    endLine: number;
+    /** 上一个直接成员的 0-based 结束行，用于识别方法上方空行/注释间隙 */
+    prevMemberEndLine: number;
+}
+
 export class ParameterExtractor {
+    private static readonly javaModifiers = new Set([
+        'public', 'private', 'protected', 'internal', 'static', 'final', 'abstract',
+        'synchronized', 'default', 'native', 'open', 'override', 'suspend', 'inline',
+        'operator', 'infix', 'tailrec', 'strictfp'
+    ]);
+
     private springParser: SpringParameterParser;
     private jaxRsParser: JaxRsParameterParser;
     private dtoExtractor: DtoFieldExtractor;
@@ -35,32 +64,28 @@ export class ParameterExtractor {
         options?: { expandDto?: boolean }
     ): Promise<EndpointCopyInfo | null> {
         const text = document.getText();
+        const filePath = document.uri.fsPath;
 
-        // 检测框架
         const framework = this.detectFramework(text);
         if (!framework) { return null; }
 
-        // 查找光标所在方法
-        const methodInfo = this.findMethodAtPosition(text, position.line);
+        const methodInfo = this.findMethodAtPosition(text, position.line, filePath.endsWith('.kt'));
         if (!methodInfo) { return null; }
-        const parsed = new AnnotationParser().parseFileResult(text, document.uri.fsPath);
+
+        const parsed = new AnnotationParser().parseFileResult(text, filePath);
         const route = parsed.success
             ? parsed.endpoints
                 .filter(endpoint => endpoint.className === methodInfo.className
                     && endpoint.methodName === methodInfo.methodName
+                    && endpoint.line >= methodInfo.startLine + 1
                     && endpoint.line <= methodInfo.declarationLine + 1)
                 .sort((left, right) => right.line - left.line)[0]
             : undefined;
 
-        // 解析参数
-        let parameters: EndpointParameter[];
-        if (framework === 'Spring') {
-            parameters = this.springParser.parseMethodParameters(methodInfo.signature);
-        } else {
-            parameters = this.jaxRsParser.parseMethodParameters(methodInfo.signature);
-        }
+        const parameters: EndpointParameter[] = framework === 'Spring'
+            ? this.springParser.parseMethodParameters(methodInfo.signature)
+            : this.jaxRsParser.parseMethodParameters(methodInfo.signature);
 
-        // 检测 HTTP 方法和内容类型
         const { httpMethod, contentType } = this.detectHttpAndContentType(methodInfo.annotations, framework, route?.method);
 
         const copyInfo: EndpointCopyInfo = {
@@ -72,7 +97,6 @@ export class ParameterExtractor {
             dtoFields: new Map()
         };
 
-        // 无参数时无需展开 DTO；expandDto 为 false 时不触发 DTO 文件 I/O
         if (copyInfo.parameters.length > 0 && options?.expandDto !== false) {
             copyInfo.dtoFields = await this.resolveDtoFields(copyInfo.parameters, text);
         }
@@ -90,196 +114,424 @@ export class ParameterExtractor {
     }
 
     private detectFramework(text: string): 'Spring' | 'JAX-RS' | null {
-        // 检查 Spring 注解
-        if (/@(Get|Post|Put|Delete|Patch)Mapping|@RequestMapping|@RequestParam|@PathVariable|@RequestBody/.test(text)) {
+        if (/@(?:[\w$]+\.)*(?:Get|Post|Put|Delete|Patch)Mapping|@(?:[\w$]+\.)*RequestMapping|@(?:[\w$]+\.)*RequestParam|@(?:[\w$]+\.)*PathVariable|@(?:[\w$]+\.)*RequestBody/.test(text)) {
             return 'Spring';
         }
-        // 检查 JAX-RS 注解
-        if (/@(GET|POST|PUT|DELETE|PATCH)\b|@Path\b|@PathParam|@QueryParam|@FormParam/.test(text)) {
+        if (/@(?:[\w$]+\.)*(?:GET|POST|PUT|DELETE|PATCH)\b|@(?:[\w$]+\.)*Path\b|@(?:[\w$]+\.)*PathParam|@(?:[\w$]+\.)*QueryParam|@(?:[\w$]+\.)*FormParam/.test(text)) {
             return 'JAX-RS';
         }
-        // 检查 import
-        if (/import.*org\.springframework/.test(text)) { return 'Spring'; }
-        if (/import.*javax\.ws\.rs|import.*jakarta\.ws\.rs/.test(text)) { return 'JAX-RS'; }
+        if (/import\s+[\w.]*org\.springframework/.test(text)) { return 'Spring'; }
+        if (/import\s+[\w.]*(?:javax|jakarta)\.ws\.rs/.test(text)) { return 'JAX-RS'; }
         return null;
     }
 
-    private findMethodAtPosition(text: string, cursorLine: number): {
+    private findMethodAtPosition(text: string, cursorLine: number, isKotlin: boolean): {
         signature: string;
         annotations: string;
         methodName: string;
         className: string;
+        startLine: number;
         declarationLine: number;
         methodPath: string;
         classPath: string;
         fullPath: string;
     } | null {
-        const lines = text.split('\n');
-        const sanitizedText = TextProcessor.sanitize(text);
-        const sanitizedLines = sanitizedText.split('\n');
-
-        // Step 1: 找方法声明行。在净化后的内容上做大括号深度计算与扫描。
-        let declLine = -1;
-        let braceDepth = 0;
-        for (let i = cursorLine; i >= 0; i--) {
-            const line = sanitizedLines[i].trim();
-            if (this.isMethodDeclaration(line)) {
-                declLine = i;
-                break;
-            }
-            if (line === '') { continue; }
-            if (line.startsWith('@')) { continue; }
-            if (line.startsWith('{') || line.endsWith('{') || line.startsWith('return ') || line.startsWith('throw ')) {
-                braceDepth++;
-                continue;
-            }
-            if (line === '}' || line.startsWith('} ')) {
-                if (braceDepth > 0) { braceDepth--; continue; }
-                break;
-            }
+        const sanitized = TextProcessor.sanitize(text, { rawTripleQuotes: isKotlin });
+        const lineIndex = TextProcessor.buildLineIndex(text);
+        const classBlocks = this.collectClassBlocks(sanitized);
+        if (classBlocks.length === 0) {
+            return null;
         }
 
-        // 策略 B: 向后扫描
-        if (declLine === -1) {
-            for (let i = cursorLine; i < sanitizedLines.length; i++) {
-                const line = sanitizedLines[i].trim();
-                if (this.isMethodDeclaration(line)) {
-                    declLine = i;
-                    break;
-                }
-                // 遇到 } 说明已经越过当前方法区域，停止
-                if (line === '}' || line.startsWith('} ')) { break; }
-                if (line.startsWith('{')) { break; }
-            }
-        }
-        if (declLine === -1) { return null; }
+        const directChildren = this.collectDirectChildren(classBlocks);
 
-        // Step 2: 从声明行向前找注解行
-        const annotationLines: string[] = [];
-        for (let i = declLine - 1; i >= 0; i--) {
-            const line = lines[i].trim();
-            const sanitizedLine = sanitizedLines[i].trim();
-            if (sanitizedLine.startsWith('@')) {
-                annotationLines.unshift(line);
-            } else if (sanitizedLine.length > 0) {
-                break; // 非空非注解行，停止
-            }
-            // 空行跳过
-        }
-
-        // Step 3: 结构化定位参数区。括号深度在净化内容上计算（防字符串/注释干扰），
-        // 但截取使用原文绝对偏移，mapping 注解不会进入参数区。
-        const lineStartOffsets: number[] = new Array(lines.length);
-        {
-            let offset = 0;
-            for (let i = 0; i < lines.length; i++) {
-                lineStartOffsets[i] = offset;
-                offset += lines[i].length + 1;
-            }
-        }
-
-        let firstParenOffset = -1;
-        let closeParenOffset = -1;
-        let parenDepth = 0;
-        scan:
-        for (let j = declLine; j < lines.length; j++) {
-            const sanitizedLine = sanitizedLines[j];
-            const lineStart = lineStartOffsets[j];
-            for (let k = 0; k < sanitizedLine.length; k++) {
-                const ch = sanitizedLine[k];
-                if (ch === '(') {
-                    if (firstParenOffset === -1) { firstParenOffset = lineStart + k; }
-                    parenDepth++;
-                } else if (ch === ')') {
-                    parenDepth--;
-                    if (firstParenOffset !== -1 && parenDepth === 0) {
-                        closeParenOffset = lineStart + k;
-                        break scan;
-                    }
+        // 选择包含 cursorLine 的最内层类型块
+        let targetBlock: ClassBlockSpan | null = null;
+        for (const block of classBlocks) {
+            const startLine = TextProcessor.getLineNumber(lineIndex, block.startIndex) - 1;
+            const endLine = TextProcessor.getLineNumber(lineIndex, Math.max(0, block.endIndex - 1)) - 1;
+            if (cursorLine >= startLine && cursorLine <= endLine) {
+                if (!targetBlock || (block.endIndex - block.startIndex) < (targetBlock.endIndex - targetBlock.startIndex)) {
+                    targetBlock = block;
                 }
             }
         }
-        if (firstParenOffset === -1 || closeParenOffset === -1) { return null; }
+        if (!targetBlock) {
+            return null;
+        }
 
-        const declarationPrefix = text.substring(lineStartOffsets[declLine], firstParenOffset);
-        const methodNameMatch = declarationPrefix.match(/([A-Za-z_$][\w$]*)\s*$/);
-        if (!methodNameMatch) { return null; }
-        const methodName = methodNameMatch[1];
+        const children = directChildren.get(targetBlock) ?? [];
+        const maskedSanitized = this.extractMaskedBlock(sanitized, targetBlock, children);
+        const methods = this.collectDirectMethods(text, maskedSanitized, targetBlock, lineIndex);
+        if (methods.length === 0) {
+            return null;
+        }
 
-        // 仅传方法名 + 参数区给参数解析器，避免把路由注解也拼入“签名”
-        const paramSection = text.substring(firstParenOffset + 1, closeParenOffset);
-        const signature = `${methodName}(${paramSection})`;
+        const matched = methods.find(m => cursorLine >= m.startLine && cursorLine <= m.endLine)
+            ?? methods.find(m => cursorLine > m.prevMemberEndLine && cursorLine < m.startLine);
+        if (!matched) {
+            return null;
+        }
 
-        const methodPath = this.extractPathFromAnnotations(annotationLines.join('\n'));
-        const classPath = this.findClassLevelPath(lines, declLine);
-        const fullPath = this.concatenatePaths(classPath, methodPath);
+        const methodPath = this.extractPathFromAnnotations(matched.annotations);
+        const fullPath = this.concatenatePaths(matched.classPath, methodPath);
         return {
-            signature,
-            annotations: annotationLines.join('\n'),
-            methodName,
-            className: this.findClassName(lines, declLine),
-            declarationLine: declLine,
+            signature: matched.signature,
+            annotations: matched.annotations,
+            methodName: matched.methodName,
+            className: matched.className,
+            startLine: matched.startLine,
+            declarationLine: matched.declarationLine,
             methodPath,
-            classPath,
+            classPath: matched.classPath,
             fullPath
         };
     }
 
-    private isMethodDeclaration(line: string): boolean {
-        const trimmed = line.trim();
-        return /^(?:(?:public|private|protected|static|final|abstract|synchronized|override|suspend)\s+)*(?:fun\s+\w+|(?:[\w.$<>?,]+\s+)+\w+)\s*\(/.test(trimmed);
-    }
-
-    private findClassName(lines: string[], methodDeclLine: number): string {
-        for (let index = methodDeclLine - 1; index >= 0; index--) {
-            const match = lines[index].match(/\b(?:class|interface|object)\s+(\w+)/);
-            if (match) { return match[1]; }
+    private collectDirectMethods(
+        fullContent: string,
+        maskedSanitized: string,
+        block: ClassBlockSpan,
+        lineIndex: number[]
+    ): DirectMethodSpan[] {
+        const methods: DirectMethodSpan[] = [];
+        const relDeclIndex = block.declarationIndex - block.startIndex;
+        const braceOffset = maskedSanitized.indexOf('{', relDeclIndex);
+        if (braceOffset === -1) {
+            return methods;
         }
-        return '';
-    }
 
-    /**
-     * 向前搜索类级别的 @RequestMapping / @Path 注解
-     */
-    private findClassLevelPath(lines: string[], methodDeclLine: number): string {
-        // 向前找类声明行（class 或 object 关键字）
-        let classLine = -1;
-        for (let i = methodDeclLine - 1; i >= 0; i--) {
-            const line = lines[i].trim();
-            if (/\b(class|object)\b/.test(line)) {
-                classLine = i;
+        const classHeaderRaw = fullContent.substring(block.startIndex, block.startIndex + braceOffset);
+        const classPath = this.extractPathFromAnnotationText(classHeaderRaw) || '';
+
+        let index = braceOffset + 1;
+        let memberStart = index;
+        let prevMemberEndLine = TextProcessor.getLineNumber(lineIndex, block.startIndex + braceOffset) - 1;
+
+        while (index < maskedSanitized.length) {
+            const ch = maskedSanitized[index];
+            if (/\s/.test(ch)) {
+                index++;
+                continue;
+            }
+            if (ch === '}') {
                 break;
             }
-            // 遇到 package 或 import 语句，停止
-            if (/^(package|import)\b/.test(line)) { break; }
-        }
-        if (classLine === -1) { return ''; }
+            if (ch === ';') {
+                prevMemberEndLine = TextProcessor.getLineNumber(lineIndex, block.startIndex + index) - 1;
+                index++;
+                memberStart = index;
+                continue;
+            }
+            if (ch === '@') {
+                index = this.skipAnnotation(maskedSanitized, index);
+                continue;
+            }
+            if (ch === '{') {
+                index = this.skipBraceBlock(maskedSanitized, index);
+                prevMemberEndLine = TextProcessor.getLineNumber(lineIndex, block.startIndex + Math.max(0, index - 1)) - 1;
+                memberStart = index;
+                continue;
+            }
 
-        // 从类声明行向前找注解
-        for (let i = classLine - 1; i >= 0; i--) {
-            const line = lines[i].trim();
-            if (line.startsWith('@')) {
-                const path = this.extractClassPath(line);
-                if (path) { return path; }
-            } else if (line.length > 0 && !line.startsWith('@')) {
-                // 非注解非空行，停止
+            const declarationOffset = index;
+            const openParenOffset = this.findMethodOpenParen(maskedSanitized, declarationOffset);
+            if (openParenOffset === -1) {
+                index = Math.max(this.skipToMemberBoundary(maskedSanitized, declarationOffset), declarationOffset + 1);
+                prevMemberEndLine = TextProcessor.getLineNumber(lineIndex, block.startIndex + Math.max(0, index - 1)) - 1;
+                memberStart = index;
+                continue;
+            }
+
+            const closeParenOffset = this.findMatchingParen(maskedSanitized, openParenOffset);
+            if (closeParenOffset === -1) {
                 break;
             }
+
+            const terminator = this.findMethodTerminator(maskedSanitized, closeParenOffset + 1);
+            if (terminator.kind === 'other') {
+                index = Math.max(this.skipToMemberBoundary(maskedSanitized, terminator.index), closeParenOffset + 1);
+                prevMemberEndLine = TextProcessor.getLineNumber(lineIndex, block.startIndex + Math.max(0, index - 1)) - 1;
+                memberStart = index;
+                continue;
+            }
+
+            const methodEndOffset = terminator.endOffset;
+            const prefix = maskedSanitized.substring(declarationOffset, openParenOffset);
+            const nameMatch = prefix.match(/([A-Za-z_$][\w$]*)\s*$/);
+            const methodName = nameMatch ? nameMatch[1] : null;
+
+            if (methodName && !this.isConstructorDeclaration(prefix, methodName, block.className)) {
+                let firstAnnotationOffset = declarationOffset;
+                for (let cursor = memberStart; cursor < declarationOffset; cursor++) {
+                    if (maskedSanitized[cursor] === '@') {
+                        firstAnnotationOffset = cursor;
+                        break;
+                    }
+                }
+
+                const absAnnStart = block.startIndex + firstAnnotationOffset;
+                const absDecl = block.startIndex + declarationOffset;
+                const absOpenParen = block.startIndex + openParenOffset;
+                const absCloseParen = block.startIndex + closeParenOffset;
+                const absEnd = block.startIndex + Math.max(firstAnnotationOffset, methodEndOffset - 1);
+
+                const annotations = fullContent.substring(absAnnStart, absDecl).trim();
+                const paramSection = fullContent.substring(absOpenParen + 1, absCloseParen);
+                methods.push({
+                    methodName,
+                    className: block.className,
+                    classPath,
+                    annotations,
+                    signature: `${methodName}(${paramSection})`,
+                    startLine: TextProcessor.getLineNumber(lineIndex, absAnnStart) - 1,
+                    declarationLine: TextProcessor.getLineNumber(lineIndex, absDecl) - 1,
+                    endLine: TextProcessor.getLineNumber(lineIndex, absEnd) - 1,
+                    prevMemberEndLine
+                });
+            }
+
+            prevMemberEndLine = TextProcessor.getLineNumber(lineIndex, block.startIndex + Math.max(0, methodEndOffset - 1)) - 1;
+            index = methodEndOffset;
+            memberStart = index;
         }
 
-        return '';
+        return methods;
     }
 
-    /**
-     * 从单行注解中提取路径
-     */
-    private extractClassPath(annotationLine: string): string | null {
-        return this.extractPathFromAnnotationText(annotationLine);
+    private isConstructorDeclaration(prefix: string, methodName: string, className: string): boolean {
+        if (methodName === 'constructor') {
+            return true;
+        }
+        if (methodName !== className || /\bfun\b/.test(prefix)) {
+            return false;
+        }
+        // 剥离行内注解与修饰符后若只剩类名本身（无返回类型），则是 Java 构造器
+        let stripped = '';
+        let i = 0;
+        while (i < prefix.length) {
+            if (prefix[i] === '@') {
+                i = this.skipAnnotation(prefix, i);
+                continue;
+            }
+            stripped += prefix[i++];
+        }
+        const tokens = stripped.trim().split(/\s+/).filter(token => !ParameterExtractor.javaModifiers.has(token));
+        return tokens.length === 1 && tokens[0] === className;
     }
 
-    /**
-     * 拼接类级路径和方法级路径，去除重复斜杠
-     */
+    private findMethodOpenParen(sanitized: string, from: number): number {
+        let angleDepth = 0;
+        let i = from;
+        while (i < sanitized.length) {
+            const ch = sanitized[i];
+            if (ch === '@') {
+                i = this.skipAnnotation(sanitized, i);
+                continue;
+            }
+            if (ch === '<') {
+                angleDepth++;
+                i++;
+                continue;
+            }
+            if (ch === '>' && angleDepth > 0) {
+                angleDepth--;
+                i++;
+                continue;
+            }
+            if (angleDepth === 0) {
+                if (ch === '(') {
+                    return i;
+                }
+                if (ch === '=' || ch === ';' || ch === '{' || ch === '}') {
+                    return -1;
+                }
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    private findMethodTerminator(
+        sanitized: string,
+        from: number
+    ): { kind: 'body' | 'semicolon'; endOffset: number } | { kind: 'other'; index: number } {
+        let angleDepth = 0;
+        let i = from;
+        while (i < sanitized.length) {
+            const ch = sanitized[i];
+            if (ch === '@') {
+                i = this.skipAnnotation(sanitized, i);
+                continue;
+            }
+            if (ch === '<') {
+                angleDepth++;
+                i++;
+                continue;
+            }
+            if (ch === '>' && angleDepth > 0) {
+                angleDepth--;
+                i++;
+                continue;
+            }
+            if (angleDepth === 0) {
+                if (ch === '{') {
+                    return { kind: 'body', endOffset: this.skipBraceBlock(sanitized, i) };
+                }
+                if (ch === ';') {
+                    return { kind: 'semicolon', endOffset: i + 1 };
+                }
+                if (!/[\w\s.,[\]&:?]/.test(ch)) {
+                    return { kind: 'other', index: i };
+                }
+            }
+            i++;
+        }
+        return { kind: 'other', index: sanitized.length };
+    }
+
+    private collectClassBlocks(sanitized: string): ClassBlockSpan[] {
+        const blocks: ClassBlockSpan[] = [];
+        const classPattern = /\b(class|interface|object)\s+(\w+)/g;
+        let match: RegExpExecArray | null;
+        while ((match = classPattern.exec(sanitized)) !== null) {
+            const actualStart = this.findDeclarationStart(sanitized, match.index);
+            const firstBrace = sanitized.indexOf('{', match.index);
+            if (firstBrace === -1) {
+                continue;
+            }
+            const endIndex = this.skipBraceBlock(sanitized, firstBrace);
+            if (endIndex <= firstBrace) {
+                continue;
+            }
+            blocks.push({
+                className: match[2],
+                declarationIndex: match.index,
+                startIndex: actualStart,
+                endIndex
+            });
+        }
+        return blocks;
+    }
+
+    private collectDirectChildren(classBlocks: ClassBlockSpan[]): Map<ClassBlockSpan, ClassBlockSpan[]> {
+        const sorted = [...classBlocks].sort((a, b) => a.startIndex - b.startIndex || b.endIndex - a.endIndex);
+        const directChildren = new Map<ClassBlockSpan, ClassBlockSpan[]>();
+        const stack: ClassBlockSpan[] = [];
+
+        for (const block of sorted) {
+            while (stack.length > 0 && stack[stack.length - 1].endIndex <= block.startIndex) {
+                stack.pop();
+            }
+            const parent = stack[stack.length - 1];
+            if (parent) {
+                const list = directChildren.get(parent);
+                if (list) {
+                    list.push(block);
+                } else {
+                    directChildren.set(parent, [block]);
+                }
+            }
+            stack.push(block);
+        }
+        return directChildren;
+    }
+
+    private extractMaskedBlock(sanitized: string, block: ClassBlockSpan, children: ClassBlockSpan[]): string {
+        const slice = sanitized.substring(block.startIndex, block.endIndex);
+        if (children.length === 0) {
+            return slice;
+        }
+        const chars = slice.split('');
+        for (const child of children) {
+            const start = Math.max(0, child.startIndex - block.startIndex);
+            const end = Math.min(chars.length, child.endIndex - block.startIndex);
+            for (let i = start; i < end; i++) {
+                if (chars[i] !== '\n' && chars[i] !== '\r') {
+                    chars[i] = ' ';
+                }
+            }
+        }
+        return chars.join('');
+    }
+
+    private findDeclarationStart(sanitized: string, declarationIndex: number): number {
+        let parenDepth = 0;
+        let bracketDepth = 0;
+        for (let i = declarationIndex - 1; i >= 0; i--) {
+            const ch = sanitized[i];
+            if (ch === ')') { parenDepth++; }
+            else if (ch === '(' && parenDepth > 0) { parenDepth--; }
+            else if (ch === ']') { bracketDepth++; }
+            else if (ch === '[' && bracketDepth > 0) { bracketDepth--; }
+            else if (parenDepth === 0 && bracketDepth === 0 && (ch === ';' || ch === '{' || ch === '}')) {
+                return i + 1;
+            }
+        }
+        return 0;
+    }
+
+    private skipAnnotation(sanitized: string, atIndex: number): number {
+        let i = atIndex + 1;
+        while (i < sanitized.length && /[\w.:$]/.test(sanitized[i])) {
+            i++;
+        }
+        while (i < sanitized.length && /\s/.test(sanitized[i])) {
+            i++;
+        }
+        if (sanitized[i] === '(') {
+            const close = this.findMatchingParen(sanitized, i);
+            if (close !== -1) {
+                return close + 1;
+            }
+        }
+        return i;
+    }
+
+    private findMatchingParen(sanitized: string, openIndex: number): number {
+        let depth = 0;
+        for (let i = openIndex; i < sanitized.length; i++) {
+            if (sanitized[i] === '(') { depth++; }
+            else if (sanitized[i] === ')') {
+                depth--;
+                if (depth === 0) { return i; }
+            }
+        }
+        return -1;
+    }
+
+    private skipBraceBlock(sanitized: string, openIndex: number): number {
+        let depth = 0;
+        for (let i = openIndex; i < sanitized.length; i++) {
+            if (sanitized[i] === '{') { depth++; }
+            else if (sanitized[i] === '}') {
+                depth--;
+                if (depth === 0) { return i + 1; }
+            }
+        }
+        return sanitized.length;
+    }
+
+    private skipToMemberBoundary(sanitized: string, from: number): number {
+        let parenDepth = 0;
+        let braceDepth = 0;
+        for (let i = from; i < sanitized.length; i++) {
+            const ch = sanitized[i];
+            if (ch === '(') { parenDepth++; }
+            else if (ch === ')') { parenDepth--; }
+            else if (ch === '{') {
+                if (parenDepth === 0 && braceDepth === 0) { return i; }
+                braceDepth++;
+            } else if (ch === '}') {
+                if (braceDepth === 0) { return i; }
+                braceDepth--;
+            } else if ((ch === ';' || ch === '@' || ch === '\n') && parenDepth === 0 && braceDepth === 0) {
+                return ch === ';' ? i + 1 : i;
+            }
+        }
+        return sanitized.length;
+    }
+
     private concatenatePaths(classPath: string, methodPath: string): string {
         if (!classPath) { return methodPath; }
         if (!methodPath) { return classPath; }
@@ -298,9 +550,6 @@ export class ParameterExtractor {
      *
      * 当 Spring mapping 同时声明多个路径时，复制 URL/cURL 命令稳定使用源码中的
      * 第一个路径；完整端点扫描仍由解析器拆分全部路径，不受此规则影响。
-     *
-     * @param annotationText 方法或类型声明前的注解文本
-     * @returns 首个可用路径；未找到受支持路由注解时返回 null
      */
     private extractPathFromAnnotationText(annotationText: string): string | null {
         const jaxRsPath = annotationText.match(/@(?:[\w.]+\.)?Path\s*\(\s*["']([^"']+)["']/);
@@ -334,21 +583,19 @@ export class ParameterExtractor {
             else if (/@PATCH\b/.test(annotations)) { httpMethod = 'PATCH'; }
         }
 
-        // 从 consumes 属性检测内容类型
-        if (/consumes\s*=\s*MediaType\.MULTIPART_FORM_DATA_VALUE|multipart\/form-data/.test(annotations)) {
+        if (/consumes\s*=\s*(?:\{\s*)?MediaType\.MULTIPART_FORM_DATA_VALUE|multipart\/form-data/.test(annotations)) {
             return { httpMethod, contentType: 'form-data' };
         }
-        if (/consumes\s*=\s*MediaType\.APPLICATION_FORM_URLENCODED_VALUE|application\/x-www-form-urlencoded/.test(annotations)) {
+        if (/consumes\s*=\s*(?:\{\s*)?MediaType\.APPLICATION_FORM_URLENCODED_VALUE|application\/x-www-form-urlencoded/.test(annotations)) {
             return { httpMethod, contentType: 'x-www-form-urlencoded' };
         }
         if (/@RequestBody/.test(annotations)) {
             return { httpMethod, contentType: 'json' };
         }
-        if (/consumes\s*=\s*MediaType\.APPLICATION_JSON_VALUE|application\/json/.test(annotations)) {
+        if (/consumes\s*=\s*(?:\{\s*)?MediaType\.APPLICATION_JSON_VALUE|application\/json/.test(annotations)) {
             return { httpMethod, contentType: 'json' };
         }
 
-        // 按 HTTP 方法默认
         if (httpMethod === 'GET' || httpMethod === 'DELETE') {
             return { httpMethod, contentType: 'url-params' };
         }
@@ -391,10 +638,8 @@ export class ParameterExtractor {
         return dtoFields;
     }
 
-    /**
-     * 判断是否为基本类型（无需展开 DTO）。
-     */
     private isPrimitiveType(type: string): boolean {
-        return PRIMITIVE_TYPES.includes(type);
+        const base = type.replace(/(?:\[\]|\?)+$/, '').trim();
+        return PRIMITIVE_TYPES.includes(type) || PRIMITIVE_TYPES.includes(base);
     }
 }

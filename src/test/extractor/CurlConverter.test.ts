@@ -158,4 +158,10 @@ suite('CurlConverter Test Suite', () => {
         assert.ok(result.includes("'http://localhost/form?source='"));
         assert.ok(result.includes("-d 'name='"));
     });
+
+    test('normalizes trailing slash on baseUrl to avoid double slashes', () => {
+        const info = makeCopyInfo({ httpMethod: 'GET', path: '/api/users' });
+        const result = converter.generate(info, 'http://localhost:8080/');
+        assert.ok(result.includes("'http://localhost:8080/api/users'"), result);
+    });
 });

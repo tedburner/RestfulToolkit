@@ -20,16 +20,20 @@ suite('ConfigManager Test Suite', () => {
         vscode.workspace.getConfiguration = (() => ({ inspect: () => undefined }) as unknown) as typeof vscode.workspace.getConfiguration;
         // 与真实行为一致：把资源 URI 映射回所属工作区根目录
         vscode.workspace.getWorkspaceFolder = ((uri: vscode.Uri) => {
-            const match = folders.find(folder => uri.fsPath === folder || uri.fsPath.startsWith(`${folder}/`));
+            const match = folders.find(folder =>
+                uri.fsPath === folder
+                || uri.fsPath.startsWith(`${folder}${path.sep}`)
+                || uri.fsPath.startsWith(`${folder}/`)
+            );
             return match ? ({ uri: { fsPath: match } } as vscode.WorkspaceFolder) : undefined;
         }) as typeof vscode.workspace.getWorkspaceFolder;
     }
 
     test('uses the project config belonging to the resource workspace folder', async () => {
         const manager = ConfigManager.getInstance();
-        const one = '/workspace/one';
-        const two = '/workspace/two';
-        // mock 键与生产代码使用相同的 path.join，保证在任意平台一致
+        const one = path.resolve('/workspace/one');
+        const two = path.resolve('/workspace/two');
+        // mock 键与生产代码使用相同的 path.resolve + path.join，保证在 Windows 与 POSIX 一致
         const configContent = new Map<string, string>([
             [path.join(one, PROJECT_CONFIG_FILE), '{"baseUrl":"http://one.test","maxResults":11}'],
             [path.join(two, PROJECT_CONFIG_FILE), '{"baseUrl":"http://two.test","maxResults":22}']
@@ -38,8 +42,8 @@ suite('ConfigManager Test Suite', () => {
         stubWorkspaceLookup([one, two]);
 
         await manager.setWorkspaceFolders([one, two]);
-        const oneConfig = manager.getScanConfig({ fsPath: `${one}/src/Api.java` } as vscode.Uri);
-        const twoConfig = manager.getScanConfig({ fsPath: `${two}/src/Api.java` } as vscode.Uri);
+        const oneConfig = manager.getScanConfig({ fsPath: path.join(one, 'src', 'Api.java') } as vscode.Uri);
+        const twoConfig = manager.getScanConfig({ fsPath: path.join(two, 'src', 'Api.java') } as vscode.Uri);
         assert.strictEqual(oneConfig.baseUrl, 'http://one.test');
         assert.strictEqual(oneConfig.maxResults, 11);
         assert.strictEqual(twoConfig.baseUrl, 'http://two.test');
@@ -48,8 +52,8 @@ suite('ConfigManager Test Suite', () => {
 
     test('discards a stale concurrent project config snapshot', async () => {
         const manager = ConfigManager.getInstance();
-        const one = '/workspace/one';
-        const two = '/workspace/two';
+        const one = path.resolve('/workspace/one');
+        const two = path.resolve('/workspace/two');
         const onePath = path.join(one, PROJECT_CONFIG_FILE);
         const twoPath = path.join(two, PROJECT_CONFIG_FILE);
         const configContent = new Map<string, string>([
@@ -82,16 +86,16 @@ suite('ConfigManager Test Suite', () => {
         releaseFirstRead();
         await firstLoad;
 
-        const oneConfig = manager.getScanConfig({ fsPath: `${one}/src/Api.java` } as vscode.Uri);
-        const twoConfig = manager.getScanConfig({ fsPath: `${two}/src/Api.java` } as vscode.Uri);
+        const oneConfig = manager.getScanConfig({ fsPath: path.join(one, 'src', 'Api.java') } as vscode.Uri);
+        const twoConfig = manager.getScanConfig({ fsPath: path.join(two, 'src', 'Api.java') } as vscode.Uri);
         assert.strictEqual(oneConfig.baseUrl, 'http://one.test', 'the newer snapshot must win over the stale read');
         assert.strictEqual(twoConfig.baseUrl, 'http://two.test', 'the newer snapshot must keep folders the stale load never saw');
     });
 
     test('synthesizes folder scan configs per workspace folder without merging them', async () => {
         const manager = ConfigManager.getInstance();
-        const one = '/workspace/one';
-        const two = '/workspace/two';
+        const one = path.resolve('/workspace/one');
+        const two = path.resolve('/workspace/two');
         const onePath = path.join(one, PROJECT_CONFIG_FILE);
         vscode.workspace.fs.readFile = async (uri: vscode.Uri) =>
             uri.fsPath === onePath

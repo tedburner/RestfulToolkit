@@ -5,6 +5,28 @@ All notable changes to RestfulToolkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.11] - 2026-11-23
+
+- **Added**: Multi-OS GitHub Actions CI workflow (`ubuntu-latest` and `windows-latest`) running unit tests, production bundle builds, and all verification scripts; release workflow now also runs `test-json-to-class.js`
+- **Fixed**: Lexical sanitization now supports Java text blocks and Kotlin raw triple-quoted strings (`"""..."""`), preventing embedded quotes, apostrophes, URLs, and braces from corrupting class or method boundaries
+- **Fixed**: Endpoint copy commands now locate direct member methods and full multi-line annotations structurally, handling cursor placement on `return`/`throw`/`new` statements inside method bodies, array return types (`byte[]`), validation annotations (`@RequestBody @Valid`, `@NotBlank`), `name = "..."`, arrays, varargs, and multi-argument generics (`Map<String, Object>`)
+- **Fixed**: DTO expansion now supports Java `record` components and multi-attribute `@JsonProperty`, excludes `static`, `transient`, and `@JsonIgnore` fields, and honors configured `excludePaths` wrapped in valid brace globs
+- **Fixed**: Base URL auto-detection ignores nested `server:` blocks such as `management.server.port`, strips unquoted inline `#` comments, honors `spring.profiles.active`, prefers the nearest module in multi-module workspaces, and eliminates boundary double slashes in generated URLs and cURL commands
+- **Fixed**: JSON-to-DTO generation produces valid fallback identifiers for symbol, underscore, and non-ASCII JSON keys while preserving `@JsonProperty`, omits unused `java.util.List` imports, and respects Escape cancellation on the Lombok prompt
+- **Fixed**: Cross-platform file path keys are normalized case-insensitively on Windows across caches, scan state, project configs, and watcher exclusions; `Copy Endpoint Parameters` honors explicit `restfulToolkit.copyNameFormat` settings and displays format icons with a clear recommended badge; `Create Project Config File` supports multi-root folder selection and existing-file feedback
+- **Changed**: Per-class framework pre-filtering skips unused Spring or JAX-RS parsers on single-framework classes; `EndpointCache` removes its redundant path-bucket map, `SearchUI` reads `maxResults` without per-keystroke config logging, and `DtoFieldExtractor` resolves sibling nested DTOs and config directories concurrently
+
+---
+
+- **新增**: 跨平台 GitHub Actions CI 工作流（`ubuntu-latest` 与 `windows-latest`），自动执行单元测试、生产打包与全部验证脚本；发布工作流补齐 `test-json-to-class.js`
+- **修复**: 词法净化新增支持 Java 文本块与 Kotlin 原生三引号字符串（`"""..."""`），内部引号、撇号、URL 与花括号不再破坏类或方法边界定位
+- **修复**: 端点复制命令改为在类型直接成员层级结构化定位方法与完整多行注解，支持光标停留在方法体内 `return`/`throw`/`new` 语句、`byte[]` 等数组返回类型、前置/交错校验注解（`@RequestBody @Valid`、`@NotBlank`）、`name = "..."`、数组/可变参数与多参数泛型（`Map<String, Object>`）
+- **修复**: DTO 字段展开新增支持 Java `record` 组件与多属性 `@JsonProperty`，自动剔除 `static`、`transient` 与 `@JsonIgnore` 字段，并使用合法花括号分组 glob 合并 `excludePaths`
+- **修复**: Base URL 自动检测仅解析顶层 `server:` 配置（不再被 `management.server.port` 覆盖），剥离未加引号的行尾 `#` 注释，支持 `spring.profiles.active`，多模块项目优先匹配就近子模块，并在生成 URL/cURL 时消除边界双斜杠
+- **修复**: JSON 转 DTO 对纯符号、纯下划线及非 ASCII JSON key 生成合法回退标识符并保留 `@JsonProperty`，无集合字段时省略多余 `java.util.List` 导入，且在 Lombok 选择框按 Esc 时立即取消
+- **修复**: Windows 下缓存、扫描状态、项目配置和 watcher 排除规则统一使用大小写不敏感的规范化路径键；`Copy Endpoint Parameters` 接入 `restfulToolkit.copyNameFormat` 显式配置并展示格式图标与推荐标记；创建项目配置支持多根文件夹选择与已存在提示
+- **变更**: 类块级框架预筛选在单框架类上跳过无关解析器；`EndpointCache` 移除冗余路径桶索引，`SearchUI` 静默读取 `maxResults` 避免按键日志刷屏，`DtoFieldExtractor` 与配置目录扫描改为并发异步执行
+
 ## [0.0.10] - 2026-11-06
 
 - **Added**: A reusable local sample workspace and verification script for Spring, JAX-RS, Kotlin and endpoint copy scenarios

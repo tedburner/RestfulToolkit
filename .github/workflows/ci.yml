@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:marketplace-stats
+      - run: npm run test:curl-semantic
+      - run: npm run test:dto-compile
+      - run: node src/test/scripts/test-sample.js
+      - run: node src/test/scripts/test-all-files.js
+      - run: node src/test/scripts/test-copy-url-curl.js
+      - run: node src/test/scripts/test-parameter-copy.js
+      - run: node src/test/scripts/test-json-to-class.js
+      - run: npm run build
